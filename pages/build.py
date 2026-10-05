@@ -63,7 +63,7 @@ data = {"admin": admin, "people": people, "me": me, "conversations": conversatio
 shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(OUT)
 shutil.copytree(os.path.join(ROOT, "fonts"), os.path.join(OUT, "fonts"))
-links = [('href="/logo.svg"', 'href="logo.svg"'), ('src="/logo.svg"', 'src="logo.svg"'), ('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="index.html"'), ('href="/docs"', 'href="docs.html"'),
+links = [('href="/#', 'href="index.html#'), ('src="/docs.js"', 'src="docs.js"'), ('href="/logo.svg"', 'href="logo.svg"'), ('src="/logo.svg"', 'src="logo.svg"'), ('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="index.html"'), ('href="/docs"', 'href="docs.html"'),
          ('href="/chat"', 'href="chat.html"'), ('href="/"', 'href="index.html"'), ('src="/ui.js"', 'src="ui.js"'),
          ('src="/admin.js"', 'src="admin.js"'), ('src="/chat.js"', 'src="chat.js"')]
 for src, dst in (("admin.html", "index.html"), ("admin.html", "admin.html"), ("chat.html", "chat.html"), ("docs.html", "docs.html")):
@@ -71,10 +71,8 @@ for src, dst in (("admin.html", "index.html"), ("admin.html", "admin.html"), ("c
     for a, b in links:
         html = html.replace(a, b)
     html = html.replace('<script src="ui.js"></script>', '<script src="data.js"></script>\n<script src="mock.js"></script>\n<script src="ui.js"></script>')
-    if src == "docs.html":
-        html = html.replace("</body>", '<script src="mock.js" defer></script>\n</body>').replace('<script src="mock.js" defer>', '<script>window.DEMO={admin:{},people:[],me:{},conversations:{},conversation_items:{}}</script>\n<script src="mock.js" defer>')
     open(os.path.join(OUT, dst), "w", encoding="utf-8").write(html)
-for name in ("ui.js", "admin.js", "chat.js"):
+for name in ("ui.js", "admin.js", "chat.js", "docs.js"):
     js = open(os.path.join(ROOT, name), encoding="utf-8").read().replace('location.href = "/chat"', 'location.href = "chat.html"')
     open(os.path.join(OUT, name), "w", encoding="utf-8").write(js)
 css = open(os.path.join(ROOT, "style.css"), encoding="utf-8").read().replace('url("/fonts/', 'url("fonts/')

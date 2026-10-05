@@ -33,6 +33,12 @@
   .models { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
   .filters { display: flex; gap: 10px; flex-wrap: wrap; }
   .team-row + .team-row { margin-top: 1rem; }
+  .crumbs ol { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; font-size: .875rem; color: var(--muted); }
+  .crumbs li { display: inline-flex; align-items: center; gap: 6px; }
+  .crumbs li + li::before { content: "›"; color: var(--axis); font-size: 1.05rem; line-height: 1; }
+  .crumbs a { color: var(--body); }
+  .crumbs [aria-current="page"] { color: var(--ink); font-weight: 600; }
+  @media (max-width: 520px) { .crumbs .group { display: none; } }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   th button.sort { background: none; border: 0; box-shadow: none; padding: 0; min-height: 0; color: var(--ink); font-weight: 600; gap: 4px; }
   th button.sort:hover { background: none; color: var(--accent-text); box-shadow: none; }
@@ -114,7 +120,7 @@
     <a class="sidebar-brand" href="/"><img class="logo" src="/logo.svg" alt="">FireGate</a>
     <ul class="sidebar-nav">
       <li class="sidebar-header">ראשי</li>
-      <li><button class="sidebar-link" data-tab="overview" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>סקירה</span></button></li>
+      <li><button class="sidebar-link" data-tab="overview" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>לוח בקרה</span></button></li>
       <li class="sidebar-header">ניהול</li>
       <li><button class="sidebar-link" data-tab="accounts"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>משתמשים ומפתחות</span></button></li>
       <li><button class="sidebar-link" data-tab="models"><svg class="icon" aria-hidden="true"><use href="#i-cpu"/></svg><span>מודלים</span></button></li>
@@ -134,6 +140,7 @@
   <div class="main">
     <header class="navbar">
       <button class="toggle" id="toggle" aria-label="הצגה או הסתרה של התפריט"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <nav class="crumbs" aria-label="מיקום"><ol id="crumbs"></ol></nav>
       <div class="navbar-end">
         <button class="ghost" id="refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>רענון</button>
         <span class="avatar" aria-hidden="true">מ</span><span>מנהל</span>
@@ -154,7 +161,7 @@
     <!-- overview -->
     <section data-page="overview" hidden>
       <div class="page-head">
-        <h1>סקירה</h1>
+        <h1>לוח בקרה</h1>
         <button id="overviewNewAccount"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>משתמש חדש</button>
       </div>
       <div class="grid">

@@ -60,6 +60,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PAGES = {"/": ("admin.html", "text/html"), "/admin": ("admin.html", "text/html"), "/chat": ("chat.html", "text/html"), "/docs": ("docs.html", "text/html"), "/style.css": ("style.css", "text/css"),
          "/ui.js": ("ui.js", "text/javascript"),
          "/logo.svg": ("logo.svg", "image/svg+xml"),
+         "/docs.js": ("docs.js", "text/javascript"),
          "/fonts/heebo-hebrew.woff2": ("fonts/heebo-hebrew.woff2", "font/woff2"), "/fonts/heebo-latin.woff2": ("fonts/heebo-latin.woff2", "font/woff2"),
          "/chat.js": ("chat.js", "text/javascript"), "/admin.js": ("admin.js", "text/javascript")}
 # Scripts only from our own files: an injected <script> or onclick= in any text we show can't run.

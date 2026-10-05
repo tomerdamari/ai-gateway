@@ -49,6 +49,9 @@ function showLogin(msg) {
 // ---------- tabs ----------
 let tab = "overview";
 try { tab = sessionStorage.getItem("tab") || "overview"; } catch {}
+const hashTab = () => location.hash.slice(1);
+if (document.querySelector(`[data-page="${hashTab()}"]`)) tab = hashTab();  // links like /#models from the docs page
+addEventListener("hashchange", () => { if (document.querySelector(`[data-page="${hashTab()}"]`)) showTab(hashTab()); });
 function showTab(name) {
   tab = name;
   try { sessionStorage.setItem("tab", name); } catch {}
@@ -56,9 +59,25 @@ function showTab(name) {
   const changed = document.querySelector(`[data-page="${name}"]`)?.hidden;
   document.querySelectorAll("[data-page]").forEach(s => s.hidden = s.dataset.page !== name);
   if (changed) scrollTo(0, 0);
+  renderCrumbs(name);
+  if (hashTab() !== name) history.replaceState(null, "", "#" + name);
   if (name === "overview") drawDaily();
   if (name === "models") drawModelCharts();
   if (name === "reports") loadReport();
+}
+// breadcrumbs from the side menu itself: FireGate › section › page
+function renderCrumbs(name) {
+  const btn = document.querySelector(`.sidebar [data-tab="${name}"]`);
+  if (!btn) return;
+  let header = btn.closest("li");
+  while (header && !header.classList.contains("sidebar-header")) header = header.previousElementSibling;
+  const page = btn.textContent.trim(), group = header ? header.textContent.trim() : "";
+  const home = el("a", { href: "#", textContent: "FireGate", onclick: e => { e.preventDefault(); showTab("overview"); } });
+  $("crumbs").replaceChildren(
+    el("li", {}, home),
+    ...(group && group !== "ראשי" ? [el("li", { className: "group", textContent: group })] : []),
+    el("li", {}, el("span", { ariaCurrent: "page", textContent: page })));
+  document.title = `FireGate · ${page}`;
 }
 document.querySelectorAll(".sidebar [data-tab]").forEach(b => b.onclick = () => {
   showTab(b.dataset.tab);
