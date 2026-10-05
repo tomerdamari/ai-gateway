@@ -1,5 +1,17 @@
 # שינויים / Changelog
 
+## 1.0.3 — 2026-10-05
+
+- הלוגו אדום.
+- הצבע הראשי של הגרפים אדום כמו הלוגו, במקום הסגול. שאר הצבעים: ירוק, ענבר, ירוק כהה, ורוד וחום. נבדקו לעיוורי צבעים, בלי כחול ובלי סגול.
+- בגרף "צפי ניצול התקציב" העמודות הרגילות אפורות, ורק מי שיחרוג מהתקציב צבוע בצבע אזהרה, כדי שהאדום של הגרפים לא יתבלבל עם חריגה.
+
+---
+
+- The logo is red.
+- The main chart colour is red like the logo, instead of violet. The others: green, amber, dark green, pink and brown, checked for colour-blind readers, with no blue and no violet.
+- In "Projected budget use" the normal columns are grey and only the ones that will go over budget carry a warning colour, so the charts' red isn't mistaken for an overrun.
+
 ## 1.0.2 — 2026-10-05
 
 - צבעי הגרפים בלוח הבקרה חיים יותר, כמו בסלייט, ובלי כחול: סגול, ענבר, ירוק, ורוד, כתום וירוק כהה. הצבעים נבדקו כך שגם עיוורי צבעים מבדילים בין שכנים.

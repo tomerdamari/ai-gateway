@@ -53,8 +53,8 @@
   --ease: cubic-bezier(.4, 0, .2, 1);
   --dur: 180ms;
   /* chart series (validated categorical order) */
-  --chart: #8b5cf6;        /* Slate-style violet: chart lines, areas, heat cells (no blue) */
-  --s1: #8b5cf6; --s2: #f59e0b; --s3: #10b981; --s4: #db2777; --s5: #fb923c; --s6: #15803d;  /* validated: CVD-safe neighbours */
+  --chart: #e5484d;        /* FireGate red, as the logo: chart lines, areas, heat cells (no blue) */
+  --s1: #e5484d; --s2: #10b981; --s3: #f59e0b; --s4: #15803d; --s5: #db2777; --s6: #b45309;  /* validated: CVD-safe neighbours */
   --font: "Heebo", "Segoe UI", system-ui, -apple-system, "Noto Sans Hebrew", Arial, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
@@ -93,8 +93,8 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .25);
     --shadow-elevated: 0 8px 24px rgba(0, 0, 0, .45);
     --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-    --chart: #8b5cf6;
-    --s1: #8b5cf6; --s2: #d97706; --s3: #10b981; --s4: #db2777; --s5: #ea580c; --s6: #16a34a;
+    --chart: #e5484d;
+    --s1: #e5484d; --s2: #059669; --s3: #d97706; --s4: #16a34a; --s5: #db2777; --s6: #b45309;
   }
 }
 
