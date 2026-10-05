@@ -1,0 +1,29 @@
+services:
+  gateway:
+    build: .
+    env_file: .env
+    environment:
+      GATEWAY_DB: /data/gateway.db
+    volumes:
+      - data:/data
+      - ./sources:/sources:ro  # folders for "folder" knowledge sources, e.g. /sources/it
+    restart: unless-stopped
+
+  # Front door. SITE_ADDRESS=ai.example.com gets automatic HTTPS; default :80 is plain HTTP for the office network.
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  data:
+  caddy_data:

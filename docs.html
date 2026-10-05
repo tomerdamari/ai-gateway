@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>תיעוד שער AI</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  .docs { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 100vh; }
+  .toc { position: sticky; top: 0; height: 100vh; overflow-y: auto; background: var(--sidebar); padding-bottom: 2rem; }
+  .toc a.sidebar-link { padding-block: .45rem; font-size: .875rem; }
+  .toc a.sidebar-link.sub { padding-inline-start: 2.6rem; font-weight: 400; font-size: .8125rem; }
+  .doc { padding: 2.5rem 3rem 4rem; }
+  .doc article { max-width: 78ch; }
+  .doc h1 { font-size: 2rem; font-weight: 600; margin-bottom: .5rem; }
+  .doc .lead { font-size: 1.05rem; color: var(--body); margin: 0 0 2rem; }
+  .doc section { scroll-margin-top: 1.5rem; padding-top: 1.5rem; margin-top: 1.5rem; border-top: 1px solid var(--line); }
+  .doc h2 { font-size: 1.4rem; font-weight: 600; margin: 0 0 .75rem; }
+  .doc h3 { font-size: 1.05rem; font-weight: 600; color: var(--ink); margin: 1.5rem 0 .5rem; scroll-margin-top: 1.5rem; }
+  .doc p, .doc li { line-height: 1.75; color: var(--body); }
+  .doc p { margin: 0 0 .9rem; }
+  .doc ul, .doc ol { margin: 0 0 1rem; padding-inline-start: 1.4rem; }
+  .doc li + li { margin-top: .3rem; }
+  .doc b { color: var(--ink); }
+  .doc code { overflow-wrap: anywhere; font: .85em ui-monospace, Consolas, monospace; background: var(--surface-3); padding: .1em .35em; border-radius: .2rem; direction: ltr; unicode-bidi: isolate; }
+  .doc pre { max-height: none; font-size: .8125rem; }
+  .doc table { display: block; overflow-x: auto; margin: .5rem 0 1.25rem; background: var(--surface); box-shadow: var(--shadow); border-radius: var(--radius); }
+  .doc th { background: var(--surface-2); }
+  .flow { counter-reset: f; list-style: none; padding: 0; display: grid; gap: .5rem; }
+  .flow li { counter-increment: f; display: flex; gap: .75rem; align-items: baseline; }
+  .flow li::before { content: counter(f); flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--btn); color: #fff; display: grid; place-items: center; font-size: .8125rem; font-weight: 600; }
+  .back { display: flex; gap: 1rem; margin-bottom: 1.5rem; font-size: .875rem; }
+  @media (max-width: 991px) {
+    .docs { grid-template-columns: minmax(0, 1fr); }
+    .toc { position: static; height: auto; }
+    .doc { padding: 1.5rem 1rem 3rem; }
+  }
+</style>
+</head>
+<body>
+<div class="docs">
+  <nav class="toc sidebar" aria-label="תוכן העניינים">
+    <a class="sidebar-brand" href="/docs"><span class="logo">AI</span>תיעוד שער AI</a>
+    <div class="sidebar-header">התחלה</div>
+    <a class="sidebar-link" href="#about">מה זה השער</a>
+    <a class="sidebar-link" href="#install">התקנה והפעלה</a>
+    <div class="sidebar-header">עובדים</div>
+    <a class="sidebar-link" href="#chat">מסך הצ'אט</a>
+    <div class="sidebar-header">מסך הניהול</div>
+    <a class="sidebar-link" href="#overview">סקירה</a>
+    <a class="sidebar-link" href="#accounts">משתמשים ומפתחות</a>
+    <a class="sidebar-link" href="#teams">צוותים ותקציבים</a>
+    <a class="sidebar-link" href="#models">מודלים</a>
+    <a class="sidebar-link sub" href="#backup">מודל גיבוי</a>
+    <a class="sidebar-link sub" href="#auto">בחירה אוטומטית</a>
+    <a class="sidebar-link sub" href="#cache">מטמון אצל הספק</a>
+    <a class="sidebar-link" href="#sources">מקורות מידע</a>
+    <a class="sidebar-link sub" href="#mcp">חיבורי MCP</a>
+    <a class="sidebar-link" href="#reports">דוחות</a>
+    <a class="sidebar-link" href="#security">אבטחה</a>
+    <a class="sidebar-link" href="#logs">יומנים</a>
+    <div class="sidebar-header">טכני</div>
+    <a class="sidebar-link" href="#api">חיבור אפליקציות</a>
+    <a class="sidebar-link" href="#settings">הגדרות השרת</a>
+    <a class="sidebar-link" href="#limits">מגבלות ידועות</a>
+  </nav>
+
+  <main class="doc">
+    <article>
+      <div class="back"><a href="/admin">למסך הניהול</a><a href="/">למסך הצ'אט</a></div>
+      <h1>תיעוד שער AI</h1>
+      <p class="lead">כל מה שהמערכת יודעת לעשות, מסודר לפי מסכים. עובדים ימצאו כאן את מסך הצ'אט, מנהלים את כל מסך הניהול, ואנשי IT את ההתקנה והחיבור לאפליקציות.</p>
+
+      <section id="about">
+        <h2>מה זה השער</h2>
+        <p>שער AI הוא נקודה אחת שכל השימוש בבינה מלאכותית בחברה עובר דרכה: עובדים בצ'אט, ואפליקציות דרך מפתח. השער רץ על השרת של החברה, מחזיק את המפתחות של הספקים (Anthropic, ‏OpenAI, ‏Google) ולא מוסר אותם לאף אחד.</p>
+        <p>כך מטופלת כל שאלה, לפי הסדר:</p>
+        <ol class="flow">
+          <li><span><b>זיהוי:</b> מי שואל. עובד מזוהה בכניסה לצ'אט, אפליקציה לפי המפתח שקיבלה.</span></li>
+          <li><span><b>הרשאה:</b> האם מותר לו המודל הזה, והאם המודל פעיל.</span></li>
+          <li><span><b>תקציב וקצב:</b> האם נשאר לו ולצוות שלו תקציב החודש, והאם לא עבר את מספר הבקשות לדקה.</span></li>
+          <li><span><b>הגנה:</b> מספרי זהות, כרטיסי אשראי ומפתחות מוסתרים, ותוכן חשוד נרשם.</span></li>
+          <li><span><b>מסמכים:</b> אם העובד ביקש, השער מחפש במסמכי החברה ומצרף קטעים רלוונטיים.</span></li>
+          <li><span><b>שליחה לספק:</b> למודל שנבחר, או לגיבוי שלו אם הספק לא זמין.</span></li>
+          <li><span><b>רישום:</b> מי, מתי, איזה מודל, כמה טוקנים, כמה עלה, והשאלה והתשובה עצמן.</span></li>
+        </ol>
+      </section>
+
+      <section id="install">
+        <h2>התקנה והפעלה</h2>
+        <h3>על שרת עם Docker</h3>
+        <pre>cp .env.example .env
+docker compose up -d --build</pre>
+        <p>ממלאים ב-<code>.env</code> את מפתחות הספקים. אם יש דומיין שמצביע לשרת, כותבים אותו ב-<code>SITE_ADDRESS</code> והחיבור יוצפן אוטומטית (HTTPS). בלי דומיין החיבור לא מוצפן ומתאים לרשת המשרד בלבד.</p>
+        <h3>בלי Docker</h3>
+        <pre>python gateway.py</pre>
+        <p>השער קורא את <code>.env</code> שליד הקבצים ועולה בכתובת <code>http://localhost:8080</code>. אין תלות בחבילות חיצוניות, חוץ מ-<code>pypdf</code> לקריאת PDF (אופציונלי).</p>
+        <h3>נתוני דוגמה וגיבוי</h3>
+        <ul>
+          <li><code>python seed_demo.py</code> ממלא מערכת ריקה בצוותים, משתמשים, 45 ימי שימוש ומקורות מידע לדוגמה.</li>
+          <li>כל הנתונים נמצאים בקובץ אחד, <code>gateway.db</code>. העתקה בזמן ריצה: <code>docker compose exec gateway python -c "import sqlite3; sqlite3.connect('/data/gateway.db').backup(sqlite3.connect('/data/backup.db'))"</code></li>
+          <li><code>python test_gateway.py</code> מריץ את כל הבדיקות מול ספקים מדומים, בלי כסף אמיתי.</li>
+        </ul>
+      </section>
+
+      <section id="chat">
+        <h2>מסך הצ'אט</h2>
+        <p>הכתובת הראשית של השער (<code>/</code>). העובד שואל, השער עונה מילה אחרי מילה.</p>
+        <h3>כניסה</h3>
+        <ul>
+          <li><b>רגיל:</b> שם משתמש וסיסמה שהמנהל נתן. אחרי 5 סיסמאות שגויות החשבון ננעל ל-15 דקות. הכניסה מחזיקה 12 שעות, ואפשר להחליף סיסמה מהתפריט.</li>
+          <li><b>מצב פתוח</b> (<code>OPEN_ACCESS=1</code>): ברשת המשרד אין מסך כניסה. העובד בוחר את השם שלו בתפריט, והדפדפן זוכר אותו. מבחוץ המצב הזה לא פועל.</li>
+        </ul>
+        <h3>בחירת מודל</h3>
+        <ul>
+          <li>ברשימה מופיעים רק המודלים שהותרו לעובד ושפעילים.</li>
+          <li><b>"אוטומטי"</b> בוחר לבד: מודל זול לשאלות קצרות, מודל חזק לקוד, ניתוח, השוואה או טקסט ארוך. ליד כל תשובה כתוב איזה מודל ענה ולמה.</li>
+          <li>אם המודל שנבחר לא זמין והוגדר לו גיבוי, כתוב ליד התשובה שענה מודל הגיבוי.</li>
+        </ul>
+        <h3>מסמכי החברה</h3>
+        <p>מתחת לתיבת הכתיבה מופיעים המקורות שהצוות של העובד רשאי לחפש בהם. מסמנים אילו להפעיל. כשהתשובה נשענת על מסמכים, מתחתיה כתוב "מבוסס על" עם שמות המסמכים.</p>
+        <h3>עוד</h3>
+        <ul>
+          <li>השיחות נשמרות ברשימה בצד, ואפשר לחזור אליהן או למחוק אותן. מחיקה מסירה את השיחה מהרשימה של העובד; העותק ביומן הניהול נשאר.</li>
+          <li>בתחתית התפריט: כמה העובד והצוות שלו הוציאו מהתקציב החודש, וכמה נשאר.</li>
+          <li>תשובה שכוללת פקודה שעלולה למחוק מידע או להריץ קוד מהאינטרנט מקבלת אזהרה בסופה.</li>
+          <li>אפשר לעצור תשובה באמצע עם כפתור "עצירה".</li>
+        </ul>
+      </section>
+
+      <section id="overview">
+        <h2>סקירה</h2>
+        <p>המסך הראשון בניהול (<code>/admin</code>). מתוך רשת המשרד נפתח בלי סיסמה; מבחוץ רק עם <code>ADMIN_PASSWORD</code>.</p>
+        <ul>
+          <li><b>צעדים ראשונים:</b> מופיע עד שהמערכת מוכנה: חיבור ספק, צוות, משתמש ושאלה ראשונה, עם כפתור לכל צעד.</li>
+          <li><b>דורש טיפול:</b> חריגות תקציב (מ-80% ומ-100%), חשבונות נעולים והערות אבטחה פתוחות. כשאין כלום כתוב "הכל תקין".</li>
+          <li><b>ארבעה מספרים:</b> הוצאה החודש, צפי לסוף החודש, בקשות, משתמשים פעילים. כל אחד עם שינוי באחוזים לעומת השבוע או החודש הקודם.</li>
+          <li><b>גרפים:</b> הוצאה יומית ב-30 הימים האחרונים (ריחוף מראה את היום), חלוקת ההוצאה לפי מודל, המשתמשים שהוציאו הכי הרבה, וצוותים מול התקציב שלהם.</li>
+        </ul>
+      </section>
+
+      <section id="accounts">
+        <h2>משתמשים ומפתחות</h2>
+        <p>כל עובד, אפליקציה או לקוח הוא חשבון. לכל חשבון:</p>
+        <ul>
+          <li><b>צוות</b>, <b>תקציב חודשי</b>, <b>מודלים מותרים</b> ו<b>מגבלת בקשות לדקה</b>.</li>
+          <li><b>סיסמה לצ'אט</b> (אופציונלי) ו/או <b>מפתח API</b> לאפליקציות. המפתח מוצג פעם אחת בלבד ביצירה; השער שומר רק טביעה מוצפנת שלו. אפשר להנפיק מפתח חדש או לבטל מפתח בחלון העריכה.</li>
+          <li><b>צפי</b>: כמה החשבון יוציא עד סוף החודש בקצב הנוכחי. <b>תקציב מומלץ</b>: הגבוה מבין הצפי לחודש הקודם, ועוד 20%.</li>
+          <li>כפתור <b>"להחיל"</b> מופיע רק כשצריך להעלות תקציב כדי שהחשבון לא ייחסם. לפני השינוי יש אישור עם הסכום הישן והחדש, ואחריו אפשר לבטל.</li>
+        </ul>
+        <p>יש חיפוש לפי שם או צוות, ומיון לפי שם, צוות, הוצאה או צפי. בטלפון כל שורה מוצגת ככרטיס.</p>
+      </section>
+
+      <section id="teams">
+        <h2>צוותים ותקציבים</h2>
+        <ul>
+          <li>לכל צוות תקציב חודשי. <b>0 = בלי תקרה</b> לצוות.</li>
+          <li>שאלה נחסמת כשנגמר התקציב האישי <b>או</b> תקציב הצוות.</li>
+          <li>ב-1 לכל חודש ההוצאה מתאפסת; ההיסטוריה נשארת ביומן.</li>
+          <li>מסך הצוותים מציג צפי, תקציב מומלץ, וסכום התקציבים של חברי הצוות, כדי לראות אם תקרת הצוות מתאימה להם.</li>
+        </ul>
+      </section>
+
+      <section id="models">
+        <h2>מודלים</h2>
+        <p>כל המודלים שהשער מציע מנוהלים מהמסך, בלי עריכת קוד ובלי הפעלה מחדש.</p>
+        <ul>
+          <li><b>הפעלה וכיבוי:</b> מודל כבוי נחסם אצל כולם מיד. לפני הכיבוי מוצג כמה חשבונות מורשים להשתמש בו, ואחריו אפשר לבטל.</li>
+          <li><b>הוספה ועריכה:</b> כינוי (מה שאפליקציות שולחות), שם לתצוגה, ספק, השם המדויק אצל הספק, ומחירים לכל מיליון טוקנים: נכנסים, יוצאים, ומהמטמון.</li>
+          <li><b>ברירת מחדל:</b> המודל שמסומן למשתמש חדש. אי אפשר לכבות או למחוק אותו לפני שקובעים אחר.</li>
+          <li><b>בדיקת חיבור:</b> שולחת לספק שאלה קצרה ומראה אם המפתח והשם עובדים ותוך כמה זמן.</li>
+          <li><b>מחיקה:</b> רק כשאף חשבון לא מורשה להשתמש במודל.</li>
+          <li><b>גרפים:</b> הוצאה יומית לפי מודל, וחלק מהבקשות מול חלק מההוצאה, כדי לזהות מודל יקר לבקשה.</li>
+          <li>למעלה מוצג לכל ספק אם יש לו מפתח בקובץ <code>.env</code>.</li>
+        </ul>
+        <h3 id="backup">מודל גיבוי</h3>
+        <p>לכל מודל אפשר לבחור מודל גיבוי. אם הספק עמוס או לא עונה (שגיאות 429, ‏5xx, ‏529), השאלה עוברת לגיבוי מעצמה ומחויבת לפי המחיר שלו. ביומן נרשם שענה הגיבוי, ובמסך המודלים מוצג כמה פעמים זה קרה החודש. באפליקציות הגיבוי פועל רק בין מודלים באותו פורמט: Claude עם Claude, או GPT עם Gemini.</p>
+        <h3 id="auto">בחירה אוטומטית</h3>
+        <p>מגדירים מודל זול ומודל חזק ומפעילים. שאלה ארוכה (מעל 1,200 תווים), קוד, ניתוח, השוואה, תכנון, או שיחה ארוכה הולכים לחזק; כל השאר לזול. אם המודל המתאים לא מותר לעובד, נבחר השני. המסך מציג כמה שאלות נותבו החודש.</p>
+        <h3 id="cache">מטמון אצל הספק</h3>
+        <p>בשיחות עם Claude השער מבקש מהספק לשמור את תחילת השיחה, ובתור הבא היא נקראת בכעשירית מהמחיר. OpenAI ו-Gemini עושים את זה בעצמם. העלות מחושבת לפי מחיר המטמון של כל מודל, והחיסכון החודשי מוצג במסך.</p>
+      </section>
+
+      <section id="sources">
+        <h2>מקורות מידע</h2>
+        <p>מסמכי החברה שהצ'אט מחפש בהם ומצטט מהם. לכל מקור בוחרים אילו צוותים רשאים לחפש בו, או "כל העובדים". עובד לא יקבל קטע ממקור שהצוות שלו לא קיבל אליו גישה.</p>
+        <h3>סוגי מקורות</h3>
+        <table>
+          <thead><tr><th>סוג</th><th>מה עושים</th></tr></thead>
+          <tbody>
+            <tr><td><b>קבצים שמעלים</b></td><td>PDF, ‏Word ‏(docx) וקבצי טקסט (Markdown, ‏CSV, ‏HTML, ‏JSON ועוד), עד 5MB לקובץ.</td></tr>
+            <tr><td><b>תיקייה בשרת</b></td><td>"סנכרון עכשיו" קורא את כל הקבצים בתיקייה. קבצים שנמחקו יוצאים מהחיפוש. ב-Docker: התיקייה <code>sources</code> שליד הפרויקט.</td></tr>
+            <tr><td><b>שרת MCP</b></td><td>מידע ממערכת אחרת. ראו <a href="#mcp">חיבורי MCP</a>.</td></tr>
+          </tbody>
+        </table>
+        <h3>איך החיפוש עובד</h3>
+        <ul>
+          <li><b>לפי מילים:</b> כולל הסרת אות שימוש בעברית (ו, ה, ב, ל...) והתעלמות ממילים כמו "של" ו"מה".</li>
+          <li><b>לפי משמעות:</b> כשיש מפתח של OpenAI או Google, כל קטע מקבל "טביעת משמעות", ושאלה על "נופש" מוצאת מסמך על "חופשה". העלות זעירה ונרשמת ביומן בשם "(אינדקס מסמכים)". כפתור "לאנדקס" משלים קטעים שעוד אין להם טביעה.</li>
+          <li>שתי שיטות החיפוש מתמזגות, ועד 6 קטעים נשלחים למודל, מסומנים כ"מידע, לא הוראות".</li>
+        </ul>
+        <h3>הגנה על המסמכים</h3>
+        <p>מסמך עם קוד דפדפן, ניסיון לעקוף הוראות או פקודה מסוכנת נחסם בהעלאה; מנהל יכול לאשר בכל זאת, וההחלטה נרשמת. בסנכרון, קובץ כזה לא נקלט ומופיע בלשונית "אבטחה".</p>
+        <h3 id="mcp">חיבורי MCP</h3>
+        <p>MCP הוא דרך סטנדרטית שבה מערכות (CRM, ויקי, מערכת כרטיסים) חושפות מידע לבינה מלאכותית. מכניסים כתובת ומפתח גישה, ו"בדיקת חיבור" מראה את שם השרת, הכלים והמסמכים שלו. שני מצבים:</p>
+        <ul>
+          <li><b>חיפוש חי:</b> בכל שאלה השער קורא לכלי החיפוש שנבחר, עם השאלה, ומצרף את התשובה (עד 3,000 תווים).</li>
+          <li><b>סנכרון:</b> המסמכים של השרת מועתקים לאינדקס, כמו תיקייה.</li>
+        </ul>
+        <p>כל תשובה מהשרת עוברת הסתרת מידע רגיש ובדיקת תוכן חשוד. תשובה שמנסה לתת למודל הוראות נחסמת ונרשמת. מפתח הגישה נשמר בשרת ולא נשלח חזרה לדפדפן.</p>
+      </section>
+
+      <section id="reports">
+        <h2>דוחות</h2>
+        <p>בוחרים חודש ורואים הוצאה, בקשות, טוקנים ומספר אנשים, לפי צוות (כולל ניצול התקציב), לפי משתמש, ולפי מודל (כולל טוקנים מהמטמון). "הורדה לאקסל" שומר קובץ CSV שנפתח באקסל בעברית תקינה.</p>
+      </section>
+
+      <section id="security">
+        <h2>אבטחה</h2>
+        <h3>מה השער עושה לבד</h3>
+        <ul>
+          <li><b>הסתרת מידע רגיש</b> לפני שהוא יוצא לספק ולפני שהוא נשמר: תעודות זהות ישראליות תקינות, כרטיסי אשראי ומפתחות גישה.</li>
+          <li><b>זיהוי תוכן חשוד</b> בשאלות, מסמכים ותשובות: ניסיון לעקוף הוראות (עברית ואנגלית), קוד דפדפן, ופקודות הרסניות. שאלה חשודה נרשמת ולא נחסמת, כי עובדים שואלים בצדק על קוד.</li>
+          <li><b>הגנה מאתרים זרים:</b> אתר עוין שעובד פותח לא יכול לגרום לדפדפן שלו לשלוח פקודות לשער, והשער עונה רק לכתובות שהוא מכיר.</li>
+          <li><b>סודות כטביעה מוצפנת:</b> מפתחות API וסיסמאות לא נשמרים כטקסט.</li>
+          <li><b>קוד מוזרק לא רץ:</b> הדפדפן מריץ רק את קובצי הסקריפט של השער.</li>
+          <li><b>נעילה</b> אחרי 5 סיסמאות שגויות, וזמן כניסה זהה גם לשם משתמש שלא קיים.</li>
+        </ul>
+        <h3>הלשונית "אבטחה"</h3>
+        <p>ספירות של 7 ימים, בדיקת מצב (הצפנה, סיסמת מנהל, מפתחות בלי הגבלת קצב, מצב פתוח, ספקים מחוברים), ויומן אירועים עם סינון לפי סוג.</p>
+      </section>
+
+      <section id="logs">
+        <h2>יומנים</h2>
+        <ul>
+          <li><b>יומן שאלות:</b> 200 השאלות האחרונות עם מי, צוות, מודל, טוקנים, עלות, והשאלה והתשובה המלאות. סינון לפי שם, צוות או מודל. כל השאלות נשמרות במסד הנתונים.</li>
+          <li><b>יומן שינויים:</b> כל פעולה של מנהל: יצירה, עדכון ומחיקה של חשבונות, צוותים, מודלים ומקורות, כולל ערך לפני ואחרי בשינויי תקציב ומחיר.</li>
+        </ul>
+      </section>
+
+      <section id="api">
+        <h2>חיבור אפליקציות</h2>
+        <p>יוצרים חשבון עם מפתח API, ובאפליקציה משנים שני דברים בלבד: הכתובת והמפתח. כל השאר נשאר כמו מול הספק.</p>
+        <pre>client = anthropic.Anthropic(base_url="http://&lt;השרת&gt;", api_key="gw-...")
+client.messages.create(model="smart", max_tokens=1000, messages=[...])
+
+client = openai.OpenAI(base_url="http://&lt;השרת&gt;/v1", api_key="gw-...")
+client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
+        <ul>
+          <li>Claude דרך <code>/v1/messages</code>; ‏GPT ו-Gemini דרך <code>/v1/chat/completions</code>.</li>
+          <li>תשובה בזרימה (<code>stream</code>) נתמכת, והטוקנים נספרים גם בה.</li>
+          <li>הכותרת <code>x-gateway-model</code> בתשובה אומרת איזה מודל ענה בפועל (שונה מהמבוקש אם ענה הגיבוי).</li>
+          <li>שגיאות: ‏401 מפתח לא תקין, 402 תקציב נגמר, 403 מודל לא מותר או כבוי, 429 יותר מדי בקשות.</li>
+        </ul>
+      </section>
+
+      <section id="settings">
+        <h2>הגדרות השרת</h2>
+        <p>בקובץ <code>.env</code>:</p>
+        <table>
+          <thead><tr><th>הגדרה</th><th>מה היא עושה</th></tr></thead>
+          <tbody>
+            <tr><td><code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code></td><td>מפתחות הספקים. ספק בלי מפתח פשוט לא יעבוד.</td></tr>
+            <tr><td><code>ADMIN_PASSWORD</code></td><td>סיסמה למסך הניהול מבחוץ. ריק = סגור מבחוץ לגמרי.</td></tr>
+            <tr><td><code>SITE_ADDRESS</code></td><td>דומיין לחיבור מוצפן אוטומטי.</td></tr>
+            <tr><td><code>ALLOWED_HOSTS</code></td><td>שמות שרת נוספים שהשער יענה להם, מופרדים בפסיק.</td></tr>
+            <tr><td><code>OPEN_ACCESS</code></td><td><code>1</code> = צ'אט בלי כניסה ברשת המשרד.</td></tr>
+            <tr><td><code>EMBEDDINGS</code></td><td>ספק לחיפוש לפי משמעות: <code>openai</code>, <code>gemini</code> או <code>off</code>. ברירת מחדל: הראשון שיש לו מפתח.</td></tr>
+            <tr><td><code>PORT</code>, <code>GATEWAY_DB</code></td><td>פורט השרת (8080) ומיקום קובץ הנתונים.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="limits">
+        <h2>מגבלות ידועות</h2>
+        <ul>
+          <li>במצב פתוח כל מי שברשת יכול לבחור כל שם ולהשתמש בתקציב שלו.</li>
+          <li>בלי דומיין החיבור לא מוצפן.</li>
+          <li>השאלות והתשובות נשמרות בלי הגבלת זמן.</li>
+          <li>קובץ PDF סרוק (תמונה בלי טקסט) לא נקרא.</li>
+          <li>מגבלת הבקשות לדקה נשמרת בזיכרון ומתאפסת כשהשער מופעל מחדש.</li>
+          <li>התראות מופיעות רק במסך הניהול; אין עדיין מייל, Teams או Slack.</li>
+        </ul>
+      </section>
+    </article>
+  </main>
+</div>
+</body>
+</html>

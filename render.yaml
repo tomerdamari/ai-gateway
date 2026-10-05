@@ -1,0 +1,28 @@
+# Render blueprint: one free web service built from the Dockerfile.
+# The free plan has no persistent disk: data resets on every restart, so the demo reloads sample data each start.
+services:
+  - type: web
+    name: ai-gateway
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PUBLIC_DEPLOY        # admin page always needs ADMIN_PASSWORD; no open access
+        value: "1"
+      - key: SEED_DEMO            # load sample teams, users, usage and documents on start
+        value: "1"
+      - key: GATEWAY_DB
+        value: /data/gateway.db
+      - key: SEED_SOURCES_DIR
+        value: /data/sources/it
+      - key: ADMIN_PASSWORD       # shown in the Render dashboard -> Environment
+        generateValue: true
+      - key: DEMO_PASSWORD        # chat password of every demo user
+        generateValue: true
+      - key: ANTHROPIC_API_KEY    # optional: leave empty for a demo that spends nothing
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

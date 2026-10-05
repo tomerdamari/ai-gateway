@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ניהול שער AI</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wide-narrow { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart .grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart .base-line { stroke: var(--axis); stroke-width: 1; }
+  .chart .tick { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+  .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+  .chart .cross { stroke: var(--axis); stroke-width: 1; }
+  .chart .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px; padding: 6px 10px; border-radius: .2rem; white-space: nowrap; transform: translate(-50%, -100%); margin-top: -10px; z-index: 2; }
+  .donut { display: grid; place-items: center; position: relative; margin: .5rem 0 1rem; }
+  .donut svg { width: 180px; height: 180px; }
+  .donut .center { position: absolute; text-align: center; }
+  .donut .center b { display: block; font-size: 1.25rem; font-weight: 500; color: var(--ink); }
+  .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-inline-end: 8px; vertical-align: -1px; }
+  .compact td, .compact th { padding: .5rem .25rem; }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+  .actions { display: flex; gap: 6px; flex-wrap: nowrap; }
+  .actions button { min-height: 30px; padding: .25rem .7rem; font-size: .8125rem; border-radius: .3rem; gap: 5px; }
+  .actions button .icon { width: 14px; height: 14px; }
+  td .stack { display: grid; gap: 2px; }
+  .models { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; }
+  .team-row + .team-row { margin-top: 1rem; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  th button.sort { background: none; border: 0; box-shadow: none; padding: 0; min-height: 0; color: var(--ink); font-weight: 600; gap: 4px; }
+  th button.sort:hover { background: none; color: var(--accent-text); box-shadow: none; }
+  th button.sort[aria-sort]::after { content: ""; border: 4px solid transparent; border-top-color: currentColor; margin-top: 4px; }
+  th button.sort[aria-sort="ascending"]::after { border-top-color: transparent; border-bottom-color: currentColor; margin-top: -4px; }
+  td.name { white-space: nowrap; }
+  .steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; counter-reset: step; }
+  .steps li { display: flex; align-items: center; gap: 12px; counter-increment: step; }
+  .steps li::before { content: counter(step); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface-3); color: var(--ink); font-weight: 600; font-size: .8125rem; }
+  .steps li.done::before { content: ""; background: var(--success-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230b5c44' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 14px no-repeat; }
+  .steps li.done span { color: var(--muted); text-decoration: line-through; }
+  .steps li .grow { flex: 1; }
+  .alert .grow { flex: 1; }
+  input[type=search] { min-width: 220px; }
+  .switch { position: relative; width: 44px; min-height: 24px; height: 24px; padding: 0; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--field-border); box-shadow: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: inset-inline-start .15s; }
+  .switch[aria-checked="true"] { background: var(--success); border-color: var(--success); }
+  .switch[aria-checked="true"]::after { inset-inline-start: 22px; }
+  .switch:hover { background: var(--surface-3); box-shadow: none; }
+  .switch[aria-checked="true"]:hover { background: var(--success); }
+  @media (pointer: coarse) { .switch { min-height: 28px; height: 28px; width: 52px; } .switch::after { width: 22px; height: 22px; } .switch[aria-checked="true"]::after { inset-inline-start: 26px; } }
+  tr.off td { color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8125rem; color: var(--body); margin-bottom: .75rem; }
+  .legend span { display: inline-flex; align-items: center; }
+  .chart .seg { stroke: var(--surface); stroke-width: 1.5; }
+  .chart .day-hit:hover ~ .x { opacity: 1; }
+  .tip.multi { transform: translate(-50%, -100%); white-space: normal; min-width: 170px; }
+  .tip.multi div { display: flex; justify-content: space-between; gap: 12px; }
+  .tip.multi .total { border-top: 1px solid rgba(255, 255, 255, .25); margin-top: 4px; padding-top: 4px; font-weight: 600; }
+  .share-row + .share-row { margin-top: 1rem; }
+  .share-row .head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: .875rem; }
+  .share-row .head b { color: var(--ink); font-weight: 600; }
+  .share-bar { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 8px; font-size: .75rem; color: var(--muted); }
+  .share-bar + .share-bar { margin-top: 4px; }
+  .share-bar .track { height: 8px; background: var(--surface-2); border-radius: 0 4px 4px 0; overflow: hidden; }
+  .share-bar .fill { height: 100%; border-start-end-radius: 4px; border-end-end-radius: 4px; }
+  tr.off td .badge { opacity: .7; }
+  @media (pointer: coarse) { .actions button, button.sm { min-height: 44px; } }
+  .team-row .name { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--ink); }
+  @media (max-width: 1199px) { .wide-narrow { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 991px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 520px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" hidden>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-dollar" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+  <symbol id="i-user-check" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+</svg>
+<div class="wrapper">
+  <nav class="sidebar" id="sidebar" aria-label="ניווט">
+    <a class="sidebar-brand" href="/admin"><span class="logo">AI</span>שער AI</a>
+    <ul class="sidebar-nav">
+      <li class="sidebar-header">ראשי</li>
+      <li><button class="sidebar-link" data-tab="overview" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>סקירה</span></button></li>
+      <li class="sidebar-header">ניהול</li>
+      <li><button class="sidebar-link" data-tab="accounts"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>משתמשים ומפתחות</span></button></li>
+      <li><button class="sidebar-link" data-tab="models"><svg class="icon" aria-hidden="true"><use href="#i-cpu"/></svg><span>מודלים</span></button></li>
+      <li><button class="sidebar-link" data-tab="teams"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>צוותים</span></button></li>
+      <li><button class="sidebar-link" data-tab="sources"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg><span>מקורות מידע</span></button></li>
+      <li class="sidebar-header">בקרה</li>
+      <li><button class="sidebar-link" data-tab="reports"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span>דוחות</span></button></li>
+      <li><button class="sidebar-link" data-tab="security"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span>אבטחה</span></button></li>
+      <li><button class="sidebar-link" data-tab="logs"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>יומן שאלות</span></button></li>
+      <li><button class="sidebar-link" data-tab="audit"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span>יומן שינויים</span></button></li>
+      <li class="sidebar-header">עובדים</li>
+      <li><a class="sidebar-link" href="/"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg><span>מסך הצ'אט</span></a></li>
+      <li><a class="sidebar-link" href="/docs"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span>תיעוד</span></a></li>
+    </ul>
+  </nav>
+
+  <div class="main">
+    <header class="navbar">
+      <button class="toggle" id="toggle" aria-label="הצגה או הסתרה של התפריט"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <span class="muted" id="monthLabel"></span>
+      <div class="navbar-end">
+        <button class="ghost" id="refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>רענון</button>
+        <span class="avatar" aria-hidden="true">מ</span><span>מנהל</span>
+      </div>
+    </header>
+
+    <main class="content">
+    <section id="login" class="card" hidden style="max-width:420px">
+      <h2 style="margin-bottom:12px">כניסה מבחוץ</h2>
+      <p class="muted small">מתוך רשת המשרד אין צורך בסיסמה. מבחוץ צריך את סיסמת המנהל.</p>
+      <form class="row" id="loginForm">
+        <input type="password" id="pw" placeholder="סיסמת מנהל" autocomplete="current-password" required>
+        <button>כניסה</button>
+      </form>
+      <p class="error" id="loginError"></p>
+    </section>
+
+    <!-- overview -->
+    <section data-page="overview" hidden>
+      <div class="page-head">
+        <h1>סקירה</h1>
+        <button id="overviewNewAccount"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>משתמש חדש</button>
+      </div>
+      <div class="grid">
+        <div id="loadState"></div>
+        <div class="card" id="startCard" hidden><header><h2>צעדים ראשונים</h2><span class="muted small" id="startProgress"></span></header><ol class="steps" id="startSteps"></ol></div>
+        <div class="card" id="alertsCard" hidden><header><h2>דורש טיפול</h2><span class="muted small" id="alertsCount"></span></header><div id="alerts"></div></div>
+        <div class="grid kpis" id="kpis"></div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>הוצאה יומית</h2><span class="muted small">30 הימים האחרונים</span></header>
+            <div class="chart" id="dailyChart"></div>
+          </div>
+          <div class="card">
+            <header><h2>הוצאה לפי מודל</h2><span class="muted small">החודש</span></header>
+            <div class="donut" id="modelDonut"></div>
+            <table class="compact"><tbody id="modelLegend"></tbody></table>
+          </div>
+        </div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>המשתמשים שהוציאו הכי הרבה</h2><span class="muted small">החודש</span></header>
+            <div class="table-wrap"><table class="stack-mobile">
+              <thead><tr><th>שם</th><th>צוות</th><th class="num">בקשות</th><th class="num">הוצאה</th><th>מצב תקציב</th></tr></thead>
+              <tbody id="topAccounts"></tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <header><h2>צוותים מול תקציב</h2><span class="muted small">החודש</span></header>
+            <div id="teamSummary"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- accounts -->
+    <section data-page="accounts" hidden>
+      <div class="page-head">
+        <h1>משתמשים ומפתחות</h1>
+        <div class="filters">
+          <input type="search" id="accountFilter" placeholder="חיפוש לפי שם או צוות" aria-label="חיפוש משתמשים">
+          <button id="newAccount"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>משתמש חדש</button>
+        </div>
+      </div>
+      <div class="card">
+        <p class="muted small" style="margin:0 0 12px">"צפי" הוא כמה המשתמש יוציא עד סוף החודש בקצב הנוכחי. "מומלץ" הוא הגבוה מבין הצפי לבין החודש הקודם, ועוד 20% מרווח.</p>
+        <div class="table-wrap"><table class="stack-mobile">
+          <caption class="sr-only">משתמשים ומפתחות</caption>
+          <thead><tr><th><button class="sort" data-sort="name">שם</button></th><th><button class="sort" data-sort="team">צוות</button></th><th>מודלים</th><th><button class="sort" data-sort="spent">הוצאה החודש</button></th><th class="num"><button class="sort" data-sort="projected">צפי</button></th><th class="num">תקציב מומלץ</th><th>גישה</th><th><span class="sr-only">פעולות</span></th></tr></thead>
+          <tbody id="accounts"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- teams -->
+    <section data-page="teams" hidden>
+      <div class="page-head">
+        <h1>צוותים</h1>
+        <button id="newTeam"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>צוות חדש</button>
+      </div>
+      <div class="card">
+        <p class="muted small" style="margin:0 0 12px">כשתקציב הצוות נגמר, כל חברי הצוות נחסמים, גם אם נשאר להם תקציב אישי. תקציב צוות 0 = בלי תקרה לצוות.</p>
+        <div class="table-wrap"><table class="stack-mobile">
+          <thead><tr><th>צוות</th><th class="num">חברים</th><th>הוצאה החודש</th><th class="num">צפי</th><th class="num">תקציב מומלץ</th><th class="num">סכום תקציבי החברים</th><th><span class="sr-only">פעולות</span></th></tr></thead>
+          <tbody id="teams"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- models -->
+    <section data-page="models" hidden>
+      <div class="page-head">
+        <h1>מודלים</h1>
+        <button id="newModel"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>מודל חדש</button>
+      </div>
+      <p class="muted" style="margin:0 0 1rem;max-width:75ch">כל מודל שעובדים ואפליקציות יכולים להשתמש בו. מודל כבוי נחסם אצל כולם מיד, גם אם הותר להם. המחיר קובע איך מחושבת העלות של כל שאלה, אז כדאי לעדכן אותו כשהספק משנה מחיר.</p>
+      <div class="row" id="providerStatus" style="margin-bottom:1.5rem"></div>
+      <div class="card" style="margin-bottom:1.5rem">
+        <header><h2>בחירה אוטומטית של מודל</h2><span class="muted small" id="autoCount"></span></header>
+        <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">כשעובד בוחר "אוטומטי" בצ'אט, השער שולח שאלות קצרות ופשוטות למודל הזול, וקוד, ניתוח, השוואה, טקסט ארוך או שיחה ארוכה למודל החזק. הסיבה לבחירה מוצגת לעובד ונרשמת ביומן.</p>
+        <form class="row" id="autoForm" style="align-items:flex-end;gap:16px">
+          <label class="check"><button type="button" class="switch" role="switch" id="autoEnabled" aria-checked="true" aria-label="בחירה אוטומטית פעילה"></button> פעיל</label>
+          <label class="field">מודל זול<select id="autoCheap"></select></label>
+          <label class="field">מודל חזק<select id="autoStrong"></select></label>
+          <button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button>
+        </form>
+      </div>
+      <div class="grid wide-narrow" style="margin-bottom:1.5rem">
+        <div class="card">
+          <header><h2>הוצאה יומית לפי מודל</h2><span class="muted small">30 הימים האחרונים</span></header>
+          <div class="legend" id="modelDailyLegend"></div>
+          <div class="chart" id="modelDailyChart"></div>
+        </div>
+        <div class="card">
+          <header><h2>בקשות מול הוצאה</h2><span class="muted small">החודש</span></header>
+          <p class="muted small" style="margin:-.5rem 0 1rem">כמה מהבקשות עוברות בכל מודל, וכמה מהכסף. פער גדול = מודל יקר לבקשה.</p>
+          <div class="legend"><span><i class="legend-dot" style="background:var(--axis)"></i>חלק מהבקשות</span><span><i class="legend-dot" style="background:var(--ink)"></i>חלק מההוצאה (בצבע המודל)</span></div>
+          <div id="shareChart"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table class="stack-mobile">
+          <caption class="sr-only">מודלים</caption>
+          <thead><tr><th>פעיל</th><th>מודל</th><th>ספק</th><th class="num">מחיר למיליון טוקנים</th><th class="num">שימוש החודש</th><th class="num">משתמשים</th><th>ברירת מחדל</th><th><span class="sr-only">פעולות</span></th></tr></thead>
+          <tbody id="modelsTable"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- sources -->
+    <section data-page="sources" hidden>
+      <div class="page-head">
+        <h1>מקורות מידע</h1>
+        <button id="newSource"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>מקור חדש</button>
+      </div>
+      <p class="muted" style="margin:0 0 1.5rem;max-width:75ch">מסמכים של החברה שהצ'אט מחפש בהם ומצטט מהם. כל עובד רואה רק מקורות שהצוות שלו קיבל גישה אליהם. אפשר להעלות PDF, ‏Word וקבצי טקסט (Markdown, CSV, HTML ועוד), או לחבר תיקייה בשרת שמסתנכרנת בלחיצה.</p>
+      <div class="card" style="margin-bottom:1.5rem"><div class="row spread" id="sourceStatus"></div></div>
+      <div class="grid" id="sources"></div>
+    </section>
+
+    <!-- reports -->
+    <section data-page="reports" hidden>
+      <div class="page-head">
+        <h1>דוחות</h1>
+        <div class="filters">
+          <select id="reportMonth" aria-label="חודש"></select>
+          <button id="reportCsv"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>הורדה לאקסל</button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="grid kpis" id="reportKpis"></div>
+        <div class="card"><header><h2>לפי צוות</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>צוות</th><th class="num">בקשות</th><th class="num">הוצאה</th><th class="num">תקציב</th><th class="num">ניצול</th></tr></thead><tbody id="reportTeams"></tbody></table></div></div>
+        <div class="card"><header><h2>לפי משתמש</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>שם</th><th>צוות</th><th class="num">בקשות</th><th class="num">טוקנים</th><th class="num">הוצאה</th><th class="num">תקציב</th></tr></thead><tbody id="reportAccounts"></tbody></table></div></div>
+        <div class="card"><header><h2>לפי מודל</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>מודל</th><th class="num">בקשות</th><th class="num">טוקנים</th><th class="num">מתוכם מהמטמון</th><th class="num">הוצאה</th></tr></thead><tbody id="reportModels"></tbody></table></div></div>
+      </div>
+    </section>
+
+    <!-- security -->
+    <section data-page="security" hidden>
+      <div class="page-head">
+        <h1>אבטחה</h1>
+        <select id="eventFilter" aria-label="סינון לפי סוג אירוע"><option value="">כל האירועים</option></select>
+      </div>
+      <div class="grid">
+        <div class="grid kpis" id="secKpis"></div>
+        <div class="card"><header><h2>בדיקת מצב</h2></header><div class="grid" style="gap:10px" id="secChecks"></div></div>
+        <div class="card">
+          <header><h2>אירועי אבטחה</h2><span class="muted small">200 האחרונים</span></header>
+          <p class="muted small" style="margin:-8px 0 12px">שאלות חשודות נרשמות ולא נחסמות, כי עובדים שואלים בצדק על קוד ופקודות. מסמכים חשודים נחסמים בהעלאה, כי הם מגיעים לכל מי שמחפש בהם. תשובה עם פקודה מסוכנת מקבלת אזהרה לעובד.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>מתי</th><th>אירוע</th><th>מי</th><th>פרטים</th></tr></thead>
+            <tbody id="secEvents"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- logs -->
+    <section data-page="logs" hidden>
+      <div class="page-head">
+        <h1>יומן שאלות</h1>
+        <div class="filters">
+          <input type="text" id="logFilter" placeholder="סינון לפי שם, צוות או מודל">
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>מתי</th><th>מי</th><th>צוות</th><th>מודל</th><th class="num">טוקנים נכנסו</th><th class="num">טוקנים יצאו</th><th class="num">עלות</th><th></th></tr></thead>
+          <tbody id="logs"></tbody>
+        </table></div>
+        <p class="muted small" style="margin:12px 0 0">מוצגות 200 השאלות האחרונות. כל השאלות נשמרות במסד הנתונים.</p>
+      </div>
+    </section>
+
+    <!-- audit -->
+    <section data-page="audit" hidden>
+      <div class="page-head"><h1>יומן שינויים</h1></div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>מתי</th><th>פעולה</th><th>פרטים</th></tr></thead>
+          <tbody id="audit"></tbody>
+        </table></div>
+      </div>
+    </section>
+    </main>
+    <footer class="footer"><div class="row spread"><span>שער AI · ניהול שימוש בבינה מלאכותית</span><a href="/">מסך הצ'אט לעובדים</a></div></footer>
+  </div>
+</div>
+
+<dialog id="accountDialog">
+  <form id="accountForm">
+    <h2 id="accountTitle"></h2>
+    <fieldset>
+      <legend>מי</legend>
+      <label class="field" id="nameField">שם (עובד, אפליקציה או לקוח)<input type="text" id="aName" required></label>
+      <label class="field">צוות<select id="aTeam"></select></label>
+    </fieldset>
+    <fieldset>
+      <legend>מגבלות</legend>
+      <div class="grid two" style="gap:12px">
+        <label class="field">תקציב חודשי ($)<input type="number" id="aBudget" min="0" step="0.01" required></label>
+        <label class="field">בקשות לדקה (0 = ללא הגבלה)<input type="number" id="aRpm" min="0" step="1" value="0"></label>
+      </div>
+      <div class="field">מודלים מותרים <span class="muted small">מחיר לכל מיליון טוקנים: נכנס / יוצא</span><div id="aModels"></div></div>
+    </fieldset>
+    <fieldset>
+      <legend>גישה</legend>
+      <label class="field"><span id="pwLabel"></span><input type="password" id="aPassword" autocomplete="new-password" minlength="8"></label>
+      <label class="check" id="keyField"><input type="checkbox" id="aKey"> ליצור מפתח לאפליקציות (API)</label>
+      <div class="field" id="keyRow"></div>
+    </fieldset>
+    <p class="error" id="accountError" role="alert"></p>
+    <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
+<dialog id="teamDialog">
+  <form id="teamForm">
+    <h2 id="teamTitle"></h2>
+    <label class="field" id="tNameField">שם הצוות<input type="text" id="tName" required></label>
+    <label class="field">תקציב חודשי לצוות ($, 0 = ללא תקרה)<input type="number" id="tBudget" min="0" step="0.01" required></label>
+    <p class="error" id="teamError" role="alert"></p>
+    <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
+<dialog id="modelDialog">
+  <form id="modelForm">
+    <h2 id="modelTitle"></h2>
+    <fieldset>
+      <legend>זיהוי</legend>
+      <label class="field" id="mAliasField">כינוי (מה שאפליקציות שולחות בשדה model)<input type="text" id="mAlias" class="ltr" pattern="[a-z0-9][a-z0-9._\-]{1,39}" placeholder="claude-top" required></label>
+      <label class="field">שם לתצוגה (מה שעובדים רואים בצ'אט)<input type="text" id="mLabel" maxlength="60" placeholder="Claude הכי חזק"></label>
+    </fieldset>
+    <fieldset>
+      <legend>אצל הספק</legend>
+      <label class="field">ספק<select id="mProvider"><option value="anthropic">Anthropic ‏(Claude)</option><option value="openai">OpenAI ‏(GPT)</option><option value="gemini">Google ‏(Gemini)</option></select></label>
+      <label class="field">שם המודל אצל הספק<input type="text" id="mModel" class="ltr" placeholder="claude-opus-5-5" required></label>
+      <div class="grid two" style="gap:12px">
+        <label class="field">מחיר לטוקנים נכנסים ($ למיליון)<input type="number" id="mIn" min="0" step="0.001" required></label>
+        <label class="field">מחיר לטוקנים יוצאים ($ למיליון)<input type="number" id="mOut" min="0" step="0.001" required></label>
+      </div>
+      <label class="field">מחיר לטוקנים שנקראים מהמטמון של הספק ($ למיליון; ריק = עשירית ממחיר הנכנסים)<input type="number" id="mCached" min="0" step="0.0001"></label>
+      <p class="muted small" style="margin:0">את השם המדויק והמחירים מעתיקים מעמוד המחירים של הספק.</p>
+    </fieldset>
+    <fieldset>
+      <legend>כשהספק לא זמין</legend>
+      <label class="field">מודל גיבוי<select id="mFallback"></select></label>
+      <p class="muted small" style="margin:0">אם הספק עמוס או לא עונה, השאלה עוברת אוטומטית למודל הגיבוי ומחויבת לפי המחיר שלו. באפליקציות זה עובד רק בין מודלים באותו פורמט: Claude עם Claude, או GPT עם Gemini.</p>
+    </fieldset>
+    <label class="check"><input type="checkbox" id="mEnabled" checked> פעיל: אפשר להשתמש בו</label>
+    <p class="error" id="modelError" role="alert"></p>
+    <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
+<dialog id="sourceDialog">
+  <form id="sourceForm">
+    <h2 id="sourceTitle"></h2>
+    <label class="field" id="sNameField">שם המקור<input type="text" id="sName" required></label>
+    <label class="field">תיאור קצר (העובדים רואים אותו)<input type="text" id="sDesc"></label>
+    <div class="field">סוג
+      <div class="row">
+        <label class="check"><input type="radio" name="sKind" value="upload" checked> קבצים שמעלים כאן</label>
+        <label class="check"><input type="radio" name="sKind" value="folder"> תיקייה בשרת</label>
+        <label class="check"><input type="radio" name="sKind" value="mcp"> שרת MCP</label>
+      </div>
+    </div>
+    <label class="field" id="sPathField" hidden>נתיב התיקייה בשרת<input type="text" id="sPath" class="ltr" placeholder="/sources/policies"></label>
+    <fieldset id="sMcpFields" hidden>
+      <legend>חיבור לשרת MCP</legend>
+      <p class="muted small" style="margin:0">MCP הוא דרך סטנדרטית שבה מערכות (CRM, ויקי, מערכת כרטיסים) חושפות מידע לבינה מלאכותית. מכניסים את הכתובת שהמערכת נותנת.</p>
+      <label class="field">כתובת השרת<input type="text" id="sMcpUrl" class="ltr" placeholder="https://crm.example.com/mcp"></label>
+      <label class="field">מפתח גישה (אם השרת דורש)<input type="password" id="sMcpToken" class="ltr" autocomplete="off"></label>
+      <div class="row"><button type="button" class="ghost" id="sMcpTest">בדיקת חיבור</button><span class="small" id="sMcpInfo" role="status"></span></div>
+      <div class="field">איך להשתמש בו
+        <label class="check"><input type="radio" name="sMode" value="search" checked> חיפוש חי: בכל שאלה, לשאול את השרת</label>
+        <label class="check"><input type="radio" name="sMode" value="resources"> סנכרון: להעתיק את המסמכים שלו לאינדקס</label>
+      </div>
+      <div class="grid two" style="gap:12px" id="sToolFields">
+        <label class="field">כלי החיפוש<select id="sTool"></select></label>
+        <label class="field">השדה שמקבל את השאלה<select id="sArg"></select></label>
+      </div>
+    </fieldset>
+    <div class="field">מי רשאי לחפש במקור הזה
+      <label class="check"><input type="checkbox" id="sEveryone"> כל העובדים</label>
+      <div id="sTeams"></div>
+    </div>
+    <p class="error" id="sourceError" role="alert"></p>
+    <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
+  </form>
+</dialog>
+<input type="file" id="fileInput" multiple hidden accept=".txt,.md,.csv,.json,.html,.htm,.log,.xml,.yaml,.yml,.pdf,.docx">
+
+<dialog id="keyDialog">
+  <div class="grid" style="gap:14px">
+    <h2>המפתח החדש</h2>
+    <p class="small" style="margin:0">המפתח מוצג <b>פעם אחת בלבד</b>. השער שומר רק טביעה מוצפנת שלו, ולכן אי אפשר לשחזר אותו. העתיקו ומסרו אותו עכשיו.</p>
+    <div class="secret" id="keyValue"></div>
+    <div class="row"><button id="copyKey"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span>העתקה</span></button><button type="button" class="ghost" data-close>סגירה</button></div>
+  </div>
+</dialog>
+
+<script src="/ui.js"></script>
+<script src="/admin.js"></script>
+</body>
+</html>
