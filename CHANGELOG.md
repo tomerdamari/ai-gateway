@@ -1,5 +1,13 @@
 # שינויים / Changelog
 
+## 1.0.4 — 2026-10-05
+
+- הלוגו בלי ריבוע: רק השער והלהבה, באדום.
+
+---
+
+- The logo without the square: just the gate and the flame, in red.
+
 ## 1.0.3 — 2026-10-05
 
 - הלוגו אדום.
