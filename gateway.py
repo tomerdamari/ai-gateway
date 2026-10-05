@@ -61,6 +61,10 @@ PAGES = {"/": ("admin.html", "text/html"), "/admin": ("admin.html", "text/html")
          "/ui.js": ("ui.js", "text/javascript"),
          "/logo.svg": ("logo.svg", "image/svg+xml"),
          "/docs.js": ("docs.js", "text/javascript"),
+         "/en-admin.js": ("en-admin.js", "text/javascript"),
+         "/en-chat.js": ("en-chat.js", "text/javascript"),
+         "/en-docs.js": ("en-docs.js", "text/javascript"),
+         "/i18n.js": ("i18n.js", "text/javascript"),
          "/fonts/heebo-hebrew.woff2": ("fonts/heebo-hebrew.woff2", "font/woff2"), "/fonts/heebo-latin.woff2": ("fonts/heebo-latin.woff2", "font/woff2"),
          "/chat.js": ("chat.js", "text/javascript"), "/admin.js": ("admin.js", "text/javascript")}
 # Scripts only from our own files: an injected <script> or onclick= in any text we show can't run.

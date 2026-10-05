@@ -63,7 +63,7 @@ data = {"admin": admin, "people": people, "me": me, "conversations": conversatio
 shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(OUT)
 shutil.copytree(os.path.join(ROOT, "fonts"), os.path.join(OUT, "fonts"))
-links = [('href="/#', 'href="index.html#'), ('src="/docs.js"', 'src="docs.js"'), ('href="/logo.svg"', 'href="logo.svg"'), ('src="/logo.svg"', 'src="logo.svg"'), ('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="index.html"'), ('href="/docs"', 'href="docs.html"'),
+links = [('href="/#', 'href="index.html#'), ('src="/en-admin.js"', 'src="en-admin.js"'), ('src="/en-chat.js"', 'src="en-chat.js"'), ('src="/en-docs.js"', 'src="en-docs.js"'), ('src="/i18n.js"', 'src="i18n.js"'), ('src="/docs.js"', 'src="docs.js"'), ('href="/logo.svg"', 'href="logo.svg"'), ('src="/logo.svg"', 'src="logo.svg"'), ('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="index.html"'), ('href="/docs"', 'href="docs.html"'),
          ('href="/chat"', 'href="chat.html"'), ('href="/"', 'href="index.html"'), ('src="/ui.js"', 'src="ui.js"'),
          ('src="/admin.js"', 'src="admin.js"'), ('src="/chat.js"', 'src="chat.js"')]
 for src, dst in (("admin.html", "index.html"), ("admin.html", "admin.html"), ("chat.html", "chat.html"), ("docs.html", "docs.html")):
@@ -72,7 +72,7 @@ for src, dst in (("admin.html", "index.html"), ("admin.html", "admin.html"), ("c
         html = html.replace(a, b)
     html = html.replace('<script src="ui.js"></script>', '<script src="data.js"></script>\n<script src="mock.js"></script>\n<script src="ui.js"></script>')
     open(os.path.join(OUT, dst), "w", encoding="utf-8").write(html)
-for name in ("ui.js", "admin.js", "chat.js", "docs.js"):
+for name in ("ui.js", "admin.js", "chat.js", "docs.js", "en-admin.js", "en-chat.js", "en-docs.js", "i18n.js"):
     js = open(os.path.join(ROOT, name), encoding="utf-8").read().replace('location.href = "/chat"', 'location.href = "chat.html"')
     open(os.path.join(OUT, name), "w", encoding="utf-8").write(js)
 css = open(os.path.join(ROOT, "style.css"), encoding="utf-8").read().replace('url("/fonts/', 'url("fonts/')

@@ -6,6 +6,10 @@
 <title>FireGate · צ'אט</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
+<script src="/en-admin.js"></script>
+<script src="/en-chat.js"></script>
+<script src="/en-docs.js"></script>
+<script src="/i18n.js"></script>
 <style>
   body { height: 100vh; height: 100dvh; overflow: hidden; }
   .wrapper { height: 100vh; height: 100dvh; }
@@ -131,7 +135,7 @@
     <header class="navbar">
       <button class="toggle" id="menu" aria-label="הצגה או הסתרה של התפריט"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
       <h1 id="convTitle">שיחה חדשה</h1>
-      <div class="navbar-end"><span class="muted small" id="topWho"></span></div>
+      <div class="navbar-end"><button class="ghost sm lang-switch" data-lang-switch lang="en">English</button><span class="muted small" id="topWho"></span></div>
     </header>
     <div class="scroll" id="scroll">
       <div class="welcome" id="welcome">

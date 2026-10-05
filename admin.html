@@ -6,6 +6,10 @@
 <title>FireGate · ניהול</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
+<script src="/en-admin.js"></script>
+<script src="/en-chat.js"></script>
+<script src="/en-docs.js"></script>
+<script src="/i18n.js"></script>
 <style>
   .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -164,6 +168,7 @@
       <button class="toggle" id="toggle" aria-label="הצגה או הסתרה של התפריט"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
       <nav class="crumbs" aria-label="מיקום"><ol id="crumbs"></ol></nav>
       <div class="navbar-end">
+        <button class="ghost sm lang-switch" data-lang-switch lang="en">English</button>
         <button class="ghost" id="refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>רענון</button>
         <span class="avatar" aria-hidden="true">מ</span><span>מנהל</span>
       </div>
