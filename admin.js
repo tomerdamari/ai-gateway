@@ -56,27 +56,39 @@ function showLogin(msg) {
 }
 
 // ---------- tabs ----------
-let tab = "overview";
+let tab = "overview", userName = null;  // userName: whose page "user" shows
 try { tab = sessionStorage.getItem("tab") || "overview"; } catch {}
+if (tab === "user") tab = "accounts";  // a person's page comes back only through its address (#user=<name>)
 const hashTab = () => location.hash.slice(1);
-if (document.querySelector(`[data-page="${hashTab()}"]`)) tab = hashTab();  // links like /#models from the docs page
-addEventListener("hashchange", () => { if (document.querySelector(`[data-page="${hashTab()}"]`)) showTab(hashTab()); });
+const hashUser = () => { const h = hashTab(); try { return h.startsWith("user=") ? decodeURIComponent(h.slice(5)) : null; } catch { return null; } };
+const isPage = h => /^[a-z]+$/.test(h) && h !== "user" && !!document.querySelector(`[data-page="${h}"]`);
+// links like /#models from the docs page, and #user=<name> for one person
+if (hashUser()) { tab = "user"; userName = hashUser(); } else if (isPage(hashTab())) tab = hashTab();
+addEventListener("hashchange", () => {
+  if (hashUser()) { userName = hashUser(); showTab("user"); } else if (isPage(hashTab())) showTab(hashTab());
+});
+// a person's page gets its own history entry, so Back returns to the list it was opened from
+const userHash = name => "#user=" + encodeURIComponent(name);
+const userLink = name => el("a", { className: "user-link", href: userHash(name), textContent: name });
 function showTab(name) {
   tab = name;
-  try { sessionStorage.setItem("tab", name); } catch {}
-  document.querySelectorAll(".sidebar [data-tab]").forEach(b => b.dataset.tab === name ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  if (name !== "user") try { sessionStorage.setItem("tab", name); } catch {}
+  const menu = name === "user" ? "accounts" : name;
+  document.querySelectorAll(".sidebar [data-tab]").forEach(b => b.dataset.tab === menu ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   const changed = document.querySelector(`[data-page="${name}"]`)?.hidden;
   document.querySelectorAll("[data-page]").forEach(s => s.hidden = s.dataset.page !== name);
   if (changed) scrollTo(0, 0);
   renderCrumbs(name);
-  if (hashTab() !== name) history.replaceState(null, "", "#" + name);
+  const want = name === "user" ? userHash(userName) : "#" + name;
+  if (location.hash !== want) history.replaceState(null, "", want);
   if (name === "overview") { drawDaily(); drawBurn(); }
   if (name === "models") drawModelCharts();
   if (name === "reports") loadReport();
+  if (name === "user") loadUser();
 }
-// breadcrumbs from the side menu itself: FireGate › section › page
+// breadcrumbs from the side menu itself: FireGate › section › page (› person, on a person's page)
 function renderCrumbs(name) {
-  const btn = document.querySelector(`.sidebar [data-tab="${name}"]`);
+  const btn = document.querySelector(`.sidebar [data-tab="${name === "user" ? "accounts" : name}"]`);
   if (!btn) return;
   let header = btn.closest("li");
   while (header && !header.classList.contains("sidebar-header")) header = header.previousElementSibling;
@@ -85,8 +97,10 @@ function renderCrumbs(name) {
   $("crumbs").replaceChildren(
     el("li", {}, home),
     ...(group && group !== I18N.t("ראשי") ? [el("li", { className: "group", textContent: group })] : []),
-    el("li", {}, el("span", { ariaCurrent: "page", textContent: page })));
-  document.title = `FireGate · ${page}`;
+    ...(name === "user"
+      ? [el("li", {}, el("a", { href: "#accounts", textContent: page })), el("li", {}, el("span", { ariaCurrent: "page", textContent: userName }))]
+      : [el("li", {}, el("span", { ariaCurrent: "page", textContent: page }))]));
+  document.title = `FireGate · ${name === "user" ? userName : page}`;
 }
 document.querySelectorAll(".sidebar [data-tab]").forEach(b => b.onclick = () => {
   showTab(b.dataset.tab);
@@ -107,13 +121,13 @@ function icon(name) {
 }
 // stat card: title and big value beside a soft icon tile, then a coloured change and what it's compared with,
 // and optionally a sparkline of the last 14 days ("cost" or "requests") along the bottom
-function statCard(title, iconName, value, change, sub, sparkKey) {
+function statCard(title, iconName, value, change, sub, sparkKey, days = lastDays(14)) {
   return el("div", { className: "card stat-card" },
     el("div", { className: "top" },
       el("div", {}, el("h2", { className: "card-title", textContent: title }), el("div", { className: "stat-value" }, num(value))),
       el("div", { className: "stat" }, icon(iconName))),
     el("div", { className: "stat-delta" }, change || null, el("span", { className: "muted", textContent: sub })),
-    sparkKey ? sparkline(lastDays(14).map(d => d[sparkKey]), sparkKey === "cost" ? "var(--chart)" : "var(--s3)") : null);
+    sparkKey ? sparkline(days.map(d => d[sparkKey]), sparkKey === "cost" ? "var(--chart)" : "var(--s3)") : null);
 }
 // decoration only: the numbers are in the card as text, so screen readers skip it
 function sparkline(values, color) {
@@ -249,8 +263,8 @@ const run = (fn, done) => async () => { try { const r = await fn(); if (r === fa
 
 // ---------- charts ----------
 let daily = [];
-function lastDays(n) {
-  const byDay = Object.fromEntries(daily.map(d => [d.day, d]));
+function lastDays(n, rows = daily) {
+  const byDay = Object.fromEntries(rows.map(d => [d.day, d]));
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400000);
@@ -259,12 +273,10 @@ function lastDays(n) {
   }
   return out;
 }
-function drawDaily() {
-  const box = $("dailyChart");
+function drawDaily(box = $("dailyChart"), days = lastDays(30)) {
   const W = box.clientWidth;
   if (!W) return;
   const H = 260, padL = 48, padB = 26, padT = 12, padR = 8;
-  const days = lastDays(30);
   const max = Math.max(...days.map(d => d.cost));
   if (!max) { box.replaceChildren(el("div", { className: "empty", textContent: "עוד אין שימוש ב-30 הימים האחרונים" })); return; }
   // round axis steps: 1, 2, 2.5 or 5 times a power of ten, four gridlines
@@ -288,7 +300,8 @@ function drawDaily() {
     if (text !== undefined) n.textContent = text;
     parent.append(n); return n;
   };
-  const grad = add("linearGradient", { id: "areaFill", x1: 0, y1: 0, x2: 0, y2: 1 }, undefined, add("defs", {}));
+  const fillId = "areaFill-" + box.id;  // one per chart: a gradient inside a hidden page doesn't paint
+  const grad = add("linearGradient", { id: fillId, x1: 0, y1: 0, x2: 0, y2: 1 }, undefined, add("defs", {}));
   add("stop", { offset: "0%", "stop-color": "var(--chart)", "stop-opacity": .25 }, undefined, grad);
   add("stop", { offset: "100%", "stop-color": "var(--chart)", "stop-opacity": 0 }, undefined, grad);
   for (let i = 0; i <= lines; i++) {
@@ -298,7 +311,7 @@ function drawDaily() {
   }
   const pts = days.map((d, i) => [x(i), y(d.cost)]);
   const line = pts.map(([px, py], i) => (i ? "L" : "M") + px.toFixed(1) + "," + py.toFixed(1)).join(" ");
-  add("path", { d: `${line} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)} Z`, fill: "url(#areaFill)" });
+  add("path", { d: `${line} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)} Z`, fill: `url(#${fillId})` });
   add("path", { d: line, class: "line" });
   days.forEach((d, i) => {
     if (i % 5 === 0 || i === days.length - 1)
@@ -325,7 +338,7 @@ function drawDaily() {
   box.replaceChildren(svg, tip);
 }
 let resizeTimer;
-addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawDaily(); drawBurn(); drawModelCharts(); }, 120); });
+addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawDaily(); drawBurn(); drawModelCharts(); if (tab === "user") drawUserChart(); }, 120); });
 
 // cumulative spend this month against last month and against the sum of team budgets, with a straight-line projection
 let activity = null, teamBudgetTotal = 0;
@@ -531,15 +544,15 @@ async function load() {
   for (const a of ov.accounts) {
     const lv = level(a.spent, a.budget);
     if (lv) alerts.push([lv, lv === "bad" ? `${a.name}: התקציב האישי נגמר (${money(a.spent)} מתוך ${money(a.budget)}). חסום עד 1 לחודש או עד הגדלת תקציב.`
-      : `${a.name}: עבר ${Math.round(a.spent / a.budget * 100)}% מהתקציב האישי.`]);
-    if (a.locked) alerts.push(["warn", `${a.name}: החשבון נעול אחרי 5 סיסמאות שגויות. איפוס סיסמה משחרר אותו.`]);
+      : `${a.name}: עבר ${Math.round(a.spent / a.budget * 100)}% מהתקציב האישי.`, null, a.name]);
+    if (a.locked) alerts.push(["warn", `${a.name}: החשבון נעול אחרי 5 סיסמאות שגויות. איפוס סיסמה משחרר אותו.`, null, a.name]);
     // API keys: replace before the expiry date (14 days ahead), and every 90 days in any case
     const now = Date.now() / 1000, days = s => Math.max(Math.round(s / 86400), 0);
-    if (a.key_expires && a.key_expires < now) alerts.push(["bad", `${a.name}: המפתח לאפליקציות פג תוקף, ולכן הבקשות שלו נחסמות. צריך להנפיק מפתח חדש.`]);
-    else if (a.key_expires && a.key_expires - now < 14 * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות יפוג בעוד ${days(a.key_expires - now)} ימים. כדאי להנפיק מפתח חדש ולהעביר אותו לאפליקציה.`]);
-    else if (a.key_created && now - a.key_created > 90 * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות בשימוש כבר ${days(now - a.key_created)} ימים. מומלץ להחליף מפתח כל 90 יום.`]);
+    if (a.key_expires && a.key_expires < now) alerts.push(["bad", `${a.name}: המפתח לאפליקציות פג תוקף, ולכן הבקשות שלו נחסמות. צריך להנפיק מפתח חדש.`, null, a.name]);
+    else if (a.key_expires && a.key_expires - now < 14 * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות יפוג בעוד ${days(a.key_expires - now)} ימים. כדאי להנפיק מפתח חדש ולהעביר אותו לאפליקציה.`, null, a.name]);
+    else if (a.key_created && now - a.key_created > 90 * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות בשימוש כבר ${days(now - a.key_created)} ימים. מומלץ להחליף מפתח כל 90 יום.`, null, a.name]);
   }
-  for (const s of security.spikes || []) alerts.push(["bad", `${s.name}: הוצאה חריגה בשעה האחרונה (${money(s.hour)}, בדרך כלל ${money(s.average)} לשעה). כדאי לבדוק שהמפתח לא דלף.`, "security"]);
+  for (const s of security.spikes || []) alerts.push(["bad", `${s.name}: הוצאה חריגה בשעה האחרונה (${money(s.hour)}, בדרך כלל ${money(s.average)} לשעה). כדאי לבדוק שהמפתח לא דלף.`, null, s.name]);
   if (auditCheck && !auditCheck.ok) alerts.push(["bad", "מישהו שינה או מחק שורות ביומן השינויים מחוץ למערכת.", "security"]);
   for (const t of ov.teams) {
     const lv = level(t.spent, t.budget);
@@ -556,9 +569,10 @@ async function load() {
   const waiting = alerts.length + steps.length - doneCount;
   $("todoCount").hidden = !waiting;
   $("todoCount").textContent = waiting;
-  $("alerts").replaceChildren(...alerts.map(([lv, text, page]) => el("div", { className: "alert " + lv }, icon("alert"),
+  $("alerts").replaceChildren(...alerts.map(([lv, text, page, who]) => el("div", { className: "alert " + lv }, icon("alert"),
     el("span", { className: "grow", textContent: text }),
-    page ? el("button", { className: "link small", textContent: "לפרטים", onclick: () => showTab(page) }) : null)));
+    page ? el("button", { className: "link small", textContent: "לפרטים", onclick: () => showTab(page) })
+      : who ? el("button", { className: "link small", textContent: "לפרטים", onclick: () => { location.hash = userHash(who); } }) : null)));
   if (!alerts.length) $("alerts").append(el("div", { className: "alert good" }, icon("check"), el("span", { textContent: "הכל תקין: אין חריגות תקציב ואין הערות אבטחה פתוחות." })));
 
   drawDaily();
@@ -577,7 +591,7 @@ async function load() {
   $("topAccounts").replaceChildren(...top.map(a => {
     const lv = level(a.spent, a.budget), pct = a.budget ? Math.round(a.spent / a.budget * 100) : 0;
     return el("tr", {},
-      el("td", { className: "name" }, el("b", { textContent: a.name })),
+      el("td", { className: "name" }, userLink(a.name)),
       el("td", { textContent: a.team || "—", className: a.team ? "" : "muted", dataset: { label: "צוות" } }),
       el("td", { className: "num", dataset: { label: "בקשות" } }, num((reqBy[a.name] || 0).toLocaleString(I18N.locale))),
       el("td", { className: "num", dataset: { label: "הוצאה" } }, num(money(a.spent))),
@@ -626,7 +640,7 @@ function renderAccounts() {
   document.querySelectorAll("button.sort").forEach(b => b.dataset.sort === key
     ? b.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending") : b.removeAttribute("aria-sort"));
   $("accounts").replaceChildren(...rows.map(a => el("tr", {},
-    el("td", { className: "name" }, el("b", { textContent: a.name })),
+    el("td", { className: "name" }, userLink(a.name)),
     el("td", { textContent: a.team || "—", className: a.team ? "" : "muted", dataset: { label: "צוות" } }),
     el("td", { dataset: { label: "מודלים" } }, el("div", { className: "models", title: a.models.join(", ") },
       ...a.models.slice(0, 2).map(m => el("span", { className: "badge", textContent: m })),
@@ -685,7 +699,7 @@ function renderLogs() {
   const pretty = s => { try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } };
   $("logs").replaceChildren(...rows.map(l => el("tr", {},
     el("td", {}, whenEl(l.ts)),
-    el("td", { textContent: l.name }),
+    el("td", {}, l.name === "(בדיקת מודל)" ? l.name : userLink(l.name)),
     el("td", { textContent: l.team || "—", className: l.team ? "" : "muted" }),
     el("td", {}, el("span", { className: "badge", textContent: l.model })),
     el("td", { className: "num" }, num(l.tokens_in.toLocaleString())),
@@ -696,6 +710,151 @@ function renderLogs() {
   if (!rows.length) $("logs").append(el("tr", {}, el("td", { colSpan: 8, className: "empty", textContent: "אין שאלות" })));
 }
 $("logFilter").oninput = renderLogs;
+
+// ---------- one person's page: everything they did ----------
+let userData = null, userTab = "requests";
+async function loadUser() {
+  const name = userName;
+  if (!userData || userData.account.name !== name) {  // another person: don't show the previous one's numbers meanwhile
+    userData = null;
+    $("userHead").replaceChildren(el("h1", { textContent: name }));
+    $("userBody").hidden = false;
+    $("userKpis").replaceChildren(...[1, 2, 3, 4].map(() => el("div", { className: "skeleton" })));
+    for (const id of ["userChart", "userModels", "userPanel"]) $(id).replaceChildren();
+  }
+  let data;
+  try { data = await api("account?name=" + encodeURIComponent(name)); }
+  catch (e) {
+    if (name !== userName) return;
+    if (e.message === "not found") {
+      $("userBody").hidden = true;
+      $("userHead").replaceChildren(el("div", {}, el("h1", { textContent: name }),
+        el("p", { className: "muted", textContent: "המשתמש לא נמצא." })),
+        el("a", { href: "#accounts", textContent: "חזרה למשתמשים" }));
+    } else fail(e);
+    return;
+  }
+  if (name !== userName || tab !== "user") return;  // the admin moved on while this loaded
+  userData = data;
+  renderUser();
+}
+function renderUser() {
+  const d = userData, a = d.account, live = state.accounts.find(x => x.name === a.name);
+  $("userBody").hidden = false;
+  const now = Date.now() / 1000;
+  $("userHead").replaceChildren(
+    el("div", {}, el("h1", { textContent: a.name }), el("div", { className: "user-badges" },
+      el("span", { className: "badge", textContent: a.team ? `צוות ${a.team}` : "בלי צוות" }),
+      a.archived ? el("span", { className: "badge bad", textContent: "בארכיון" })
+        : a.locked ? el("span", { className: "badge bad", textContent: "נעול" }) : el("span", { className: "badge good", textContent: "פעיל" }),
+      a.has_password ? el("span", { className: "badge", textContent: "צ'אט" }) : null,
+      a.key_prefix ? el("span", { className: "badge ltr", textContent: a.key_prefix + "…" }) : null,
+      a.key_expires ? el("span", { className: "badge " + (a.key_expires < now ? "bad" : ""), textContent: `המפתח בתוקף עד ${dateOnly(a.key_expires)}` }) : null,
+      a.rpm ? el("span", { className: "badge", textContent: a.rpm + " לדקה" }) : null,
+      a.daily_tokens ? el("span", { className: "badge", textContent: `${a.daily_tokens} טוקנים ליום` }) : null)),
+    ...(live ? [el("div", { className: "actions" },
+      el("button", { className: "ghost", textContent: "עריכה", onclick: () => openAccount(live) }),
+      archiveButton("account", a.name, {}, a.name, `להעביר את ${a.name} לארכיון?`,
+        "הכניסה לצ'אט והמפתח יפסיקו לעבוד מיד. היסטוריית השאלות וההוצאה נשארת ביומן ובדוחות."))] : []));
+  if (a.archived) $("userHead").append(el("div", { className: "alert warn", style: "flex-basis:100%" }, icon("alert"),
+    el("span", { className: "grow", textContent: "המשתמש בארכיון: הכניסה לצ'אט והמפתח לא עובדים. כל ההיסטוריה נשמרת, ואפשר לשחזר אותו מעמוד הארכיון." })));
+
+  // KPIs: like the dashboard's, for this person; this week against the week before
+  const days14 = lastDays(14, d.daily), sum = (arr, k) => arr.reduce((t, x) => t + x[k], 0);
+  const thisWeek = days14.slice(7), prevWeek = days14.slice(0, 7), m = d.this_month;
+  const spend = statCard("הוצאה החודש", "dollar", money(a.spent), change(sum(thisWeek, "cost"), sum(prevWeek, "cost"), false), "השבוע לעומת השבוע הקודם", "cost", days14);
+  spend.insertBefore(meter(a.spent, a.budget), spend.querySelector(".spark"));
+  $("userKpis").replaceChildren(spend,
+    statCard("צפי לסוף החודש", "trend", money(a.projected), change(a.projected, d.last_month.cost, false), `לעומת חודש קודם (${money(d.last_month.cost)})`, "cost", days14),
+    statCard("בקשות החודש", "activity", m.requests.toLocaleString(I18N.locale), change(sum(thisWeek, "requests"), sum(prevWeek, "requests"), true), "השבוע לעומת השבוע הקודם", "requests", days14),
+    statCard("טוקנים החודש", "cpu", (m.tokens_in + m.tokens_out).toLocaleString(I18N.locale), null,
+      `${m.tokens_in.toLocaleString("en-US")} נכנסו · ${m.tokens_out.toLocaleString("en-US")} יצאו`));
+  drawUserChart();
+
+  // models this month: share of this person's spend, in each model's own colour
+  const total = d.models.reduce((t, x) => t + x.cost, 0);
+  $("userModels").replaceChildren(...d.models.map(x => {
+    const alias = aliasOf(x.model), p = total ? Math.round(x.cost / total * 100) : 0;
+    return el("div", { className: "share-row" },
+      el("div", { className: "head" },
+        el("span", {}, el("i", { className: "legend-dot", style: `background:${alias ? modelColor(alias) : "var(--muted)"}` }),
+          el("b", { className: alias ? "" : "ltr", textContent: alias ? modelName(alias) : x.model })),
+        el("span", { className: "muted small", textContent: `${x.requests.toLocaleString("en-US")} בקשות` })),
+      el("div", { className: "share-bar" },
+        el("div", { className: "track", title: `${p}%` }, el("div", { className: "fill", style: `width:${Math.max(p, 1)}%;background:${alias ? modelColor(alias) : "var(--muted)"}` })),
+        num(money(x.cost))));
+  }));
+  if (!d.models.length) $("userModels").replaceChildren(el("div", { className: "empty", textContent: "אין שימוש החודש" }));
+
+  const counts = { requests: d.requests.length, security: d.events.length + d.blocked.length, audit: d.audit.length, chats: d.conversations.count };
+  document.querySelectorAll("#userTabs [data-utab]").forEach(b => {
+    b.setAttribute("aria-selected", b.dataset.utab === userTab ? "true" : "false");
+    b.tabIndex = b.dataset.utab === userTab ? 0 : -1;
+    b.querySelector(".badge")?.remove();
+    b.append(el("span", { className: "badge", textContent: String(counts[b.dataset.utab]) }));
+  });
+  renderUserPanel();
+}
+function drawUserChart() {
+  if (userData && !$("userBody").hidden) drawDaily($("userChart"), lastDays(30, userData.daily));
+}
+const listTable = (heads, rows, empty) => rows.length
+  ? el("div", { className: "table-wrap" }, el("table", { className: "stack-mobile" },
+    el("thead", {}, el("tr", {}, ...heads.map(h => el("th", { className: h.num ? "num" : "", textContent: h.text || h })))),
+    el("tbody", {}, ...rows)))
+  : el("div", { className: "empty", textContent: empty });
+function renderUserPanel() {
+  const d = userData, p = $("userPanel");
+  if (userTab === "requests") {
+    p.replaceChildren(listTable(["מתי", "מודל", { text: "טוקנים", num: true }, { text: "עלות", num: true }, "שאלה ותשובה"], d.requests.map(r => el("tr", {},
+      el("td", { dataset: { label: "מתי" } }, whenEl(r.ts)),
+      el("td", { dataset: { label: "מודל" } }, el("span", { className: "badge ltr", textContent: r.model })),
+      el("td", { className: "num", dataset: { label: "טוקנים" } }, num(`${r.tokens_in.toLocaleString("en-US")} / ${r.tokens_out.toLocaleString("en-US")}`)),
+      el("td", { className: "num", dataset: { label: "עלות" } }, num(money(r.cost))),
+      el("td", { dataset: { label: "" } }, el("details", { className: "qa" },
+        el("summary", { className: "small", dir: "auto", textContent: r.question || "שאלה ותשובה" }),
+        el("span", { className: "label", textContent: "שאלה" }), el("pre", { textContent: r.question || "—" }),
+        el("span", { className: "label", textContent: "תשובה" }), el("pre", { textContent: r.answer || "—" }),
+        r.request_id ? el("span", { className: "label ltr", textContent: "id: " + r.request_id }) : null)))), "אין בקשות עדיין"),
+      d.requests.length ? el("p", { className: "muted small", style: "margin:12px 0 0", textContent: `מוצגות ${d.requests.length} הבקשות האחרונות. כל השאלות נשמרות במסד הנתונים.` }) : "");
+  } else if (userTab === "security") {
+    p.replaceChildren(
+      el("h3", { textContent: "אירועי אבטחה" }),
+      listTable(["מתי", "אירוע", "פרטים"], d.events.map(e => el("tr", {},
+        el("td", { dataset: { label: "מתי" } }, whenEl(e.ts)),
+        el("td", { dataset: { label: "אירוע" } }, el("span", { className: "badge " + (secLabels.bad.has(e.kind) ? "bad" : e.kind === "sensitive-data-masked" ? "" : "warn"),
+          textContent: secLabels.kinds[e.kind] || e.kind })),
+        el("td", { className: "small", dataset: { label: "פרטים" } }, secDetail(e)))), "אין אירועים"),
+      el("h3", { textContent: "בקשות שנחסמו" }),
+      listTable(["מתי", "סיבה", "מודל", "קטע מהשאלה"], d.blocked.map(b => el("tr", {},
+        el("td", { dataset: { label: "מתי" } }, whenEl(b.ts)),
+        el("td", { dataset: { label: "סיבה" } }, el("span", { className: "badge " + (b.reason.startsWith("policy") ? "bad" : "warn"), textContent: secLabels.reasons[b.reason] || b.reason })),
+        el("td", { className: "small ltr", dataset: { label: "מודל" }, textContent: b.model || "—" }),
+        el("td", { className: "small muted", dir: "auto", dataset: { label: "קטע מהשאלה" }, textContent: b.excerpt || "" }))), "לא נחסמו בקשות"));
+  } else if (userTab === "audit") {
+    p.replaceChildren(listTable(["מתי", "פעולה", "פרטים"], d.audit.map(x => el("tr", {},
+      el("td", { dataset: { label: "מתי" } }, whenEl(x.ts)),
+      el("td", { dataset: { label: "פעולה" }, textContent: actionNames[x.action] || x.action }),
+      el("td", { className: "small", dataset: { label: "פרטים" } }, describe(x.detail)))), "אין שינויים עדיין"));
+  } else {
+    const c = d.conversations;
+    p.replaceChildren(
+      el("p", { className: "muted small", style: "margin:0 0 12px", textContent: c.archived ? `${c.count} שיחות שמורות · ${c.archived} בארכיון` : `${c.count} שיחות שמורות` }),
+      c.recent.length ? el("ul", { className: "chat-list" }, ...c.recent.map(x => el("li", {},
+        el("span", { dir: "auto", textContent: x.title || "—" }), whenEl(x.updated))))
+        : el("div", { className: "empty", textContent: "אין שיחות שמורות" }));
+  }
+}
+document.querySelectorAll("#userTabs [data-utab]").forEach(b => b.onclick = () => { userTab = b.dataset.utab; if (userData) renderUser(); });
+// arrow keys move between the tabs, as screen-reader users expect
+$("userTabs").onkeydown = e => {
+  if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  const tabs = [...$("userTabs").querySelectorAll("[data-utab]")], i = tabs.findIndex(b => b.dataset.utab === userTab);
+  const step = (e.key === "ArrowLeft") === (document.documentElement.dir === "rtl") ? 1 : -1;
+  const next = tabs[(i + step + tabs.length) % tabs.length];
+  next.click();
+  next.focus();
+};
 
 // ---------- dialogs ----------
 let editingAccount = null;

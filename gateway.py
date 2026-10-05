@@ -46,7 +46,7 @@ if os.path.exists(_env):
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip())
 
-VERSION = "1.0.4"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
+VERSION = "1.0.5"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
 DB =os.environ.get("GATEWAY_DB", "gateway.db")
 # Admin from a private-network address (office LAN, this machine) needs no password.
 # From anywhere else: this password, or no access at all when it's empty.
@@ -773,6 +773,70 @@ def month_bounds(t=None):
     start = time.mktime((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1))
     y, m = (lt.tm_year + 1, 1) if lt.tm_mon == 12 else (lt.tm_year, lt.tm_mon + 1)
     return start, time.mktime((y, m, 1, 0, 0, 0, 0, 0, -1))
+
+
+def excerpt(raw, question, n=2000):
+    """Readable start of a logged question (the newest user message) or answer (the text, not the provider's JSON)."""
+    try:
+        d = json.loads(raw)
+    except (TypeError, ValueError):
+        return (raw or "")[:n]
+    if question:
+        msgs = d.get("messages") if isinstance(d, dict) else d
+        text = last_user_text(msgs) if isinstance(msgs, list) else ""
+    elif isinstance(d, dict):
+        content, choices = d.get("content"), d.get("choices")
+        text = (content[0].get("text") if isinstance(content, list) and content and isinstance(content[0], dict) else None) or \
+               (((choices[0] or {}).get("message") or {}).get("content") if isinstance(choices, list) and choices else None)
+    else:
+        text = None
+    return (text if isinstance(text, str) else raw)[:n]
+
+
+def account_page(c, a):
+    """Everything one person did: totals, last 30 days, models, latest requests, security, changes, saved chats.
+    Never the key or password hashes."""
+    name, start = a["name"], month_bounds()[0]
+    prev = month_bounds(start - 1)[0]
+    total = lambda lo, hi: dict(c.execute(
+        "select count(*) requests, coalesce(sum(tokens_in), 0) tokens_in, coalesce(sum(tokens_out), 0) tokens_out,"
+        " coalesce(sum(cost), 0) cost from logs where name = ? and ts >= ? and ts < ?", (name, lo, hi)).fetchone())
+    this_month, last_month = total(start, time.time() + 1), total(prev, start)
+    projected, recommended = forecast(a["spent"], last_month["cost"])
+    has_key = bool(a["key_hash"])
+    detail = lambda raw: (lambda d: {**d, "excerpt": decrypt(d["excerpt"])} if isinstance(d, dict) and "excerpt" in d else d)(json.loads(raw))
+    return {
+        "account": {"name": name, "team": a["team"], "models": a["models"].split(","), "budget": a["budget"], "spent": a["spent"],
+                    "projected": projected, "recommended": recommended, "last_month": last_month["cost"], "rpm": a["rpm"],
+                    "daily_tokens": a["daily_tokens"], "key_prefix": a["key_prefix"] if has_key else None,
+                    "key_expires": a["key_expires"] if has_key else None, "key_created": a["key_created"] if has_key else None,
+                    "has_password": bool(a["pw_hash"]), "locked": a["locked_until"] > time.time(), "archived": a["archived"]},
+        "this_month": this_month, "last_month": last_month,
+        "daily": [dict(r) for r in c.execute(
+            "select date(ts, 'unixepoch', 'localtime') day, sum(cost) cost, count(*) requests from logs"
+            " where name = ? and ts >= ? group by day order by day", (name, time.time() - 30 * 86400))],
+        "models": [dict(r) for r in c.execute(
+            "select model, count(*) requests, sum(tokens_in) tokens_in, sum(tokens_out) tokens_out, sum(cost) cost from logs"
+            " where name = ? and ts >= ? group by model order by cost desc", (name, start))],
+        "requests": [{"ts": r["ts"], "model": r["model"], "tokens_in": r["tokens_in"], "tokens_out": r["tokens_out"], "cost": r["cost"],
+                      "note": r["note"], "request_id": r["request_id"], "question": excerpt(decrypt(r["request"]), True),
+                      "answer": excerpt(decrypt(r["response"]), False)} for r in c.execute(
+            "select * from logs where name = ? order by ts desc limit 100", (name,))],
+        "events": [{"ts": r["ts"], "kind": r["kind"], "name": r["name"], "detail": detail(r["detail"])} for r in c.execute(
+            "select * from security_events where name = ? order by ts desc limit 50", (name,))],
+        "blocked": [{**dict(r), "excerpt": decrypt(r["excerpt"])} for r in c.execute(
+            "select ts, reason, model, request_id, excerpt from blocked_requests where name = ? order by ts desc limit 50", (name,))],
+        # this person's own changes: account actions, and archive/restore of the account or of their chats (not a team of the same name)
+        "audit": [{"ts": r["ts"], "action": r["action"], "detail": json.loads(r["detail"])} for r in c.execute(
+            "select ts, action, detail from audit where json_extract(detail, '$.name') = ? and (action in"
+            " ('create', 'update', 'delete', 'key-new', 'key-revoke') or (action in ('archive', 'restore') and"
+            " json_extract(detail, '$.kind') in ('account', 'chat'))) order by ts desc limit 50", (name,))],
+        "conversations": {
+            "count": c.execute("select count(*) from conversations where name = ? and archived is null", (name,)).fetchone()[0],
+            "archived": c.execute("select count(*) from conversations where name = ? and archived is not null", (name,)).fetchone()[0],
+            "recent": [{"title": decrypt(r["title"]), "updated": r["updated"]} for r in c.execute(
+                "select title, updated from conversations where name = ? and archived is null order by updated desc limit 10", (name,))]},
+    }
 
 
 def forecast(spent, last_month):
@@ -1815,6 +1879,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/admin/api/audit":
             rows = c.execute("select ts, action, detail from audit order by ts desc limit 100")
             return self.reply(200, [{"ts": r["ts"], "action": r["action"], "detail": json.loads(r["detail"])} for r in rows])
+        if path == "/admin/api/account":  # one person's page: everything they did, archived people too
+            name = (urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("name") or [""])[0]
+            a = c.execute("select * from accounts where name = ?", (name,)).fetchone()
+            if not a:
+                return self.reply(404, {"error": "not found"})
+            return self.reply(200, account_page(c, a))
         self.reply(404, {"error": "not found"})
 
     def admin_post(self, path, body):

@@ -487,6 +487,21 @@ window.EN = Object.assign(window.EN || {}, {
   "השם הזה שייך לפריט שנמצא בארכיון. אפשר לשחזר אותו מעמוד הארכיון.": "That name belongs to an item in the archive. Restore it from the Archive page.",
   "הצוות של המשתמש נמצא בארכיון. קודם משחזרים את הצוות, ואז את המשתמש.": "The user's team is in the archive. Restore the team first, then the user.",
   "יש עדיין אנשים בצוות. קודם מעבירים אותם לצוות אחר, ואז אפשר להעביר את הצוות לארכיון.": "The team still has people. Move them to another team first, then the team can be archived.",
+  // one person's page
+  "הפעילות של המשתמש": "The user's activity",
+  "פעילות אחרונה": "Recent activity",
+  "היסטוריית שינויים": "Change history",
+  "שיחות": "Chats",
+  "בארכיון": "Archived",
+  "המשתמש לא נמצא.": "User not found.",
+  "חזרה למשתמשים": "Back to users",
+  "טוקנים החודש": "Tokens this month",
+  "שאלה": "Question",
+  "תשובה": "Answer",
+  "אין בקשות עדיין": "No requests yet",
+  "אין שיחות שמורות": "No saved chats",
+  "המשתמש בארכיון: הכניסה לצ'אט והמפתח לא עובדים. כל ההיסטוריה נשמרת, ואפשר לשחזר אותו מעמוד הארכיון.":
+    "This user is archived: chat sign-in and the key don't work. All the history is kept, and the user can be restored from the Archive page.",
 });
 
 // texts with numbers, money or names inside. Order matters: the " · " splitter first, then specific patterns, generic ones last.
@@ -549,6 +564,11 @@ window.EN = Object.assign(window.EN || {}, {
 
     // users and keys
     [/^(\d+) לדקה$/, "$1/min"],
+    [/^([\d,]+) נכנסו$/, "$1 in"],
+    [/^([\d,]+) יצאו$/, "$1 out"],
+    [/^(\d+) שיחות שמורות$/, "$1 saved chats"],
+    [/^(\d+) בארכיון$/, "$1 archived"],
+    [/^מוצגות (\d+) הבקשות האחרונות\. כל השאלות נשמרות במסד הנתונים\.$/, "Showing the last $1 requests. Every question is kept in the database."],
     [/^עריכת צוות (.+)$/, "Edit team $1"],
     [/^עריכת (.+)$/, "Edit $1"],
     [/^להעביר את צוות (.+) לארכיון\?$/, "Move team $1 to the archive?"],

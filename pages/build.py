@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 
@@ -46,6 +47,11 @@ months = get("/admin/api/report")["months"]
 for m in months:
     admin["report?month=" + m] = get("/admin/api/report?month=" + m)
 admin["report_default"] = months[0]
+# one page per person, archived people too; the demo keeps their 30 latest requests to hold data.js down
+for name in [a["name"] for a in admin["overview"]["accounts"]] + [a["name"] for a in admin["archive"].get("accounts", [])]:
+    page = get("/admin/api/account?name=" + urllib.parse.quote(name))
+    page["requests"] = page["requests"][:30]
+    admin["account?name=" + name] = page
 
 people = get("/api/people")
 me, conversations, archived, items = {}, {}, {}, {}

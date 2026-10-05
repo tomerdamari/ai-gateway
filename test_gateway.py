@@ -789,7 +789,7 @@ k_exp = r["key"]
 ej = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 assert http_call("/api/login", {"name": "expiring", "password": "expiring-1"}, opener=ej)[0] == 200
 walk = [adm(p)[1] for p in ("overview", "logs", "usage", "activity", "daily", "sources/status", "sources", "security", "report",
-                            "models/daily", "models", "audit", "audit/verify")]
+                            "models/daily", "models", "audit", "audit/verify", "account?name=expiring", "account?name=feat")]
 walk += [json.loads(http_call(p, opener=ej)[1]) for p in ("/api/config", "/api/me", "/api/conversations")]
 walk += [json.loads(http_call(f"/api/conversations/{cid_noa}", opener=user)[1])]
 dump = json.dumps(walk, ensure_ascii=False)
@@ -1010,6 +1010,8 @@ assert http_call("/api/me", opener=aj)[0] == 401 and api(k_arch, "fast")[0] == 4
 assert http_call("/api/login", {"name": "arch", "password": "arch-pass-1"})[0] == 401
 assert acct("arch")["key_hash"] == gateway.sha(k_arch) and acct("arch")["archived"]  # still in the database
 assert "arch" not in [a["name"] for a in adm("overview")[1]["accounts"]] and adm("archive")[1]["accounts"][0]["name"] == "arch"
+s, r = adm("account?name=arch")
+assert s == 200 and r["account"]["archived"] and r["this_month"]["requests"] >= 1  # an archived person's page still opens
 gateway.OPEN_ACCESS = True
 assert "arch" not in [p["name"] for p in json.loads(http_call("/api/people")[1])] and http_call("/api/as", {"name": "arch"})[0] == 404
 gateway.OPEN_ACCESS = False
@@ -1086,6 +1088,22 @@ here = os.path.dirname(os.path.abspath(__file__))
 deletes = sorted(m.group(1) for f in ("gateway.py", "sources.py", "mcp.py", "security.py")
                  for m in re.finditer(r"delete from (\w+)", open(os.path.join(here, f), encoding="utf-8").read(), re.I))
 assert set(deletes) == {"sessions", "chunks", "vectors"} and deletes.count("chunks") == 1 and deletes.count("vectors") == 1, deletes
+
+# --- one person's page: only their own activity, admin only, no secrets ---
+s, r = adm("account?name=feat")
+assert s == 200 and r["account"]["name"] == "feat" and not r["account"]["archived"]
+own = {x[0] for x in gateway.db().execute("select ts from logs where name = 'feat'")}
+assert r["requests"] and {x["ts"] for x in r["requests"]} <= own and len(r["requests"]) == min(len(own), 100)
+assert any(x["question"].startswith("LEAKKEY") for x in r["requests"]) and not any("enc1:" in (x["question"] + x["answer"]) for x in r["requests"])
+assert r["this_month"]["requests"] == sum(m["requests"] for m in r["models"]) and r["daily"]
+assert all(e["name"] == "feat" for e in r["events"]) and r["events"] and all(a["detail"]["name"] == "feat" for a in r["audit"])
+assert r["conversations"]["count"] == gateway.db().execute(
+    "select count(*) from conversations where name = 'feat' and archived is null").fetchone()[0]
+assert adm("account?name=nobody-here")[0] == 404 and adm("account")[0] == 404
+assert adm("account?name=feat", from_ip="8.8.8.8")[0] == 401 and adm("account?name=feat", pw="test-admin", from_ip="8.8.8.8")[0] == 200
+dump = json.dumps(r, ensure_ascii=False)
+assert not [x for r_ in gateway.db().execute("select key_hash, pw_hash from accounts where name = 'feat'") for x in r_ if x and x in dump]
+assert "key_hash" not in dump and "pw_hash" not in dump
 
 # re-uploading a document under the same name keeps the previous text, encrypted
 with gateway.db() as c:

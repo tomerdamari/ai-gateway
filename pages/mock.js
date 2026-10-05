@@ -52,6 +52,10 @@
           const m = u.searchParams.get("month") || D.admin.report_default;
           return json(D.admin["report?month=" + m] || D.admin["report?month=" + D.admin.report_default]);
         }
+        if (key === "account") {
+          const page = D.admin["account?name=" + u.searchParams.get("name")];
+          return page ? json(page) : json({ error: "not found" }, 404);
+        }
         return key in D.admin ? json(D.admin[key]) : json({ error: "not found" }, 404);
       }
       if (key === "models/test") return json({ ok: false, error: "no API key for this provider in .env" });

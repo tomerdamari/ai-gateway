@@ -132,7 +132,16 @@ python gateway.py</pre>
           <li>The <b>"Apply"</b> button appears only when the budget needs to go up so the account won't be blocked. Before the change there is a confirmation showing the old and new amounts, and afterwards it can be undone.</li>
           <li><b>Moving to the archive:</b> the account disappears from the lists, its password and key stop working right away, and it is signed out on every device. Its history stays in the log and the reports. Restore it from the <a href="#archive">archive</a>, and the previous password and key work again. A new account can't be created with the name of an archived one: restore it instead.</li>
         </ul>
-        <p>You can search by name or team, and sort by name, team, spend or forecast. On a phone each row is shown as a card.</p>`,
+        <p>You can search by name or team, and sort by name, team, spend or forecast. On a phone each row is shown as a card.</p>
+        <h3 id="user-page">A user's page</h3>
+        <p>Clicking a user's name (in the users list, in the dashboard's top spenders table, in the token log, or "Details" on an alert about them) opens a page with everything they did:</p>
+        <ul>
+          <li><b>Numbers:</b> spend this month against the budget, the forecast to the end of the month, and requests and tokens this month.</li>
+          <li><b>Charts:</b> daily spend over the last 30 days, and spend by model this month.</li>
+          <li><b>Recent activity:</b> the last 100 requests. Clicking a question opens the question and the answer.</li>
+          <li><b>Security:</b> their security events and their blocked requests. <b>Change history:</b> what was changed on their account and when. <b>Chats:</b> how many saved chats they have, and the titles of the latest ones.</li>
+        </ul>
+        <p>An archived user's page opens too, marked as archived. Each user has their own address (<bdi>#user=</bdi> followed by the name), so refresh and the Back button work. Keys and passwords are never shown on this page in any form.</p>`,
 
   "#teams": `
         <h2>Teams and budgets</h2>

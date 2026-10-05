@@ -1,5 +1,15 @@
 # שינויים / Changelog
 
+## 1.0.5 — 2026-10-05
+
+- מסך משתמש: לחיצה על שם של משתמש (בטבלת המשתמשים, במובילים בהוצאה, בלוג הטוקנים ובהתראות) פותחת את כל הפעילות שלו: הוצאה מול תקציב, צפי, בקשות וטוקנים, הוצאה יומית ב-30 הימים האחרונים, הוצאה לפי מודל, הבקשות האחרונות עם השאלה והתשובה, אירועי אבטחה ובקשות שנחסמו, היסטוריית שינויים ושיחות שמורות.
+- התראה על קפיצה חריגה בהוצאה מובילה עכשיו למסך של אותו משתמש.
+
+---
+
+- User screen: clicking a user's name (in the users table, top spenders, the token log and alerts) opens all of their activity: spend against budget, projection, requests and tokens, daily spend over the last 30 days, spend by model, recent requests with question and answer, security events and blocked requests, change history and saved chats.
+- A cost-spike alert now leads to that user's screen.
+
 ## 1.0.4 — 2026-10-05
 
 - הלוגו בלי ריבוע: רק השער והלהבה, באדום.

@@ -115,6 +115,25 @@
   .ask button { width: 48px; height: 48px; min-height: 0; padding: 0; border-radius: 50%; flex: none; }
   .ask button .icon { width: 18px; height: 18px; }
   [dir="rtl"] .ask button .icon { transform: scaleX(-1); }
+  /* one person's page: name links, tabs, the expandable question and answer */
+  a.user-link { color: inherit; font-weight: 700; }
+  a.user-link:hover { color: var(--accent-text); }
+  .user-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .user-kpis .meter { margin-top: 4px; }
+  .tabs { display: flex; gap: 1.25rem; border-bottom: 1px solid var(--line); margin: -.25rem 0 1.25rem; overflow-x: auto; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none; color: var(--muted); padding: 0 0 .25rem; min-height: 44px; font-weight: 600; gap: 6px; white-space: nowrap; }
+  .tabs button:hover { background: none; color: var(--ink); box-shadow: none; }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .tabs .badge { padding: .2em .6em; }
+  .user-panel h3 { font-size: .9375rem; font-weight: 700; color: var(--ink); margin: 1.5rem 0 .5rem; }
+  .user-panel h3:first-child { margin-top: 0; }
+  .qa summary { cursor: pointer; max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qa pre { direction: inherit; text-align: start; unicode-bidi: plaintext; font-family: var(--font); font-size: .8125rem; }
+  .qa .label { display: block; margin-top: 10px; font-size: .75rem; font-weight: 600; color: var(--muted); }
+  .chat-list { list-style: none; margin: 0; padding: 0; }
+  .chat-list li { display: flex; justify-content: space-between; gap: 12px; padding: .7rem 0; border-top: 1px solid var(--line); }
+  .chat-list li:first-child { border-top: 0; }
+  @media (max-width: 767px) { table.stack-mobile td:has(> details.qa) { display: block; } .qa summary { max-width: none; } .tabs { flex-wrap: wrap; row-gap: 0; } }
   @media (max-width: 1199px) { .wide-narrow { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 991px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 520px) { .kpis { grid-template-columns: minmax(0, 1fr); } .greet h1 { font-size: 1.625rem; } .navbar-end .who-name { display: none; } }
@@ -288,6 +307,33 @@
           <thead><tr><th><button class="sort" data-sort="name">שם</button></th><th><button class="sort" data-sort="team">צוות</button></th><th>מודלים</th><th><button class="sort" data-sort="spent">הוצאה החודש</button></th><th class="num"><button class="sort" data-sort="projected">צפי</button></th><th class="num">תקציב מומלץ</th><th>גישה</th><th><span class="sr-only">פעולות</span></th></tr></thead>
           <tbody id="accounts"></tbody>
         </table></div>
+      </div>
+    </section>
+
+    <!-- one person: reached by clicking a name (users, top spenders, token log, alerts); #user=<name> -->
+    <section data-page="user" hidden>
+      <div class="page-head" id="userHead"></div>
+      <div class="grid" id="userBody">
+        <div class="grid kpis user-kpis" id="userKpis"></div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>הוצאה יומית</h2><span class="muted small">30 הימים האחרונים</span></header>
+            <div class="chart" id="userChart"></div>
+          </div>
+          <div class="card">
+            <header><h2>הוצאה לפי מודל</h2><span class="muted small">החודש</span></header>
+            <div id="userModels"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="tabs" role="tablist" aria-label="הפעילות של המשתמש" id="userTabs">
+            <button role="tab" data-utab="requests">פעילות אחרונה</button>
+            <button role="tab" data-utab="security">אבטחה</button>
+            <button role="tab" data-utab="audit">היסטוריית שינויים</button>
+            <button role="tab" data-utab="chats">שיחות</button>
+          </div>
+          <div class="user-panel" role="tabpanel" id="userPanel"></div>
+        </div>
       </div>
     </section>
 
