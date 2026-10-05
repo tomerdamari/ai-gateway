@@ -4,7 +4,7 @@ RUN useradd --system --no-create-home gateway && mkdir /data && chown gateway /d
 # pypdf: the only extra package, for reading PDF documents in knowledge sources
 RUN pip install --no-cache-dir pypdf==6.14.2
 WORKDIR /app
-COPY gateway.py sources.py security.py mcp.py admin.html admin.js chat.html chat.js docs.html style.css ui.js ./
+COPY gateway.py sources.py security.py mcp.py seed_demo.py admin.html admin.js chat.html chat.js docs.html style.css ui.js ./
 COPY fonts ./fonts
 USER gateway
 EXPOSE 8080
