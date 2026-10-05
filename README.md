@@ -1,5 +1,8 @@
 # שער AI
 
+**הדגמה חיה:** https://tomerdamari.github.io/ai-gateway/ (צ'אט) · [מסך ניהול](https://tomerdamari.github.io/ai-gateway/admin.html) · [תיעוד](https://tomerdamari.github.io/ai-gateway/docs.html)
+ההדגמה היא אתר סטטי: אותם מסכים עם נתוני דוגמה, בלי שרת. שינויים לא נשמרים והצ'אט עונה תשובה קבועה. בונים אותה מחדש עם `python pages/build.py` ומעלים את `pages/site` לענף `gh-pages`.
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/tomerdamari/ai-gateway)
 
 **הדגמה בלחיצה:** הכפתור מקים שרת חינמי ב-Render עם נתוני דוגמה. סיסמת המנהל וסיסמת משתמשי הדוגמה נוצרות אקראית ומופיעות בלוח הבקרה של Render, בלשונית Environment. בתוכנית החינמית השרת נרדם אחרי 15 דקות בלי ביקורים, והנתונים מתאפסים בכל הפעלה מחדש. לשימוש אמיתי צריך שרת עם דיסק קבוע (ראו "הרצה על השרת").
