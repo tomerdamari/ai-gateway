@@ -1052,6 +1052,22 @@ class Handler(BaseHTTPRequestHandler):
             rows = c.execute("select name, team, model, count(*) requests, sum(tokens_in) tokens_in, sum(tokens_out) tokens_out,"
                              " sum(cost) cost from logs where ts >= ? group by name, model order by cost desc", (month_bounds()[0],))
             return self.reply(200, [dict(r) for r in rows])
+        if path == "/admin/api/activity":
+            start, _ = month_bounds()
+            prev = month_bounds(start - 1)[0]
+            first = month_bounds(month_bounds(prev - 1)[0] - 1)[0]  # three months back, for the monthly team totals
+            day = lambda lo, hi: [dict(r) for r in c.execute(
+                "select cast(strftime('%d', ts, 'unixepoch', 'localtime') as int) day, sum(cost) cost from logs"
+                " where ts >= ? and ts < ? group by day order by day", (lo, hi))]
+            return self.reply(200, {
+                "heat": [dict(r) for r in c.execute(
+                    "select cast(strftime('%w', ts, 'unixepoch', 'localtime') as int) wd, cast(strftime('%H', ts, 'unixepoch', 'localtime') as int) hour,"
+                    " count(*) requests from logs where ts >= ? group by wd, hour", (time.time() - 28 * 86400,))],
+                "this_month": day(start, time.time() + 1), "last_month": day(prev, start),
+                "days_in_month": time.localtime(month_bounds()[1] - 1).tm_mday,
+                "months": [dict(r) for r in c.execute(
+                    "select strftime('%Y-%m', ts, 'unixepoch', 'localtime') month, coalesce(nullif(team, ''), 'בלי צוות') team, sum(cost) cost"
+                    " from logs where ts >= ? group by month, team order by month", (first,))]})
         if path == "/admin/api/daily":
             rows = c.execute("select date(ts, 'unixepoch', 'localtime') day, sum(cost) cost, count(*) requests from logs"
                              " where ts >= ? group by day order by day", (time.time() - 30 * 86400,))

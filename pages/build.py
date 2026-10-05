@@ -41,7 +41,7 @@ def post(path, body, opener):
 
 
 admin = {k: get("/admin/api/" + k) for k in ("overview", "usage", "daily", "logs", "audit", "sources", "security", "models",
-                                              "models/daily", "sources/status")}
+                                              "models/daily", "sources/status", "activity")}
 months = get("/admin/api/report")["months"]
 for m in months:
     admin["report?month=" + m] = get("/admin/api/report?month=" + m)

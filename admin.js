@@ -248,8 +248,8 @@ function drawDaily() {
     parent.append(n); return n;
   };
   const grad = add("linearGradient", { id: "areaFill", x1: 0, y1: 0, x2: 0, y2: 1 }, undefined, add("defs", {}));
-  add("stop", { offset: "0%", "stop-color": "var(--accent)", "stop-opacity": .25 }, undefined, grad);
-  add("stop", { offset: "100%", "stop-color": "var(--accent)", "stop-opacity": 0 }, undefined, grad);
+  add("stop", { offset: "0%", "stop-color": "var(--chart)", "stop-opacity": .25 }, undefined, grad);
+  add("stop", { offset: "100%", "stop-color": "var(--chart)", "stop-opacity": 0 }, undefined, grad);
   for (let i = 0; i <= lines; i++) {
     const v = step * i, yy = y(v);
     add("line", { x1: padL, x2: W - padR, y1: yy, y2: yy, class: i ? "grid-line" : "base-line" });
@@ -284,7 +284,98 @@ function drawDaily() {
   box.replaceChildren(svg, tip);
 }
 let resizeTimer;
-addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawDaily(); drawModelCharts(); }, 120); });
+addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawDaily(); drawBurn(); drawModelCharts(); }, 120); });
+
+// cumulative spend this month against last month and against the sum of team budgets, with a straight-line projection
+let activity = null, teamBudgetTotal = 0;
+function drawBurn() {
+  const box = $("burnChart"), W = box.clientWidth;
+  if (!W || !activity) return;
+  const N = activity.days_in_month, today = new Date().getDate();
+  const cum = rows => { const by = Object.fromEntries(rows.map(r => [r.day, r.cost])); let t = 0; return Array.from({ length: N }, (_, i) => (t += by[i + 1] || 0)); };
+  const now = cum(activity.this_month).slice(0, today), prev = cum(activity.last_month);
+  const pace = now[today - 1] / today, projEnd = pace * N;
+  const max = Math.max(projEnd, prev[N - 1] || 0, teamBudgetTotal, 1);
+  const H = 260, padL = 56, padB = 26, padT = 14, padR = 8, plotW = W - padL - padR, plotH = H - padB - padT;
+  const raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].find(s => s * mag >= raw) * mag, lines = Math.ceil(max / step), top = step * lines;
+  const x = d => padL + (d - 1) / (N - 1) * plotW, y = v => padT + plotH - v / top * plotH;
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  for (const [k, v] of Object.entries({ viewBox: `0 0 ${W} ${H}`, height: H, direction: "ltr", role: "img",
+    "aria-label": `הוצאה מצטברת: ${money(now[today - 1])} עד היום, צפי ${money(projEnd)} לסוף החודש, החודש הקודם ${money(prev[N - 1] || 0)}` })) svg.setAttribute(k, v);
+  const add = (tag, attrs, text) => { const n = document.createElementNS(ns, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text !== undefined) n.textContent = text; svg.append(n); return n; };
+  const path = arr => arr.map((v, i) => (i ? "L" : "M") + x(i + 1).toFixed(1) + "," + y(v).toFixed(1)).join(" ");
+  for (let i = 0; i <= lines; i++) {
+    add("line", { x1: padL, x2: W - padR, y1: y(step * i), y2: y(step * i), class: i ? "grid-line" : "base-line" });
+    add("text", { x: padL - 8, y: y(step * i) + 4, "text-anchor": "end", class: "tick" }, "$" + Math.round(step * i).toLocaleString("en-US"));
+  }
+  for (let d = 1; d <= N; d += 5) add("text", { x: x(d), y: H - 6, "text-anchor": "middle", class: "tick" }, String(d));
+  if (teamBudgetTotal) {
+    add("line", { x1: padL, x2: W - padR, y1: y(teamBudgetTotal), y2: y(teamBudgetTotal), class: "ref" });
+    add("text", { x: padL + 6, y: y(teamBudgetTotal) - 6, class: "ref-label" }, "תקציבי הצוותים " + money(teamBudgetTotal));
+  }
+  if (prev.some(v => v)) add("path", { d: path(prev), class: "prev" });
+  add("path", { d: `M${x(today)},${y(now[today - 1])} L${x(N)},${y(projEnd)}`, class: "proj" });
+  add("path", { d: path(now), class: "line" });
+  add("circle", { cx: x(today), cy: y(now[today - 1]), r: 5, class: "dot" });
+  $("burnLegend").replaceChildren(
+    el("span", {}, el("i", { className: "swatch", style: "border-color:var(--chart)" }), `החודש: ${money(now[today - 1])}`),
+    el("span", {}, el("i", { className: "swatch", style: "border-color:var(--chart);border-top-style:dotted" }), `צפי לסוף החודש: ${money(projEnd)}`),
+    el("span", {}, el("i", { className: "swatch", style: "border-color:var(--axis)" }), `החודש הקודם: ${money(prev[N - 1] || 0)}`),
+    ...(teamBudgetTotal ? [el("span", {}, el("i", { className: "swatch", style: "border-color:var(--muted);border-top-style:dashed" }), "תקציבי הצוותים")] : []));
+  box.replaceChildren(svg);
+}
+
+// how many people will end the month in each band of their personal budget, by the projection; the last two bands are states (over the limit)
+function drawBudgetHist(accounts) {
+  const bands = [["עד 50%", 0.5], ["50–75%", 0.75], ["75–100%", 1], ["100–125%", 1.25], ["125–150%", 1.5], ["מעל 150%", Infinity]];
+  const counts = bands.map(() => 0);
+  for (const a of accounts) if (a.budget > 0) counts[bands.findIndex(([, hi]) => a.projected / a.budget < hi)]++;
+  const max = Math.max(...counts, 1);
+  $("budgetHist").replaceChildren(
+    el("div", { className: "hist", role: "img", ariaLabel: bands.map(([l], i) => `${l}: ${counts[i]}`).join(", ") },
+      ...counts.map((n, i) => el("div", { className: "col", title: `${bands[i][0]}: ${n} משתמשים` },
+        el("span", { className: "count", textContent: n }),
+        el("div", { className: "bar" + (i === 3 ? " warn" : i > 3 ? " bad" : ""), style: `height:${n / max * 100}%` })))),
+    el("div", { className: "hist-labels" }, ...bands.map(([l]) => el("span", { textContent: l }))));
+}
+
+// weekday x hour grid, one hue from light to dark; the Israeli week starts on Sunday
+function drawHeat() {
+  const days = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"], hours = Array.from({ length: 17 }, (_, i) => i + 6);
+  const by = {};
+  for (const r of activity.heat) by[r.wd + "-" + r.hour] = r.requests;
+  const max = Math.max(...Object.values(by), 1);
+  const shade = n => n ? `color-mix(in srgb, var(--chart) ${Math.round(12 + 88 * n / max)}%, var(--surface))` : "";
+  const cells = [el("span", {}), ...hours.map(h => el("span", { className: "hr ltr", textContent: h }))];
+  days.forEach((d, wd) => {
+    cells.push(el("span", { className: "lab", textContent: d }));
+    for (const h of hours) {
+      const n = by[wd + "-" + h] || 0;
+      cells.push(el("span", { className: "cell", title: `יום ${d}, ${h}:00–${h + 1}:00 · ${n.toLocaleString("he-IL")} בקשות`, style: n ? `background:${shade(n)}` : "" }));
+    }
+  });
+  $("heatmap").replaceChildren(el("div", { className: "heat", role: "img", ariaLabel: "מפת חום של בקשות לפי יום בשבוע ושעה" }, ...cells),
+    el("div", { className: "heat-scale" }, "מעט", ...[0.1, 0.3, 0.55, 0.8, 1].map(f => el("i", { style: `background:${shade(f * max)}` })), "הרבה"));
+}
+
+// spend per month, split by the five biggest teams plus everyone else
+function drawTeamMonths() {
+  const totals = {};
+  for (const r of activity.months) totals[r.team] = (totals[r.team] || 0) + r.cost;
+  const top = Object.keys(totals).sort((a, b) => totals[b] - totals[a]).slice(0, 5);
+  const keys = [...top, "אחר"], color = k => k === "אחר" ? "var(--muted)" : `var(${SERIES[top.indexOf(k)]})`;
+  const months = {};
+  for (const r of activity.months) { const k = top.includes(r.team) ? r.team : "אחר"; (months[r.month] = months[r.month] || {})[k] = ((months[r.month] || {})[k] || 0) + r.cost; }
+  const sums = Object.fromEntries(Object.entries(months).map(([m, p]) => [m, Object.values(p).reduce((t, v) => t + v, 0)]));
+  const max = Math.max(...Object.values(sums), 1);
+  $("teamMonthsLegend").replaceChildren(...keys.filter(k => Object.values(months).some(p => p[k])).map(k => el("span", {}, el("i", { className: "legend-dot", style: `background:${color(k)}` }), k)));
+  $("teamMonths").replaceChildren(...Object.keys(months).sort().reverse().map(m => el("div", { className: "month-row" },
+    el("div", { className: "head" }, el("span", { textContent: monthName(m) }), num(money(sums[m]))),
+    el("div", { className: "stack-bar", style: `width:${sums[m] / max * 100}%` },
+      ...keys.filter(k => months[m][k]).map(k => el("span", { title: `${k}: ${money(months[m][k])}`, style: `width:${months[m][k] / sums[m] * 100}%;background:${color(k)}` }))))));
+  if (!activity.months.length) $("teamMonths").replaceChildren(el("div", { className: "empty", textContent: "אין שימוש עדיין" }));
+}
 
 // doughnut of spend by model; identity also carried by the legend table, never by colour alone
 const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
@@ -335,7 +426,7 @@ async function load() {
   if (!loadedOnce) $("loadState").replaceChildren(el("div", { className: "grid kpis" }, ...[1, 2, 3, 4].map(() => el("div", { className: "skeleton" }))));
   let data;
   try {
-    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status")]);
+    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity")]);
   } catch (e) {
     if (e.message !== "unauthorized") {
       showTab(tab);
@@ -351,7 +442,8 @@ async function load() {
   }
   loadedOnce = true;
   $("loadState").replaceChildren();
-  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat] = data;
+  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act] = data;
+  activity = act;
   sourceStatus = sstat;
   modelsData = mdl;
   modelsDaily = mdaily;
@@ -416,6 +508,11 @@ async function load() {
   if (!alerts.length) $("alerts").append(el("div", { className: "alert good" }, icon("check"), el("span", { textContent: "הכל תקין: אין חריגות תקציב ואין הערות אבטחה פתוחות." })));
 
   drawDaily();
+  teamBudgetTotal = ov.teams.reduce((t, x) => t + (x.budget || 0), 0);
+  drawBurn();
+  drawBudgetHist(ov.accounts);
+  drawHeat();
+  drawTeamMonths();
   const modelTotals = {};
   usage.forEach(u => { modelTotals[u.model] = modelTotals[u.model] || { value: 0, req: 0 }; modelTotals[u.model].value += u.cost; modelTotals[u.model].req += u.requests; });
   donut(Object.entries(modelTotals).sort((a, b) => b[1].value - a[1].value).map(([m, v]) => ({ label: m, value: v.value, req: v.req })));

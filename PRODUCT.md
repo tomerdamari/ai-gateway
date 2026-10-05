@@ -44,7 +44,7 @@ Self-hosted on the customer's own server, no external dependencies (single Pytho
 
 ## Evidence on Hand
 
-- Demo data only (`seed_demo.py`): 4 teams, 10 users, 45 days of synthetic usage, 3 sample document sources. No real customers, testimonials or metrics; none may be invented.
+- Demo data only (`seed_demo.py`): 10 teams, 60+ users and 8 apps, 90 days of synthetic usage (about $17k-26k a month), 4 document sources with 58 documents. The seed only adds, never deletes or overwrites. No real customers, testimonials or metrics; none may be invented.
 
 ## Product Principles
 
@@ -56,3 +56,4 @@ Self-hosted on the customer's own server, no external dependencies (single Pytho
 ## Accessibility & Inclusion
 
 Hebrew RTL throughout. Office staff of all technical levels use the chat; text must stay readable (the user explicitly asked for darker body text).
+- The interface has no blue (user request 2026-10-05): black accent, neutral greys; blue only inside charts (--chart, --s1).

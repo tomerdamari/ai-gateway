@@ -15,9 +15,9 @@
   .chart .grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
   .chart .base-line { stroke: var(--axis); stroke-width: 1; }
   .chart .tick { fill: var(--muted); font-size: 11px; font-family: var(--font); }
-  .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+  .chart .line { fill: none; stroke: var(--chart); stroke-width: 2; stroke-linejoin: round; }
   .chart .cross { stroke: var(--axis); stroke-width: 1; }
-  .chart .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  .chart .dot { fill: var(--chart); stroke: var(--surface); stroke-width: 2; }
   .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px; padding: 6px 10px; border-radius: .2rem; white-space: nowrap; transform: translate(-50%, -100%); margin-top: -10px; z-index: 2; }
   .donut { display: grid; place-items: center; position: relative; margin: .5rem 0 1rem; }
   .donut svg { width: 180px; height: 180px; }
@@ -77,6 +77,28 @@
   .share-bar .fill { height: 100%; border-start-end-radius: 4px; border-end-end-radius: 4px; }
   tr.off td .badge { opacity: .7; }
   @media (pointer: coarse) { .actions button, button.sm { min-height: 44px; } }
+  .chart .ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+  .chart .prev { stroke: var(--axis); stroke-width: 2; fill: none; }
+  .chart .proj { stroke: var(--chart); stroke-width: 2; stroke-dasharray: 2 4; fill: none; stroke-linecap: round; }
+  .chart .ref-label { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+  .legend .swatch { display: inline-block; width: 18px; height: 0; border-top: 2px solid; margin-inline-end: 8px; }
+  .hist { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; align-items: end; height: 190px; padding-top: 18px; }
+  .hist .col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; }
+  .hist .bar { width: 100%; max-width: 44px; border-radius: 4px 4px 0 0; background: var(--chart); min-height: 2px; }
+  .hist .bar.warn { background: var(--warning); }
+  .hist .bar.bad { background: var(--danger); }
+  .hist .count { font-size: .8125rem; color: var(--ink); font-weight: 600; }
+  .hist-labels { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--axis); padding-top: 6px; font-size: .75rem; color: var(--muted); text-align: center; }
+  .heat { display: grid; grid-template-columns: 52px repeat(17, minmax(0, 1fr)); gap: 3px; font-size: .75rem; color: var(--muted); }
+  .heat .cell { aspect-ratio: 1.6; border-radius: 3px; background: var(--surface-2); }
+  .heat .lab { display: flex; align-items: center; }
+  .heat .hr { text-align: center; }
+  .heat-scale { display: flex; align-items: center; gap: 4px; justify-content: flex-end; margin-top: .75rem; font-size: .75rem; color: var(--muted); }
+  .heat-scale i { width: 16px; height: 10px; border-radius: 2px; }
+  .month-row + .month-row { margin-top: .9rem; }
+  .month-row .head { display: flex; justify-content: space-between; font-size: .875rem; margin-bottom: 5px; color: var(--ink); }
+  .stack-bar { display: flex; height: 14px; border-radius: 0 4px 4px 0; overflow: hidden; background: var(--surface-2); gap: 2px; }
+  @media (max-width: 520px) { .heat { grid-template-columns: 40px repeat(17, minmax(0, 1fr)); gap: 2px; } .heat .hr:nth-child(even) { visibility: hidden; } }
   .team-row .name { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--ink); }
   @media (max-width: 1199px) { .wide-narrow { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 991px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: minmax(0, 1fr); } }
@@ -191,6 +213,28 @@
           <div class="card">
             <header><h2>צוותים מול תקציב</h2><span class="muted small">החודש</span></header>
             <div id="teamSummary"></div>
+          </div>
+        </div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>הוצאה מצטברת החודש</h2><span class="muted small">מול החודש הקודם ומול תקציבי הצוותים</span></header>
+            <div class="legend" id="burnLegend"></div>
+            <div class="chart" id="burnChart"></div>
+          </div>
+          <div class="card">
+            <header><h2>צפי ניצול התקציב</h2><span class="muted small">כמה משתמשים יסיימו את החודש בכל טווח</span></header>
+            <div id="budgetHist"></div>
+          </div>
+        </div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>מתי שואלים</h2><span class="muted small">בקשות לפי יום ושעה, 4 השבועות האחרונים</span></header>
+            <div id="heatmap"></div>
+          </div>
+          <div class="card">
+            <header><h2>הוצאה חודשית לפי צוות</h2><span class="muted small">ארבעת החודשים האחרונים</span></header>
+            <div class="legend" id="teamMonthsLegend"></div>
+            <div id="teamMonths"></div>
           </div>
         </div>
       </div>
