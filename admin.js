@@ -61,7 +61,7 @@ function showTab(name) {
   if (changed) scrollTo(0, 0);
   renderCrumbs(name);
   if (hashTab() !== name) history.replaceState(null, "", "#" + name);
-  if (name === "overview") drawDaily();
+  if (name === "overview") { drawDaily(); drawBurn(); }
   if (name === "models") drawModelCharts();
   if (name === "reports") loadReport();
 }
@@ -75,7 +75,7 @@ function renderCrumbs(name) {
   const home = el("a", { href: "#", textContent: "FireGate", onclick: e => { e.preventDefault(); showTab("overview"); } });
   $("crumbs").replaceChildren(
     el("li", {}, home),
-    ...(group && group !== "ראשי" ? [el("li", { className: "group", textContent: group })] : []),
+    ...(group && group !== I18N.t("ראשי") ? [el("li", { className: "group", textContent: group })] : []),
     el("li", {}, el("span", { ariaCurrent: "page", textContent: page })));
   document.title = `FireGate · ${page}`;
 }
@@ -147,7 +147,7 @@ async function setBudget(kind, name, budget) {
 async function applyBudget(kind, item, budget) {
   const who = kind === "team" ? `צוות ${item.name}` : item.name;
   const body = el("div", { className: "grid", style: "gap:10px" },
-    el("div", { className: "change-line" }, num(money(item.budget), "num old"), el("span", { textContent: "←" }), el("b", {}, num(money(budget)))),
+    el("div", { className: "change-line" }, num(money(item.budget), "num old"), el("span", { textContent: I18N.lang === "en" ? "→" : "←" }), el("b", {}, num(money(budget)))),
     el("p", { className: "small", textContent: budget > item.budget
       ? `בקצב הנוכחי ${who} יוציא ${money(item.projected)} עד סוף החודש.`
       : `בחודש שעבר ${who} הוציא ${money(item.last_month)}. התקציב הנוכחי גבוה בהרבה מהצורך.` }));
@@ -261,7 +261,7 @@ function drawDaily() {
   add("path", { d: line, class: "line" });
   days.forEach((d, i) => {
     if (i % 5 === 0 || i === days.length - 1)
-      add("text", { x: x(i), y: H - 6, "text-anchor": "middle", class: "tick" }, d.date.getDate() + "/" + (d.date.getMonth() + 1));
+      add("text", { x: x(i), y: H - 6, "text-anchor": "middle", class: "tick" }, d.date.toLocaleDateString(I18N.locale, { day: "numeric", month: "numeric" }));
   });
   // hover: crosshair + dot + tooltip on the nearest day
   const cross = add("line", { y1: padT, y2: y(0), class: "cross", visibility: "hidden" });
@@ -276,7 +276,7 @@ function drawDaily() {
     cross.setAttribute("x1", px); cross.setAttribute("x2", px);
     dot.setAttribute("cx", px); dot.setAttribute("cy", py);
     tip.hidden = false;
-    tip.textContent = `${d.date.toLocaleDateString("he-IL")} · ${money(d.cost)} · ${d.requests} בקשות`;
+    tip.textContent = `${d.date.toLocaleDateString(I18N.locale)} · ${money(d.cost)} · ${d.requests} בקשות`;
     tip.style.left = px * (r.width / W) + "px";
     tip.style.top = py * (r.height / H) + "px";
   });
@@ -352,7 +352,7 @@ function drawHeat() {
     cells.push(el("span", { className: "lab", textContent: d }));
     for (const h of hours) {
       const n = by[wd + "-" + h] || 0;
-      cells.push(el("span", { className: "cell", title: `יום ${d}, ${h}:00–${h + 1}:00 · ${n.toLocaleString("he-IL")} בקשות`, style: n ? `background:${shade(n)}` : "" }));
+      cells.push(el("span", { className: "cell", title: `יום ${d}, ${h}:00–${h + 1}:00 · ${n.toLocaleString(I18N.locale)} בקשות`, style: n ? `background:${shade(n)}` : "" }));
     }
   });
   $("heatmap").replaceChildren(el("div", { className: "heat", role: "img", ariaLabel: "מפת חום של בקשות לפי יום בשבוע ושעה" }, ...cells),
@@ -464,7 +464,7 @@ async function load() {
   $("kpis").replaceChildren(
     statCard("הוצאה החודש", "dollar", money(spent), change(sum(thisWeek, "cost"), sum(prevWeek, "cost"), false), "השבוע לעומת השבוע הקודם"),
     statCard("צפי לסוף החודש", "trend", money(projected), change(projected, lastMonth, false), `לעומת חודש קודם (${money(lastMonth)})`),
-    statCard("בקשות החודש", "activity", usage.reduce((t, u) => t + u.requests, 0).toLocaleString("he-IL"),
+    statCard("בקשות החודש", "activity", usage.reduce((t, u) => t + u.requests, 0).toLocaleString(I18N.locale),
       change(sum(thisWeek, "requests"), sum(prevWeek, "requests"), true), "השבוע לעומת השבוע הקודם"),
     statCard("משתמשים פעילים", "user-check", String(active), el("span", { className: "delta flat", textContent: `${Math.round(active / Math.max(ov.accounts.length, 1) * 100)}%` }),
       `מתוך ${ov.accounts.length} חשבונות`));
@@ -525,7 +525,7 @@ async function load() {
     return el("tr", {},
       el("td", { className: "name" }, el("b", { textContent: a.name })),
       el("td", { textContent: a.team || "—", className: a.team ? "" : "muted", dataset: { label: "צוות" } }),
-      el("td", { className: "num", dataset: { label: "בקשות" } }, num((reqBy[a.name] || 0).toLocaleString("he-IL"))),
+      el("td", { className: "num", dataset: { label: "בקשות" } }, num((reqBy[a.name] || 0).toLocaleString(I18N.locale))),
       el("td", { className: "num", dataset: { label: "הוצאה" } }, num(money(a.spent))),
       el("td", { dataset: { label: "מצב תקציב" } }, el("span", { className: "badge " + (lv === "bad" ? "bad" : lv === "warn" ? "warn" : "good"),
         textContent: lv === "bad" ? "חסום" : `${pct}% מהתקציב` })));
@@ -759,7 +759,7 @@ function renderAuto() {
     $(id).replaceChildren(...on.map(m => el("option", { value: m.alias, textContent: `${m.label || m.alias} ($${m.price_in} / $${m.price_out})` })));
     $(id).value = val;
   }
-  $("autoCount").textContent = a.count ? `${a.count.toLocaleString("he-IL")} שאלות נותבו החודש` : "";
+  $("autoCount").textContent = a.count ? `${a.count.toLocaleString(I18N.locale)} שאלות נותבו החודש` : "";
 }
 $("autoEnabled").onclick = () => $("autoEnabled").setAttribute("aria-checked", String($("autoEnabled").getAttribute("aria-checked") !== "true"));
 $("autoForm").onsubmit = run(async () => {
@@ -770,7 +770,7 @@ $("autoForm").addEventListener("submit", e => e.preventDefault(), true);
 
 // ---------- reports ----------
 let report = null;
-const monthName = m => { const [y, mo] = m.split("-"); return new Date(+y, +mo - 1, 1).toLocaleDateString("he-IL", { month: "long", year: "numeric" }); };
+const monthName = m => { const [y, mo] = m.split("-"); return new Date(+y, +mo - 1, 1).toLocaleDateString(I18N.locale, { month: "long", year: "numeric" }); };
 async function loadReport() {
   const month = $("reportMonth").value || new Date().toISOString().slice(0, 7);
   try { report = await api("report?month=" + month); } catch (e) { return fail(e); }
@@ -782,14 +782,14 @@ async function loadReport() {
   const tile = (label, ic, value, sub) => statCard(label, ic, value, null, sub);
   $("reportKpis").replaceChildren(
     tile("הוצאה", "dollar", money(t.cost), monthName(report.month)),
-    tile("בקשות", "activity", t.requests.toLocaleString("he-IL"), "כל הספקים"),
+    tile("בקשות", "activity", t.requests.toLocaleString(I18N.locale), "כל הספקים"),
     tile("אנשים ואפליקציות", "users", String(t.people), "שהשתמשו בחודש הזה"),
     tile("ממוצע לבקשה", "trend", money(t.requests ? t.cost / t.requests : 0), "עלות ממוצעת"));
   const pct = (v, b) => b ? Math.round(v / b * 100) + "%" : "—";
   const empty = (tb, n) => { if (!tb.childElementCount) tb.append(el("tr", {}, el("td", { colSpan: n, className: "empty", textContent: "אין שימוש בחודש הזה" }))); };
   $("reportTeams").replaceChildren(...report.by_team.map(r => el("tr", {},
     el("td", { className: "name" }, el("b", { textContent: r.key || "בלי צוות" })),
-    el("td", { className: "num", dataset: { label: "בקשות" } }, num(r.requests.toLocaleString("he-IL"))),
+    el("td", { className: "num", dataset: { label: "בקשות" } }, num(r.requests.toLocaleString(I18N.locale))),
     el("td", { className: "num", dataset: { label: "הוצאה" } }, num(money(r.cost))),
     el("td", { className: "num", dataset: { label: "תקציב" } }, num(r.budget ? money(r.budget) : "—")),
     el("td", { className: "num", dataset: { label: "ניצול" } }, num(pct(r.cost, r.budget))))));
@@ -797,16 +797,16 @@ async function loadReport() {
   $("reportAccounts").replaceChildren(...report.by_account.map(r => el("tr", {},
     el("td", { className: "name" }, el("b", { textContent: r.key })),
     el("td", { dataset: { label: "צוות" }, textContent: r.team || "—" }),
-    el("td", { className: "num", dataset: { label: "בקשות" } }, num(r.requests.toLocaleString("he-IL"))),
-    el("td", { className: "num", dataset: { label: "טוקנים" } }, num((r.tokens_in + r.tokens_out).toLocaleString("he-IL"))),
+    el("td", { className: "num", dataset: { label: "בקשות" } }, num(r.requests.toLocaleString(I18N.locale))),
+    el("td", { className: "num", dataset: { label: "טוקנים" } }, num((r.tokens_in + r.tokens_out).toLocaleString(I18N.locale))),
     el("td", { className: "num", dataset: { label: "הוצאה" } }, num(money(r.cost))),
     el("td", { className: "num", dataset: { label: "תקציב" } }, num(r.budget != null ? money(r.budget) : "—")))));
   empty($("reportAccounts"), 6);
   $("reportModels").replaceChildren(...report.by_model.map(r => el("tr", {},
     el("td", { className: "ltr", style: "text-align:start", textContent: r.key }),
-    el("td", { className: "num", dataset: { label: "בקשות" } }, num(r.requests.toLocaleString("he-IL"))),
-    el("td", { className: "num", dataset: { label: "טוקנים" } }, num((r.tokens_in + r.tokens_out).toLocaleString("he-IL"))),
-    el("td", { className: "num", dataset: { label: "מתוכם מהמטמון" } }, num((r.cache_read || 0).toLocaleString("he-IL"))),
+    el("td", { className: "num", dataset: { label: "בקשות" } }, num(r.requests.toLocaleString(I18N.locale))),
+    el("td", { className: "num", dataset: { label: "טוקנים" } }, num((r.tokens_in + r.tokens_out).toLocaleString(I18N.locale))),
+    el("td", { className: "num", dataset: { label: "מתוכם מהמטמון" } }, num((r.cache_read || 0).toLocaleString(I18N.locale))),
     el("td", { className: "num", dataset: { label: "הוצאה" } }, num(money(r.cost))))));
   empty($("reportModels"), 5);
 }
@@ -814,7 +814,7 @@ $("reportMonth").onchange = loadReport;
 // one file with three sections; the byte-order mark makes Excel read the Hebrew correctly
 $("reportCsv").onclick = () => {
   if (!report) return;
-  const q = v => `"${String(v ?? "").replaceAll('"', '""')}"`;
+  const q = v => `"${I18N.t(String(v ?? "")).replaceAll('"', '""')}"`;  // headings in the interface language
   const row = cells => cells.map(q).join(",");
   const lines = [row([`דוח שימוש בבינה מלאכותית · ${monthName(report.month)}`]), "",
     row(["לפי צוות"]), row(["צוות", "בקשות", "הוצאה ($)", "תקציב ($)"]),
@@ -896,7 +896,7 @@ function drawModelDaily() {
   days.forEach((d, i) => {
     const x = padL + i * slot + (slot - bw) / 2;
     if (i % 5 === 0 || i === days.length - 1)
-      add("text", { x: x + bw / 2, y: H - 6, "text-anchor": "middle", class: "tick" }, d.date.getDate() + "/" + (d.date.getMonth() + 1));
+      add("text", { x: x + bw / 2, y: H - 6, "text-anchor": "middle", class: "tick" }, d.date.toLocaleDateString(I18N.locale, { day: "numeric", month: "numeric" }));
     let acc = 0;
     const present = series.filter(k => d.parts[k]);
     present.forEach((k, j) => {
@@ -909,7 +909,7 @@ function drawModelDaily() {
     const hit = add("rect", { x: padL + i * slot, y: padT, width: slot, height: plotH, fill: "transparent" });
     hit.addEventListener("mouseenter", () => {
       tip.hidden = false;
-      tip.replaceChildren(el("div", {}, el("b", { textContent: d.date.toLocaleDateString("he-IL") })),
+      tip.replaceChildren(el("div", {}, el("b", { textContent: d.date.toLocaleDateString(I18N.locale) })),
         ...present.slice().sort((a, b) => d.parts[b] - d.parts[a]).map(k => el("div", {},
           el("span", {}, el("i", { className: "legend-dot", style: `background:${k === "_other" ? "var(--muted)" : modelColor(k)}` }), k === "_other" ? "אחר" : modelName(k)),
           el("span", { className: "num", textContent: money(d.parts[k]) }))),
@@ -964,7 +964,7 @@ function renderModels() {
         title: providers[m.provider] ? "" : "אין מפתח לספק הזה", textContent: PROVIDER_FULL[m.provider] || m.provider })),
       el("td", { className: "num", dataset: { label: "מחיר למיליון טוקנים" } }, num(`$${m.price_in} / $${m.price_out}`)),
       el("td", { className: "num", dataset: { label: "שימוש החודש" } }, el("div", { className: "stack" }, num(money(m.cost)),
-        el("span", { className: "muted small", textContent: `${m.requests.toLocaleString("he-IL")} בקשות` }),
+        el("span", { className: "muted small", textContent: `${m.requests.toLocaleString(I18N.locale)} בקשות` }),
         m.cache_saved > 0.0001 ? el("span", { className: "small", style: "color:var(--success)", textContent: `חסך ${money(m.cache_saved)} במטמון` }) : null)),
       el("td", { className: "num", dataset: { label: "משתמשים" } }, num(String(m.users))),
       el("td", { dataset: { label: "ברירת מחדל" } }, m.alias === def
@@ -1076,10 +1076,10 @@ function renderSourceStatus() {
     el("div", { className: "stack" },
       el("b", { textContent: st.embeddings ? `חיפוש לפי משמעות: פעיל (${EMBED_NAMES[st.embeddings]})` : "חיפוש לפי משמעות: כבוי" }),
       el("span", { className: "muted small", textContent: st.embeddings
-        ? `${totals[0].toLocaleString("he-IL")} מתוך ${totals[1].toLocaleString("he-IL")} קטעים מאונדקסים. שאלה על "נופש" תמצא גם מסמך שכתוב בו "חופשה".`
+        ? `${totals[0].toLocaleString(I18N.locale)} מתוך ${totals[1].toLocaleString(I18N.locale)} קטעים מאונדקסים. שאלה על "נופש" תמצא גם מסמך שכתוב בו "חופשה".`
         : "צריך מפתח של OpenAI או Google בקובץ ‎.env. בינתיים החיפוש לפי מילים בלבד." }),
       st.pdf ? null : el("span", { className: "small", style: "color:var(--danger)", textContent: "קריאת PDF לא זמינה בשרת הזה (חסרה הספרייה pypdf)." })),
-    ...(st.embeddings && missing > 0 ? [el("button", { className: "ghost", textContent: `לאנדקס ${missing.toLocaleString("he-IL")} קטעים`,
+    ...(st.embeddings && missing > 0 ? [el("button", { className: "ghost", textContent: `לאנדקס ${missing.toLocaleString(I18N.locale)} קטעים`,
       onclick: run(async () => { for (const s of sourceList) await api("sources/reindex", { name: s.name }); }, "האינדקס עודכן.") })] : []));
 }
 const size = n => n >= 1e6 ? (n / 1e6).toFixed(1) + "M תווים" : n >= 1e3 ? Math.round(n / 1e3) + "K תווים" : n + " תווים";

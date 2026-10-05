@@ -8,7 +8,6 @@
 <link rel="stylesheet" href="/style.css">
 <script src="/en-admin.js"></script>
 <script src="/en-chat.js"></script>
-<script src="/en-docs.js"></script>
 <script src="/i18n.js"></script>
 <style>
   body { height: 100vh; height: 100dvh; overflow: hidden; }
@@ -28,9 +27,10 @@
   .convs { flex: 1; overflow-y: auto; min-height: 0; }
   .conv { display: flex; align-items: center; border-inline-start: 3px solid transparent; }
   .conv button { min-height: 0; box-shadow: none; }
-  .conv button.open { flex: 1; min-width: 0; background: none; border: 0; border-radius: 0; color: var(--sidebar-ink); padding: .55rem .5rem .55rem 0; padding-inline-start: 1.625rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; text-align: start; font-weight: 700; }
+  .conv button.open { flex: 1; min-width: 0; background: none; border: 0; border-radius: 0; color: var(--sidebar-ink); padding-block: .55rem; padding-inline: 1.625rem 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; text-align: start; font-weight: 700; }
   .conv button.open:hover { color: var(--sidebar-ink-hover); background: none; }
   .conv.on { border-inline-start-color: #ffffff; background: linear-gradient(to left, rgba(255, 255, 255, .1), rgba(255, 255, 255, .06) 50%, rgba(0, 0, 0, 0)); }
+  [dir="ltr"] .conv.on { background-image: linear-gradient(to right, rgba(255, 255, 255, .1), rgba(255, 255, 255, .06) 50%, rgba(0, 0, 0, 0)); }
   .conv.on button.open { color: var(--sidebar-ink-active); }
   .conv button.del { background: none; border: 0; color: var(--sidebar-ink); padding: 4px 12px; visibility: hidden; }
   .conv:hover button.del { visibility: visible; }

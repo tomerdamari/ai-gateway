@@ -8,7 +8,6 @@
 <link rel="stylesheet" href="/style.css">
 <script src="/en-admin.js"></script>
 <script src="/en-chat.js"></script>
-<script src="/en-docs.js"></script>
 <script src="/i18n.js"></script>
 <style>
   .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -77,7 +76,7 @@
   .share-row .head b { color: var(--ink); font-weight: 600; }
   .share-bar { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 8px; font-size: .75rem; color: var(--muted); }
   .share-bar + .share-bar { margin-top: 4px; }
-  .share-bar .track { height: 8px; background: var(--surface-2); border-radius: 0 4px 4px 0; overflow: hidden; }
+  .share-bar .track { height: 8px; background: var(--surface-2); border-radius: 0; border-start-start-radius: 4px; border-end-start-radius: 4px; overflow: hidden; }
   .share-bar .fill { height: 100%; border-start-end-radius: 4px; border-end-end-radius: 4px; }
   tr.off td .badge { opacity: .7; }
   @media (pointer: coarse) { .actions button, button.sm { min-height: 44px; } }
@@ -101,7 +100,7 @@
   .heat-scale i { width: 16px; height: 10px; border-radius: 2px; }
   .month-row + .month-row { margin-top: .9rem; }
   .month-row .head { display: flex; justify-content: space-between; font-size: .875rem; margin-bottom: 5px; color: var(--ink); }
-  .stack-bar { display: flex; height: 14px; border-radius: 0 4px 4px 0; overflow: hidden; background: var(--surface-2); gap: 2px; }
+  .stack-bar { display: flex; height: 14px; border-radius: 0; border-start-start-radius: 4px; border-end-start-radius: 4px; overflow: hidden; background: var(--surface-2); gap: 2px; }
   @media (max-width: 520px) { .heat { grid-template-columns: 40px repeat(17, minmax(0, 1fr)); gap: 2px; } .heat .hr:nth-child(even) { visibility: hidden; } }
   .team-row .name { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--ink); }
   @media (max-width: 1199px) { .wide-narrow { grid-template-columns: minmax(0, 1fr); } }

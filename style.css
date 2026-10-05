@@ -226,6 +226,7 @@ pre { white-space: pre-wrap; word-break: break-word; direction: ltr; text-align:
 .sidebar-link .icon { color: rgba(243, 243, 243, .75); }
 .sidebar-link[aria-current="page"] { color: var(--sidebar-ink-active); border-inline-start-color: #ffffff;
   background: linear-gradient(to left, rgba(255, 255, 255, .1), rgba(255, 255, 255, .06) 50%, rgba(0, 0, 0, 0)); }
+[dir="ltr"] .sidebar-link[aria-current="page"] { background-image: linear-gradient(to right, rgba(255, 255, 255, .1), rgba(255, 255, 255, .06) 50%, rgba(0, 0, 0, 0)); }
 .sidebar-link[aria-current="page"] .icon { color: var(--sidebar-ink-active); }
 .sidebar-foot { margin-top: auto; padding: 1rem 1.5rem; }
 
@@ -258,7 +259,7 @@ pre { white-space: pre-wrap; word-break: break-word; direction: ltr; text-align:
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton, button.busy .icon { animation: none; } }
 
-.toasts { position: fixed; inset-block-end: 1.25rem; inset-inline-start: 50%; transform: translateX(50%); display: grid; gap: 8px; z-index: 50; width: min(520px, calc(100vw - 32px)); }
+.toasts { position: fixed; inset-block-end: 1.25rem; inset-inline: 0; margin-inline: auto; display: grid; gap: 8px; z-index: 50; width: min(520px, calc(100vw - 32px)); }
 .toast { display: flex; align-items: center; gap: 12px; background: var(--ink); color: var(--surface); padding: .75rem 1rem; border-radius: .4rem; box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .25); transition: opacity .2s, transform .2s; }
 .toast > span { flex: 1; }
 .toast.bad { background: var(--danger); color: #fff; }

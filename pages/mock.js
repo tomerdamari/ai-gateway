@@ -20,9 +20,13 @@
     const label = (me.model_labels || {})[used] || used;
     const route = auto ? (heavy ? "קוד, ניתוח או השוואה" : "שאלה קצרה ופשוטה") : "";
     const docs = (body.sources || []).length ? [`${body.sources[0]} / דוגמה`] : [];
-    const text = "זו תשובת הדגמה: בגרסה הזו אין חיבור לספקי בינה מלאכותית.\n\n" +
+    let text = "זו תשובת הדגמה: בגרסה הזו אין חיבור לספקי בינה מלאכותית.\n\n" +
       "בהתקנה אמיתית השער היה בודק את התקציב שלך, מסתיר מידע רגיש, " + (docs.length ? "מחפש במסמכים שבחרת, " : "") +
       `ושולח את השאלה ל-**${label}**` + (auto ? ` (נבחר אוטומטית: ${route})` : "") + ".\n\nלהתקנה: github.com/tomerdamari/firegate";
+    const t = s => (typeof I18N !== "undefined" ? I18N.t(s) : s);
+    if (typeof I18N !== "undefined" && I18N.lang === "en") text = "This is a demo answer: this version is not connected to any AI provider.\n\n" +
+      "In a real install the gateway would check your budget, hide sensitive data, " + (docs.length ? "search the documents you picked, " : "") +
+      `and send the question to **${t(label)}**` + (auto ? ` (picked automatically: ${t(route)})` : "") + ".\n\nTo install: github.com/tomerdamari/firegate";
     const enc = new TextEncoder(), parts = text.match(/.{1,12}/gs);
     const stream = new ReadableStream({
       async pull(ctrl) {
