@@ -46,6 +46,7 @@ if os.path.exists(_env):
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip())
 
+VERSION = "1.0.0"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
 DB =os.environ.get("GATEWAY_DB", "gateway.db")
 # Admin from a private-network address (office LAN, this machine) needs no password.
 # From anywhere else: this password, or no access at all when it's empty.
@@ -1216,7 +1217,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.host_ok():
             return self.blocked("bad-host", 421, "unknown host name; add it to ALLOWED_HOSTS")
         if path == "/health":
-            return self.reply(200, {"ok": True})
+            return self.reply(200, {"ok": True, "version": VERSION})
         if path in PAGES:
             file, ctype = PAGES[path]
             with open(os.path.join(HERE, file), "rb") as f:

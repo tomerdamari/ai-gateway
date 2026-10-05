@@ -1094,4 +1094,8 @@ with gateway.db() as c:
     gateway.sources.add_doc(c, "versions", "v.md", "second version of the text")
 old = gateway.db().execute("select text from doc_versions where doc_id = (select id from docs where source = 'versions')").fetchall()
 assert len(old) == 1 and old[0][0].startswith("enc1:") and gateway.decrypt(old[0][0]) == "first version of the text", old
+
+# one version number: the server's and the one the pages show
+ui_version = re.search(r'const VERSION = "([^"]+)"', open(os.path.join(here, "ui.js"), encoding="utf-8").read()).group(1)
+assert ui_version == gateway.VERSION, (ui_version, gateway.VERSION)
 print("ok")
