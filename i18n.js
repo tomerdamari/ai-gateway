@@ -8,13 +8,13 @@ const I18N = (() => {
   try { lang = localStorage.getItem("lang") === "en" ? "en" : "he"; } catch {}
   const en = lang === "en", root = document.documentElement;
   const ATTRS = ["placeholder", "aria-label", "title", "data-label", "alt"];
-  const HEB = /[֐-׿]/;
+  const HEB = /[\u0590-\u05FF]/;
   const dict = () => window.EN || {}, patterns = () => window.EN_PATTERNS || [];
 
   // translate one string; leading and trailing spaces are kept
   function t(s) {
     if (!en || !s || !HEB.test(s)) return s;
-    const key = s.trim().replace(/[⁦-⁩]/g, "");
+    const key = s.trim().replace(/[\u2066-\u2069]/g, "");
     const d = dict();
     if (Object.prototype.hasOwnProperty.call(d, key)) return s.replace(s.trim(), d[key]);
     for (const [re, rep] of patterns()) {
