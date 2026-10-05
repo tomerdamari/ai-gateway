@@ -164,7 +164,7 @@ def seed(c):
                         note = f"backup: {random.choice(['gpt-smart', 'claude-top', 'gemini-smart'])} failed (529)"
                     q = random.choice(QUESTIONS) if not p["app"] else f"בקשה אוטומטית מ-{p['name']}"
                     rows.append((ts, p["name"], p["team"], real, t_in, t_out, cost,
-                                 json.dumps([{"role": "user", "content": q}], ensure_ascii=False), "תשובת דוגמה: " + q,
+                                 gateway.encrypt(json.dumps([{"role": "user", "content": q}], ensure_ascii=False)), gateway.encrypt("תשובת דוגמה: " + q),
                                  cache_read, 0, note))
         c.executemany("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, request, response, cache_read, cache_write, note)"
                       " values (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
@@ -246,27 +246,32 @@ def seed(c):
 
         # --- change history: creation of every account plus budget and model changes ---
         for p in people:
-            c.execute("insert into audit values (?,?,?)", (now - DAYS * 86400 + random.uniform(0, 5) * 86400, "create",
-                      json.dumps({"name": p["name"], "team": p["team"], "budget": 100, "models": ",".join(p["models"]),
-                                  "password": not p["app"], "api_key": p["app"]}, ensure_ascii=False)))
+            gateway.audit(c, "create", {"name": p["name"], "team": p["team"], "budget": 100, "models": ",".join(p["models"]),
+                                        "password": not p["app"], "api_key": p["app"]},
+                          ts=now - DAYS * 86400 + random.uniform(0, 5) * 86400)
         for _ in range(40):
             name = random.choice(humans)
             old = random.choice([50, 100, 150, 200, 300])
-            c.execute("insert into audit values (?,?,?)", (now - random.uniform(0, 60) * 86400, "update",
-                      json.dumps({"name": name, "budget": old + random.choice([25, 50, 100]), "old_budget": old}, ensure_ascii=False)))
+            gateway.audit(c, "update", {"name": name, "budget": old + random.choice([25, 50, 100]), "old_budget": old},
+                          ts=now - random.uniform(0, 60) * 86400)
         for alias, label, *_ in EXTRA_MODELS:
-            c.execute("insert into audit values (?,?,?)", (now - random.uniform(30, 60) * 86400, "model-save",
-                      json.dumps({"name": alias, "new": True}, ensure_ascii=False)))
+            gateway.audit(c, "model-save", {"name": alias, "new": True}, ts=now - random.uniform(30, 60) * 86400)
 
         # --- saved conversations: several per person, more for demo ---
         for p in people:
             if p["app"]:
                 continue
-            for _ in range(12 if p["name"] == "demo" else random.randint(1, 4)):
+            for i in range(12 if p["name"] == "demo" else random.randint(1, 4)):
                 q = random.choice(QUESTIONS)
                 msgs = [{"role": "user", "content": q}, {"role": "assistant", "content": f"תשובת דוגמה ל: {q}", "model": random.choice(p["models"])}]
-                c.execute("insert or ignore into conversations values (?,?,?,?,?)",
-                          (secrets.token_hex(8), p["name"], q[:50], now - random.uniform(0, 20) * 86400, json.dumps(msgs, ensure_ascii=False)))
+                c.execute("insert or ignore into conversations(id, name, title, updated, messages, archived) values (?,?,?,?,?,?)",
+                          (secrets.token_hex(8), p["name"], gateway.encrypt(q[:50]), now - random.uniform(0, 20) * 86400,
+                           gateway.encrypt(json.dumps(msgs, ensure_ascii=False)), now - 86400 if p["name"] == "demo" and i < 2 else None))
+        # --- the archive: someone who left keeps their history (logs, reports) but can't log in ---
+        left = next((p for p in reversed(people) if not p["app"] and p["name"] != "demo"), None)
+        if left:
+            c.execute("update accounts set archived = ? where name = ?", (now - 3 * 86400, left["name"]))
+            gateway.audit(c, "archive", {"kind": "account", "name": left["name"]}, ts=now - 3 * 86400)
 
         c.execute("insert into settings values ('seed_version', ?) on conflict(key) do update set value = excluded.value", (str(SEED_VERSION),))
     total = c.execute("select count(*), sum(cost) from logs where ts >= ?", (month_start,)).fetchone()

@@ -1,0 +1,54 @@
+name: Docker image
+
+# Builds and scans the image. Nothing is pushed anywhere: publishing needs registry credentials
+# and the owner's decision (see SECURITY.md for adding signing at that point).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths: [Dockerfile, requirements.txt, .dockerignore, "*.py", .github/workflows/docker.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  build-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build (not pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: firegate:ci
+      - name: Smoke test
+        run: |
+          docker run -d --name fg --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+            -v fgdata:/data -e GATEWAY_DB=/data/gateway.db -p 127.0.0.1:8080:8080 firegate:ci
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8080/health && exit 0; sleep 1; done
+          docker logs fg; exit 1
+      - name: Vulnerability scan (fails on CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: firegate:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: SBOM (list of everything inside the image)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: firegate:ci
+          format: spdx-json
+          output-file: firegate-sbom.spdx.json
+          upload-artifact: false
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: firegate-sbom
+          path: firegate-sbom.spdx.json

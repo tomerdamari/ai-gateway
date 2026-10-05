@@ -1,12 +1,16 @@
-"""Security checks: suspicious content (prompt injection, scripts, dangerous commands) and a log of security events.
+"""Security checks: suspicious content (prompt injection, jailbreaks, scripts, dangerous commands, risky links) and a
+log of security events.
 
-Suspicious questions are logged, not blocked: people legitimately ask about scripts and commands.
-Suspicious documents are refused at upload, because a document reaches every user who searches it.
-Dangerous commands in an answer get a warning appended for the user.
+What happens to a suspicious question is the administrator's policy (gateway.py: block by default for injection and
+jailbreak attempts, log only as the alternative). Scripts and commands in questions are only logged: people
+legitimately ask about them. Suspicious documents are refused at upload, because a document reaches every user who
+searches it. Dangerous commands and risky links in an answer get a warning appended for the user.
 """
+import ipaddress
 import json
 import re
 import time
+import urllib.parse
 
 SCHEMA = """
 create table if not exists security_events(ts real, kind text, name text, detail text);
@@ -25,6 +29,28 @@ PATTERNS = {
         r"(התעלם|תתעלם|שכח|תשכח|בטל)\S*\s+(מ|את\s+)?(כל\s+)?ה?(הוראות|הנחיות|כללים)",
         r"(חשוף|תחשוף|הצג|תציג|הדפס)\S*\s+(את\s+)?ה?(הוראות|הנחיות)\s+(ה)?(מערכת|הסודיות|הנסתרות)",
         r"מעכשיו\s+אתה\s+(לא\s+)?(מוגבל|חופשי|במצב)",
+        # asking for the system prompt, keys or passwords
+        r"\b(show|tell|give|reveal|print|repeat|dump|list|leak|what\s+is|what's|what\s+are)\s+(me\s+)?(your|the)\s+"
+        r"(system\s+prompt|(api|secret|access|private)[\s_-]?keys?|credentials|passwords?|tokens?)\b"
+        r"(?!\s+(policy|policies|format|length|requirements?|rules?|reset|change|expir))",
+        r"(מה|תן|תני|הצג|תציג|תראה|חשוף|תחשוף|הדפס|תדפיס)\S*\s+(לי\s+)?(את\s+)?ה?(הנחיות\s+המערכת|פרומפט\s+המערכת|"
+        r"מפתח(ות)?\s+ה?-?API|סיסמ(ה|אות)\s+(של\s+)?ה?(מערכת|מנהל|שרת))",
+    )],
+    # trying to talk the model out of its rules
+    "jailbreak": [re.compile(p, _I) for p in (
+        r"\bpretend\s+(that\s+)?you\s+(have|had|are)\s+(no|without)\s+(restrictions|rules|limits|filters|guidelines)",
+        r"\b(ignore|bypass|disable|forget|break)\s+(all\s+)?(of\s+)?(your|the|any)\s+(rules|restrictions|guidelines|safety|filters|"
+        r"content\s+polic(y|ies)|programming)",
+        r"\b(you\s+are|act\s+as|pretend\s+to\s+be|role-?play\s+as|become)\s+(now\s+)?(an?\s+)?(unrestricted|unfiltered|uncensored|"
+        r"jailbroken|evil)\s+(ai|assistant|model|chatbot|version)",
+        r"\b(act\s+as|you\s+are(\s+now)?|pretend\s+to\s+be|become)\s+(a\s+)?(?-i:DAN)\b",
+        r"\b(jailbreak\s+(mode|prompt)|jailbroken|(?-i:DAN)\s+mode|developer\s+mode\s+(enabled|output|activated))\b",
+        r"\bstay\s+in\s+character\b[^.\n]{0,60}\b(no\s+matter|even\s+if|regardless)",
+        r"\b(hypothetically|fictional\s+world|for\s+a\s+story)\b[^.\n]{0,80}\b(no\s+(rules|restrictions|limits)|"
+        r"ignore\s+(your|the)\s+(rules|guidelines))",
+        r"(תעמיד|תעמידי|העמד|העמידי|תדמיין|דמיין)\S*\s+(ש|פנים\s+ש)אין\s+לך\s+(שום\s+)?(הגבלות|מגבלות|כללים|חוקים)",
+        r"(עקוף|תעקוף|תעקפי|תשבור|שבור)\S*\s+(את\s+)?ה?(כללים|חוקים|הגבלות|מגבלות|סינון)",
+        r"מצב\s+(ללא|בלי)\s+(הגבלות|מגבלות|צנזורה|סינון)",
     )],
     # active web content: harmless as text, dangerous if some tool renders it
     "script": [re.compile(p, _I) for p in (
@@ -47,7 +73,35 @@ PATTERNS = {
         r"\bdd\s+if=\S+\s+of=/dev/(sd|nvme|hd)",
     )],
 }
-LABELS = {"prompt-injection": "ניסיון לעקוף הוראות", "script": "קוד דפדפן", "dangerous-command": "פקודה מסוכנת"}
+LABELS = {"prompt-injection": "ניסיון לעקוף הוראות", "jailbreak": "ניסיון לשחרר את המודל מהכללים", "script": "קוד דפדפן",
+          "dangerous-command": "פקודה מסוכנת"}
+ATTACKS = {"prompt-injection", "jailbreak"}  # what the injection policy blocks
+
+# links in an answer that a careful person wouldn't click: raw IP addresses, look-alike (punycode) names,
+# data:/javascript: links, link shorteners and top-level domains that are mostly abuse
+_URL = re.compile(r"\b(?:https?://|www\.)[^\s<>\"'`)\]]+|\b(?:javascript|data|vbscript):[^\s<>\"'`)]+", _I)
+SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "goo.gl", "is.gd", "cutt.ly", "rb.gy", "ow.ly", "buff.ly", "shorturl.at", "tiny.cc",
+              "rebrand.ly", "t.ly", "v.gd", "s.id", "lnkd.in"}
+BAD_TLDS = {"zip", "mov", "tk", "ml", "ga", "cf", "gq", "xyz", "top", "click", "country", "kim", "work", "loan", "rest"}
+
+
+def bad_links(text):
+    """Risky links in text (each at most 200 characters)."""
+    out = []
+    for m in _URL.finditer(text or ""):
+        url = m[0].rstrip(".,;:!?")
+        if re.match(r"(?i)(javascript|data|vbscript):", url):
+            out.append(url[:200])
+            continue
+        host = (urllib.parse.urlsplit(url if "://" in url else "http://" + url).hostname or "").lower().rstrip(".")
+        try:
+            ipaddress.ip_address(host)
+            raw_ip = True
+        except ValueError:
+            raw_ip = False
+        if raw_ip or "xn--" in host or host in SHORTENERS or host.rsplit(".", 1)[-1] in BAD_TLDS:
+            out.append(url[:200])
+    return out
 
 
 def scan(text):
@@ -62,8 +116,12 @@ def event(c, kind, name, detail):
               (time.time(), kind, name or "", json.dumps(detail, ensure_ascii=False)))
 
 
-def answer_warning(categories):
-    if "dangerous-command" not in categories:
-        return ""
-    return ("\n\n⚠️ **אזהרת אבטחה:** התשובה כוללת פקודה שעלולה למחוק מידע או להריץ קוד מהאינטרנט. "
-            "אל תריצו אותה בלי לבדוק בדיוק מה היא עושה.")
+def answer_warning(categories, links=()):
+    out = ""
+    if "dangerous-command" in categories:
+        out += ("\n\n⚠️ **אזהרת אבטחה:** התשובה כוללת פקודה שעלולה למחוק מידע או להריץ קוד מהאינטרנט. "
+                "אל תריצו אותה בלי לבדוק בדיוק מה היא עושה.")
+    if links:
+        out += ("\n\n⚠️ **אזהרת אבטחה:** התשובה כוללת קישור חשוד (כתובת מספרית, קיצור קישורים או שם שמתחזה לאתר מוכר). "
+                "אל תלחצו עליו בלי לבדוק לאן הוא מוביל.")
+    return out

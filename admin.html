@@ -127,7 +127,8 @@
   <symbol id="i-menu" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></symbol>
-  <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></symbol>
+  <symbol id="i-restore" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
   <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
   <symbol id="i-key" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
@@ -156,6 +157,7 @@
       <li><button class="sidebar-link" data-tab="security"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span>אבטחה</span></button></li>
       <li><button class="sidebar-link" data-tab="logs"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>יומן שאלות</span></button></li>
       <li><button class="sidebar-link" data-tab="audit"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span>יומן שינויים</span></button></li>
+      <li><button class="sidebar-link" data-tab="archive"><svg class="icon" aria-hidden="true"><use href="#i-archive"/></svg><span>ארכיון</span></button></li>
       <li class="sidebar-header">עובדים</li>
       <li><a class="sidebar-link" href="/chat"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg><span>מסך הצ'אט</span></a></li>
       <li><a class="sidebar-link" href="/docs"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span>תיעוד</span></a></li>
@@ -356,8 +358,37 @@
         <div class="grid kpis" id="secKpis"></div>
         <div class="card"><header><h2>בדיקת מצב</h2></header><div class="grid" style="gap:10px" id="secChecks"></div></div>
         <div class="card">
+          <header><h2>מדיניות</h2></header>
+          <form id="policyForm" class="grid" style="gap:12px">
+            <div class="grid two" style="gap:12px">
+              <label class="field">ניסיון לעקוף את ההוראות של המודל
+                <select id="pInjection">
+                  <option value="block">לחסום את השאלה</option>
+                  <option value="log">לשלוח ולרשום ביומן</option>
+                </select>
+              </label>
+              <label class="field">מידע רגיש (תעודת זהות, כרטיס אשראי, טלפון, אימייל, מפתחות)
+                <select id="pSensitive">
+                  <option value="mask">להסתיר את המידע ולשלוח</option>
+                  <option value="block">לחסום את השאלה</option>
+                  <option value="log">לשלוח בלי להסתיר ולרשום ביומן</option>
+                </select>
+              </label>
+            </div>
+            <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירת המדיניות</button></div>
+          </form>
+        </div>
+        <div class="card"><header><h2>יומן השינויים לא שונה</h2></header><div id="auditCheck"></div></div>
+        <div class="card">
+          <header><h2>בקשות שנחסמו</h2><span class="muted small">200 האחרונות</span></header>
+          <div class="table-wrap"><table>
+            <thead><tr><th>מתי</th><th>מי</th><th>סיבה</th><th>מודל</th><th>קטע מהשאלה</th></tr></thead>
+            <tbody id="secBlocked"></tbody>
+          </table></div>
+        </div>
+        <div class="card">
           <header><h2>אירועי אבטחה</h2><span class="muted small">200 האחרונים</span></header>
-          <p class="muted small" style="margin:-8px 0 12px">שאלות חשודות נרשמות ולא נחסמות, כי עובדים שואלים בצדק על קוד ופקודות. מסמכים חשודים נחסמים בהעלאה, כי הם מגיעים לכל מי שמחפש בהם. תשובה עם פקודה מסוכנת מקבלת אזהרה לעובד.</p>
+          <p class="muted small" style="margin:-8px 0 12px">מה קורה לשאלה שמנסה לעקוף את ההוראות של המודל נקבע במדיניות למעלה. שאלות על קוד ופקודות רק נרשמות, כי עובדים שואלים עליהן בצדק. מסמכים חשודים נחסמים בהעלאה, כי הם מגיעים לכל מי שמחפש בהם. תשובה עם פקודה מסוכנת או קישור חשוד מקבלת אזהרה לעובד.</p>
           <div class="table-wrap"><table>
             <thead><tr><th>מתי</th><th>אירוע</th><th>מי</th><th>פרטים</th></tr></thead>
             <tbody id="secEvents"></tbody>
@@ -393,6 +424,19 @@
         </table></div>
       </div>
     </section>
+
+    <!-- archive -->
+    <section data-page="archive" hidden>
+      <div class="page-head"><h1>ארכיון</h1></div>
+      <p class="muted" style="margin:0 0 1.5rem;max-width:75ch">שום מידע לא נמחק. משתמש, צוות, מודל, מקור מידע או מסמך שהועברו לארכיון לא מופיעים במסכים ולא עובדים, אבל נשמרים עם כל ההיסטוריה שלהם, ואפשר לשחזר אותם. ההוצאה שלהם נשארת ביומן ובדוחות.</p>
+      <div class="card">
+        <div class="table-wrap"><table class="stack-mobile">
+          <caption class="sr-only">ארכיון</caption>
+          <thead><tr><th>סוג</th><th>שם</th><th>הועבר לארכיון</th><th><span class="sr-only">פעולות</span></th></tr></thead>
+          <tbody id="archiveList"></tbody>
+        </table></div>
+      </div>
+    </section>
     </main>
     <footer class="footer"><div class="row spread"><span>FireGate · ניהול שימוש בבינה מלאכותית</span><a href="/chat">מסך הצ'אט לעובדים</a></div></footer>
   </div>
@@ -411,6 +455,7 @@
       <div class="grid two" style="gap:12px">
         <label class="field">תקציב חודשי ($)<input type="number" id="aBudget" min="0" step="0.01" required></label>
         <label class="field">בקשות לדקה (0 = ללא הגבלה)<input type="number" id="aRpm" min="0" step="1" value="0"></label>
+        <label class="field">טוקנים ליום (0 = ללא הגבלה)<input type="number" id="aDaily" min="0" step="1" value="0"></label>
       </div>
       <div class="field">מודלים מותרים <span class="muted small">מחיר לכל מיליון טוקנים: נכנס / יוצא</span><div id="aModels"></div></div>
     </fieldset>
@@ -419,6 +464,7 @@
       <label class="field"><span id="pwLabel"></span><input type="password" id="aPassword" autocomplete="new-password" minlength="8"></label>
       <label class="check" id="keyField"><input type="checkbox" id="aKey"> ליצור מפתח לאפליקציות (API)</label>
       <div class="field" id="keyRow"></div>
+      <label class="field">המפתח בתוקף עד (ריק = בלי תאריך תפוגה)<input type="date" id="aKeyExpires"></label>
     </fieldset>
     <p class="error" id="accountError" role="alert"></p>
     <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
@@ -506,7 +552,7 @@
 <dialog id="keyDialog">
   <div class="grid" style="gap:14px">
     <h2>המפתח החדש</h2>
-    <p class="small" style="margin:0">המפתח מוצג <b>פעם אחת בלבד</b>. השער שומר רק טביעה מוצפנת שלו, ולכן אי אפשר לשחזר אותו. העתיקו ומסרו אותו עכשיו.</p>
+    <p class="small" style="margin:0">המפתח מוצג <b>פעם אחת בלבד</b>. השער שומר רק טביעת אצבע חד-כיוונית שלו (<bdi>SHA-256</bdi>), ולכן אי אפשר לשחזר אותו. העתיקו ומסרו אותו עכשיו.</p>
     <div class="secret" id="keyValue"></div>
     <div class="row"><button id="copyKey"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span>העתקה</span></button><button type="button" class="ghost" data-close>סגירה</button></div>
   </div>

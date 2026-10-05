@@ -36,9 +36,15 @@ window.EN_HTML = Object.assign(window.EN_HTML || {}, {
             <li class="sub"><a href="#mcp">MCP connections</a></li>
             <li><a href="#reports">Reports</a></li>
             <li><a href="#security">Security</a></li>
+            <li class="sub"><a href="#policy">Blocking policy</a></li>
+            <li class="sub"><a href="#encryption">Encryption and the encryption key</a></li>
             <li><a href="#logs">Logs</a></li>
+            <li><a href="#archive">Archive</a></li>
           </ul></div>
           <div><h3>Technical</h3><ul>
+            <li><a href="#hardening">Security checklist</a></li>
+            <li class="sub"><a href="#security-settings">Server security settings</a></li>
+            <li class="sub"><a href="#operator">Server operator checklist</a></li>
             <li><a href="#api">Connecting apps</a></li>
             <li><a href="#settings">Server settings</a></li>
             <li><a href="#limits">Known limitations</a></li>
@@ -53,7 +59,7 @@ window.EN_HTML = Object.assign(window.EN_HTML || {}, {
           <li><span><b>Identification:</b> who is asking. An employee is identified when signing in to the chat, an app by the key it was given.</span></li>
           <li><span><b>Permission:</b> whether they are allowed to use this model, and whether the model is turned on.</span></li>
           <li><span><b>Budget and rate:</b> whether they and their team still have budget left this month, and whether they haven't gone over their requests per minute.</span></li>
-          <li><span><b>Protection:</b> ID numbers, credit cards and keys are hidden, and suspicious content is logged.</span></li>
+          <li><span><b>Protection:</b> ID numbers, credit cards and keys are hidden. A question that tries to override the model's instructions is blocked. That is the default, and the admin can change it to "log only" in the Security tab.</span></li>
           <li><span><b>Documents:</b> if the employee asked for it, the gateway searches the company's documents and attaches the relevant passages.</span></li>
           <li><span><b>Sending to the provider:</b> to the chosen model, or to its backup if the provider is unavailable.</span></li>
           <li><span><b>Logging:</b> who, when, which model, how many tokens, what it cost, and the question and answer themselves.</span></li>
@@ -66,8 +72,10 @@ window.EN_HTML = Object.assign(window.EN_HTML || {}, {
 docker compose up -d --build</pre>
         <p>Fill in the provider keys in <code>.env</code>. If you have a domain pointing at the server, put it in <code>SITE_ADDRESS</code> and the connection is encrypted automatically (HTTPS). Without a domain the connection is not encrypted and is suitable for the office network only.</p>
         <h3>Without Docker</h3>
-        <pre>python gateway.py</pre>
-        <p>The gateway reads the <code>.env</code> next to its files and comes up at <code>http://localhost:8080</code>. It has no external package dependencies, except <code>pypdf</code> for reading PDFs (optional).</p>
+        <pre>pip install --require-hashes -r requirements.txt
+python gateway.py</pre>
+        <p>The first command installs the packages the gateway needs: <code>cryptography</code> for encryption (together with <code>cffi</code> and <code>pycparser</code>, which it needs), and <code>pypdf</code> for reading PDFs. <code>requirements.txt</code> lists an exact version and a fingerprint of the file for each package, and pip refuses to install a file that doesn't match its fingerprint. Without <code>cryptography</code> the gateway doesn't start; without <code>pypdf</code> it starts but can't read PDFs. With Docker this installation happens on its own.</p>
+        <p>The gateway reads the <code>.env</code> next to its files and comes up at <code>http://localhost:8080</code>.</p>
         <h3>Sample data and backup</h3>
         <ul>
           <li><code>python seed_demo.py</code> fills an empty system with sample teams, users, 45 days of usage and knowledge sources.</li>
@@ -93,7 +101,7 @@ docker compose up -d --build</pre>
         <p>Below the message box are the sources the employee's team is allowed to search. Tick the ones to use. When an answer relies on documents, it shows "Based on" with the document names underneath.</p>
         <h3>More</h3>
         <ul>
-          <li>Conversations are saved in a list on the side, and the employee can go back to them or delete them. Deleting removes the conversation from the employee's list; the copy in the admin log stays.</li>
+          <li>Conversations are saved in a list on the side, and the employee can go back to them or move them to the archive. An archived conversation leaves the list but is not deleted: the "Archive" link at the top of the list shows it, with a restore button. Writing again in an archived conversation brings it back to the list. The copy in the admin log stays either way.</li>
           <li>At the bottom of the menu: how much of the budget the employee and their team have spent this month, and how much is left.</li>
           <li>An answer that includes a command that could delete data or run code from the internet gets a warning at its end.</li>
           <li>An answer can be stopped midway with the "Stop" button.</li>
@@ -118,9 +126,10 @@ docker compose up -d --build</pre>
         <p>Every employee, app or customer is an account. Each account has:</p>
         <ul>
           <li>A <b>team</b>, a <b>monthly budget</b>, <b>allowed models</b> and a <b>requests-per-minute limit</b>.</li>
-          <li>A <b>chat password</b> (optional) and/or an <b>API key</b> for apps. The key is shown only once, when it's created; the gateway keeps only an encrypted fingerprint of it. A new key can be issued, or a key revoked, in the edit window.</li>
+          <li>A <b>chat password</b> (optional) and/or an <b>API key</b> for apps. The key is shown only once, when it's created. The gateway keeps only a fingerprint of it (SHA-256): a one-way calculation that can't be turned back into the key. A new key can be issued, or a key revoked, in the edit window.</li>
           <li><b>Forecast</b>: how much the account will spend by the end of the month at the current pace. <b>Recommended budget</b>: the higher of the forecast and last month, plus 20%.</li>
           <li>The <b>"Apply"</b> button appears only when the budget needs to go up so the account won't be blocked. Before the change there is a confirmation showing the old and new amounts, and afterwards it can be undone.</li>
+          <li><b>Moving to the archive:</b> the account disappears from the lists, its password and key stop working right away, and it is signed out on every device. Its history stays in the log and the reports. Restore it from the <a href="#archive">archive</a>, and the previous password and key work again. A new account can't be created with the name of an archived one: restore it instead.</li>
         </ul>
         <p>You can search by name or team, and sort by name, team, spend or forecast. On a phone each row is shown as a card.</p>`,
 
@@ -131,6 +140,7 @@ docker compose up -d --build</pre>
           <li>A question is blocked when the personal budget <b>or</b> the team budget runs out.</li>
           <li>On the 1st of each month spending resets to zero; the history stays in the log.</li>
           <li>The teams screen shows the forecast, the recommended budget, and the total of the team members' budgets, so you can see whether the team cap fits them.</li>
+          <li><b>Moving to the archive:</b> only for a team with no people in it, so nobody is suddenly left without a team. The team leaves the lists and the choices, and its budget and history are kept. An archived user whose team is archived comes back only after the team does.</li>
         </ul>`,
 
   "#models": `
@@ -139,9 +149,9 @@ docker compose up -d --build</pre>
         <ul>
           <li><b>Turning on and off:</b> a model that is turned off is blocked for everyone immediately. Before turning it off you see how many accounts are allowed to use it, and afterwards it can be undone.</li>
           <li><b>Adding and editing:</b> an alias (what apps send), a display name, the provider, the exact name at the provider, and prices per million tokens: input, output, and from the cache.</li>
-          <li><b>Default:</b> the model that is ticked for a new user. It can't be turned off or deleted until another one is set.</li>
+          <li><b>Default:</b> the model that is ticked for a new user. It can't be turned off or moved to the archive until another one is set.</li>
           <li><b>Connection test:</b> sends the provider a short question and shows whether the key and name work, and how long it took.</li>
-          <li><b>Deleting:</b> only when no account is allowed to use the model.</li>
+          <li><b>Moving to the archive:</b> only when no account is allowed to use the model. An archived model works for no one, not even an app that sends its alias, and it can be restored.</li>
           <li><b>Charts:</b> daily spend by model, and share of requests against share of spend, to spot a model that is expensive per request.</li>
           <li>At the top, each provider shows whether it has a key in the <code>.env</code> file.</li>
         </ul>
@@ -160,10 +170,11 @@ docker compose up -d --build</pre>
           <thead><tr><th>Type</th><th>What it does</th></tr></thead>
           <tbody>
             <tr><td><b>Uploaded files</b></td><td>PDF, Word (docx) and text files (Markdown, CSV, HTML, JSON and more), up to 5MB per file.</td></tr>
-            <tr><td><b>Folder on the server</b></td><td>"Sync now" reads all the files in the folder. Files that were deleted drop out of search. With Docker: the <code>sources</code> folder next to the project.</td></tr>
+            <tr><td><b>Folder on the server</b></td><td>"Sync now" reads all the files in the folder. A document whose file was deleted from the folder moves to the archive and drops out of search; when the file comes back, it is read again and leaves the archive. With Docker: the <code>sources</code> folder next to the project.</td></tr>
             <tr><td><b>MCP server</b></td><td>Information from another system. See <a href="#mcp">MCP connections</a>.</td></tr>
           </tbody>
         </table>
+        <p>An uploaded document, and a whole source too, can be moved to the archive: they drop out of search and out of the lists, and stay in the database with their text, so they can be restored. Uploading a file with the same name again brings a document back from the archive, with the new content. A document's previous version is never deleted: it is kept, encrypted, in the database. Files in the server folder itself are not changed.</p>
         <h3>How search works</h3>
         <ul>
           <li><b>By words:</b> including stripping Hebrew one-letter prefixes (ו, ה, ב, ל...) and ignoring filler words such as "של" (of) and "מה" (what).</li>
@@ -176,7 +187,7 @@ docker compose up -d --build</pre>
         <p>MCP is a standard way for systems (a CRM, a wiki, a ticketing system) to expose information to AI. Enter an address and an access key, and "Test connection" shows the server's name, its tools and its documents. Two modes:</p>
         <ul>
           <li><b>Live search:</b> on every question the gateway calls the chosen search tool with the question, and attaches the result (up to 3,000 characters).</li>
-          <li><b>Sync:</b> the server's documents are copied into the index, like a folder.</li>
+          <li><b>Sync:</b> the server's documents are copied into the index, like a folder. A document that disappeared from the server moves to the archive.</li>
         </ul>
         <p>Every response from the server goes through sensitive-data hiding and a check for suspicious content. A response that tries to give the model instructions is blocked and logged. The access key is kept on the server and never sent back to the browser.</p>`,
 
@@ -186,23 +197,184 @@ docker compose up -d --build</pre>
 
   "#security": `
         <h2>Security</h2>
+        <p>Every question from an employee or an app goes through the gateway before it reaches the provider, so this is where every question is checked and every record is kept. Below: what the gateway does on its own, what you set in the "Security" tab, and what you must know about encryption. The full list, topic by topic, is in the <a href="#hardening">security checklist</a>.</p>
         <h3>What the gateway does on its own</h3>
         <ul>
-          <li><b>Hiding sensitive data</b> before it goes out to the provider and before it is stored: valid Israeli ID numbers, credit cards and access keys.</li>
-          <li><b>Detecting suspicious content</b> in questions, documents and answers: attempts to override instructions (Hebrew and English), browser code, and destructive commands. A suspicious question is logged, not blocked, because employees legitimately ask about code.</li>
-          <li><b>Protection from other websites:</b> a hostile website an employee opens can't make their browser send commands to the gateway, and the gateway only answers to addresses it knows.</li>
-          <li><b>Secrets stored as encrypted fingerprints:</b> API keys and passwords are not stored as plain text.</li>
-          <li><b>Injected code doesn't run:</b> the browser runs only the gateway's own script files.</li>
-          <li><b>Lockout</b> after 5 wrong passwords, and the same sign-in time even for a username that doesn't exist.</li>
+          <li><b>Hiding sensitive data in questions</b>, before they go out to the provider and before they are stored: keys and passwords, Israeli international bank account numbers (IBAN), credit cards (only numbers that pass the check-digit test of a real card), ID numbers (only with a correct check digit), phone numbers (mobile, landline, +972) and email addresses. Bank account and passport numbers are hidden only when a label next to them says what they are, because a bare number is usually something else.</li>
+          <li><b>Hiding in answers:</b> keys and passwords only. In the chat the gateway holds the text back until the next space, so a key that arrives in several pieces is still caught. For apps, each piece of a streamed answer is checked.</li>
+          <li><b>Detecting attempts to get around the model</b>, in Hebrew and English: "ignore your instructions", "pretend you have no limits", and requests to reveal the model's hidden instructions, keys or passwords. What happens to such a question is set in the <a href="#policy">blocking policy</a>.</li>
+          <li><b>Documents are information, not instructions:</b> every document passage attached to a question is wrapped in markers and a line telling the model it is information, not instructions. Under the block policy, a passage that tries to give the model instructions is dropped, and the question itself goes ahead without it.</li>
+          <li><b>Warnings in answers:</b> a command that could delete data or run code from the internet, and a suspicious link (an IP address instead of a site name, a site name written with look-alike letters, a link that runs code, a link-shortening service), get a warning for the employee and are logged as an event.</li>
+          <li><b>The gateway's instructions don't leak:</b> an answer that repeats 60 or more characters of the instructions the gateway sends the model is hidden in the log and recorded as an event.</li>
+          <li><b>Protection from other websites:</b> a hostile website an employee opens can't make their browser send commands to the gateway, and the gateway only answers to server names it knows.</li>
+          <li><b>Keys are never exposed:</b> an app key is shown once, when it's created. The database keeps only a fingerprint of it: the result of a one-way calculation that can't be turned back into the key. The screens never receive keys, fingerprints or provider keys.</li>
+          <li><b>Lockout:</b> 5 wrong passwords lock the account for 15 minutes, and 10 failed sign-ins from one address within 15 minutes block that address.</li>
+          <li><b>A change log that can't be altered quietly:</b> each row is "signed" together with the row before it, so changing or deleting a row is detected.</li>
         </ul>
         <h3>The "Security" tab</h3>
-        <p>Counts for the last 7 days, a status check (encryption, admin password, keys with no rate limit, open mode, connected providers), and an event log that can be filtered by type.</p>`,
+        <p>Counts for the last 7 days, a "Status check" (encryption, admin password, keys with no rate limit, open mode, connected providers), "Policy", a check that the change log hasn't been altered, "Blocked requests" (the last 200, with the reason and a masked excerpt of the question), and "Security events" (the last 200) that can be filtered by type.</p>
+
+        <h3 id="policy">Blocking policy</h3>
+        <p>In the "Policy" card of the "Security" tab you choose what happens to a question that was caught. The setting applies to all accounts at once, and every change to it is recorded in the change log.</p>
+        <table>
+          <thead><tr><th>What was caught</th><th>The options</th></tr></thead>
+          <tbody>
+            <tr><td><b>An attempt to override the model's instructions</b> (prompt injection or jailbreak)</td><td><b>Block</b> ("Block the question", the default), or <b>log only</b> ("Send and record in the log").</td></tr>
+            <tr><td><b>Sensitive data</b> (ID number, credit card, phone, email, keys and more)</td><td><b>Mask</b> ("Hide the data and send", the default), <b>block</b> ("Block the question"), or <b>log only</b> ("Send without hiding and record in the log").</td></tr>
+          </tbody>
+        </table>
+        <p>A blocked question gets a refusal (code 403), and appears in the "Blocked requests" card with the reason. Questions about code and commands are never blocked, only logged, because employees legitimately ask about them.</p>
+
+        <h3 id="encryption">Encryption and the encryption key</h3>
+        <p>The gateway encrypts what is sensitive in the database, using a standard encryption method (AES-256-GCM) that also detects if anyone has altered the encrypted text:</p>
+        <ul>
+          <li><b>Encrypted:</b> the questions and answers in the log, saved chats (title and messages), knowledge-source settings including the access keys for MCP servers, excerpts from blocked requests, and excerpts in new security events.</li>
+          <li><b>Not encrypted:</b> the document search index and its meaning fingerprints, so that search keeps working. Anyone who gets the database file can read the document passages in the index.</li>
+        </ul>
+        <p><b>Where the key lives:</b> in the <code>FIREGATE_DATA_KEY</code> setting in the <code>.env</code> file. If that is empty, in a file next to the database with the same name and the extension <code>.key</code> (with Docker: <code>/data/gateway.db.key</code>). If neither exists and the database isn't encrypted yet, the gateway creates a new key file and prints a prominent message telling you to back it up.</p>
+        <p><b>Creating a key yourself</b> (paste the result into <code>FIREGATE_DATA_KEY</code>):</p>
+        <pre>python -c "import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"</pre>
+        <div class="warn-box" role="note">
+          <p><b>Important before you go on</b></p>
+          <ul>
+            <li>Back up the key <b>separately</b> from the database backups. If the key and the backup are kept in the same place, whoever gets one gets both, and the encryption protects nothing.</li>
+            <li><b>A lost key means lost data.</b> There is no back door: without the key the questions, answers and chats can never be read again.</li>
+            <li>Once the database holds encrypted data, the gateway <b>refuses to start</b> without the key or with a different key, and prints why. This way a new key can't accidentally "bury" the old data.</li>
+            <li>On the first start of the version with encryption, the gateway first copies the whole database to the <code>backups</code> folder next to it, and only then encrypts the existing rows. <b>That copy is not encrypted</b>: keep it somewhere encrypted, like any other backup.</li>
+          </ul>
+        </div>`,
+
+  "#hardening": `
+        <h2>Security checklist</h2>
+        <p>Every topic on the security checklist, what the gateway does about it on its own, and what is left for the admin or whoever maintains the server. "—" means there is nothing to do.</p>
+        <table>
+          <thead><tr><th>Topic</th><th>What the system does</th><th>What the admin needs to do</th></tr></thead>
+          <tbody>
+            <tr class="group"><th colspan="3">3. Secrets management</th></tr>
+            <tr><td>Storing keys and secrets securely</td><td>The provider keys live only in the <code>.env</code> file on the server. App keys are stored only as a fingerprint (SHA-256, a one-way calculation that can't be turned back into the key), and passwords with a deliberately slow method (PBKDF2) so they are hard to guess.</td><td>Keep <code>.env</code> only on the server, readable only by the server's administrator.</td></tr>
+            <tr><td>Encryption at rest</td><td>"At rest" means data while it is stored on disk. Questions, answers, chats, source settings and the excerpts in the security logs are encrypted in the database. The search index is not. See <a href="#encryption">Encryption and the encryption key</a>.</td><td>Back up the encryption key separately from the database. Encrypting the server's whole disk (BitLocker, LUKS, or the cloud provider's disk encryption) adds a layer.</td></tr>
+            <tr><td>Keeping secrets out of logs</td><td>Keys, passwords and sensitive numbers are hidden before the question is stored. The lines the server prints contain only the address, time, kind of request, the path without its parameters, the result code and the request number: never content, keys or sign-in cookies.</td><td>—</td></tr>
+            <tr><td>Keeping secrets off the screens</td><td>The screens never receive keys, fingerprints of keys or passwords, provider keys or MCP access keys. The automated tests check this on every address a screen reads from.</td><td>—</td></tr>
+            <tr><td>Rotating and revoking keys</td><td>A new key can be issued, or a key revoked, in the edit window, and given an expiry date: the key works until the end of that day and is refused after it (code 401). A new key starts with no expiry date. The dashboard warns when fewer than 14 days are left, or when a key has been in use for more than 90 days.</td><td>Replace a key when the alert appears. Rotate the provider keys from time to time, and immediately if <code>.env</code> may have leaked.</td></tr>
+
+            <tr class="group"><th colspan="3">4. Gateway and API security</th></tr>
+            <tr><td>SQL/NoSQL Injection</td><td>Slipping database commands into text a user sends. The gateway sends the database only fixed queries, with the values passed separately, so text never becomes a command. There is no NoSQL database.</td><td>—</td></tr>
+            <tr><td>SSRF</td><td>Making the server contact an internal address on the attacker's behalf. The gateway contacts only the fixed providers and MCP servers an admin configured. Before every MCP call the address is resolved to an IP address and checked: the server itself, local addresses and the cloud provider's internal information address are always blocked, and the gateway doesn't follow redirects to another address.</td><td>If all MCP servers are outside the internal network, set <code>ALLOW_PRIVATE_MCP=0</code>.</td></tr>
+            <tr><td>Command Injection</td><td>Running operating-system commands through input. The gateway runs no system commands anywhere.</td><td>—</td></tr>
+            <tr><td>Path Traversal</td><td>Reading files outside the allowed folder (for example with <code>../</code>). Site files are served from a fixed list. A folder used as a knowledge source must be a full path, inside <code>SOURCE_ROOTS</code> if it's set, and files can't escape it through shortcuts (links).</td><td>Set <code>SOURCE_ROOTS</code> to the document folders only (with Docker: <code>/sources</code>).</td></tr>
+            <tr><td>Header Injection</td><td>Inserting a line break into the response headers to add a forged header. The gateway strips line breaks and control characters from every header it sends.</td><td>—</td></tr>
+            <tr><td>Request Smuggling</td><td>"Smuggling" a second request inside the first, when the front door and the server disagree about where a request ends. A request with two length declarations, a request sent in pieces (chunked) or an invalid length is refused (code 400); a request that is too large is refused (code 413).</td><td>—</td></tr>
+            <tr><td>CORS/CSRF</td><td>Another website making the employee's browser send commands to the gateway. The gateway never allows any other site to read from it (it sends no CORS headers), accepts commands only as JSON, and checks that they came from its own pages (by the Origin and Sec-Fetch-Site headers). It only answers to server names it knows.</td><td>Add every extra name that points at the gateway to <code>ALLOWED_HOSTS</code>.</td></tr>
+            <tr><td>Broken Access Control</td><td>Reaching something without permission. An employee sees only their own chats, gets passages only from sources their team may use, and uses only the models allowed to them. An app key doesn't work in the chat. The admin screen from outside requires <code>ADMIN_PASSWORD</code>.</td><td>Set a strong <code>ADMIN_PASSWORD</code>, and turn off <code>OPEN_ACCESS</code> once there are real users.</td></tr>
+            <tr><td>Mass Assignment</td><td>Sending extra fields in a request to change something forbidden, such as the spend or the key. Updating an account accepts only a fixed list of fields, and everything else is dropped.</td><td>—</td></tr>
+            <tr><td>API Abuse</td><td>Excessive or unusual use of the gateway. Request size is limited, up to 500 messages per request, answers up to 8,192 tokens, up to 4 questions at once per account, a requests-per-minute limit, a budget and a daily quota. See <a href="#security-settings">Server security settings</a>.</td><td>Give every account a requests-per-minute limit and a budget. "Status check" shows keys with no rate limit.</td></tr>
+
+            <tr class="group"><th colspan="3">5. AI-specific security</th></tr>
+            <tr><td>Prompt Injection</td><td>Text that tries to make the model ignore its instructions. The gateway detects such attempts in Hebrew and English, and blocks or logs them according to the policy.</td><td>Choose a <a href="#policy">policy</a>. The default is block.</td></tr>
+            <tr><td>Indirect Prompt Injection</td><td>The same, but the instructions are hidden in a document or in another system's response rather than in the question. A suspicious document is blocked on upload. Document passages are attached marked "information, not instructions", and a passage that tries to give instructions is dropped (under the block policy). An MCP server response that tries to give instructions is blocked.</td><td>Approve a blocked document only after reading it.</td></tr>
+            <tr><td>Jailbreaks</td><td>Trying to talk the model into breaking its safety rules ("pretend you have no limits"). Detected and handled under the same policy.</td><td>—</td></tr>
+            <tr><td>Tool/Function Call Abuse</td><td>Making the model trigger tools that take actions. The gateway itself never runs tools the model asks for. For an MCP connection the gateway calls only the tool the admin chose, with only the question, and refuses tools the server marks as changing data. An app that gives the model its own tools runs them on its side.</td><td>Choose a search tool only for each MCP connection.</td></tr>
+            <tr><td>Malicious Files/URLs</td><td>A document with browser code, an attempt to override instructions or a dangerous command is blocked on upload (up to 5MB per file). A suspicious link in an answer (an IP address, a disguised site name, a link that runs code, a link shortener) gets a warning and is logged.</td><td>—</td></tr>
+            <tr><td>Excessive Agent Permissions</td><td>An AI agent with permissions that are too broad. The gateway's only connection to other systems is MCP, limited to one tool the admin chose. Tools the server marks as changing data are refused, but a tool not marked that way is accepted.</td><td>Give the MCP server an access key with read-only permission, and only to what is needed.</td></tr>
+            <tr><td>System Prompt Leakage</td><td>The model revealing the hidden instructions it was given. A request to reveal them is detected as an override attempt. An answer that repeats 60 or more characters of the gateway's instructions is hidden in the log and recorded as an event.</td><td>—</td></tr>
+            <tr><td>Attempts to expose credentials</td><td>A request for keys or passwords is detected as an override attempt. The model never receives the gateway's keys. A key or password that appears in an answer is hidden before it reaches the employee, even when it arrives in pieces.</td><td>—</td></tr>
+
+            <tr class="group"><th colspan="3">6. Data leakage</th></tr>
+            <tr><td>Leaking PII and sensitive data</td><td>PII means information that identifies a person. ID numbers, credit cards, IBANs, phone numbers, emails and keys are hidden before the question goes out to the provider and before it is stored.</td><td>Choose a <a href="#policy">policy</a>. Use "send without hiding" only with good reason and a suitable agreement with the provider.</td></tr>
+            <tr><td>Storing questions and answers</td><td>Kept with no time limit, after hiding, and encrypted. A chat an employee moves to the archive leaves only their list; the chat itself and the copy in the log stay.</td><td>—</td></tr>
+            <tr><td>Unauthorized access to data</td><td>The question log is only on the admin screen. An employee sees only their own chats, and knowledge sources are limited by team. The content in the database is encrypted.</td><td>Protect <code>ADMIN_PASSWORD</code>, and never expose the gateway directly to the network (only through Caddy).</td></tr>
+            <tr><td>Exposing data through logs</td><td>The excerpts kept from blocked requests and security events are up to 200 characters, after hiding, and encrypted. The lines the server prints contain no content.</td><td>—</td></tr>
+            <tr><td>Sending data to AI providers</td><td>The provider receives only the question, after hiding, and the relevant document passages (up to 6). The provider never gets the gateway's keys or details about employees beyond what is written in the question.</td><td>Check each provider's terms on keeping data and using it for training, and choose providers accordingly.</td></tr>
+            <tr><td>Complete data deletion</td><td>By the owner's decision, <b>nothing is ever deleted</b>. There is no way to delete questions, answers, logs or the change log. Users, teams, models, knowledge sources, documents and chats aren't deleted either: they move to the <a href="#archive">archive</a>, leave use, and can be restored. Instead of deletion, sensitive data is hidden before it is stored, what is stored is encrypted, and access to it is limited to the admin screen. What is deleted: chat sign-ins that expired or were signed out (they are only proof of sign-in, not data). And uploading a document again under the same name gives it the new content, while the previous version is kept, encrypted, in the database.</td><td>If a law, a customer or an employee requires deletion, know in advance that the system doesn't support it.</td></tr>
+
+            <tr class="group"><th colspan="3">7. Logging and monitoring</th></tr>
+            <tr><td>Who did what, when, and with which model</td><td>Every question is recorded: who, team, when, which model answered, tokens, cost and the request number. Every admin action is recorded in the change log.</td><td>—</td></tr>
+            <tr><td>Preventing changes to or deletion of the change log</td><td>Each row in the change log has a seal calculated partly from the seal of the row before it, like links in a chain. Changing or deleting a row breaks the chain. The "Security" tab shows whether the chain is intact, the dashboard warns if it isn't, and it can also be checked at <code>GET /admin/api/audit/verify</code>.</td><td>Act on the alert at once. The seal isn't secret: someone who holds the database file and knows what they're doing can recalculate the whole chain. So limit access to the server and keep backups elsewhere, for comparison.</td></tr>
+            <tr><td>Keeping sensitive data out of logs</td><td>Hiding before storing, encrypting what is stored, and server lines without content.</td><td>—</td></tr>
+            <tr><td>Tracking admin actions</td><td>The change log: creating, updating, archiving and restoring accounts, teams, models, sources and documents, and policy changes, including the before and after values.</td><td>—</td></tr>
+            <tr><td>End-to-end request tracing</td><td>Every request gets an ID number, returned to the app in the <code>x-request-id</code> header and stored in the question log and the blocked-requests log. An app can send its own number; it is kept only if it is up to 64 characters of English letters, digits, dot, underscore and hyphen.</td><td>Store the number in the app's own logs too, to find a request on both sides.</td></tr>
+
+            <tr class="group"><th colspan="3">8. Rate limiting and abuse</th></tr>
+            <tr><td>Brute Force</td><td>Guessing passwords by force. 5 wrong passwords lock the account for 15 minutes. 10 failed sign-ins from one address within 15 minutes, for any names, block that address (code 429). The response time is the same even for a username that doesn't exist.</td><td>—</td></tr>
+            <tr><td>Token Abuse</td><td>Using a stolen key, or using a key excessively. A key can be revoked at once and given an expiry date, and an account can be given a daily token quota (0 = no quota).</td><td>Give apps an expiry date and a daily quota.</td></tr>
+            <tr><td>Account Takeover</td><td>Taking over someone else's account. Lockout after wrong passwords; a sign-in lasts 12 hours, in a cookie that code on the page can't read; changing the password signs out every device.</td><td>Give each employee their own password, and turn off <code>OPEN_ACCESS</code> once there are real users.</td></tr>
+            <tr><td>Request Flooding</td><td>Flooding with requests. A requests-per-minute limit per account, up to 4 questions at once (beyond that, code 429), and limited request size.</td><td>Give every account a requests-per-minute limit.</td></tr>
+            <tr><td>Token/Quota Exhaustion</td><td>One or more questions that use up the quota. Answers are limited to 8,192 tokens, up to 500 messages per request, and a daily quota and budget per account.</td><td>—</td></tr>
+            <tr><td>Cost Abuse</td><td>A personal monthly budget and a team budget: an alert at 80%, blocking at 100%. Cost spike: if an account spent more than $5 in the last hour and also more than 5 times its average hour over the week before, an event is recorded and an alert appears on the dashboard, once a day per account.</td><td>Also set a spending limit with each provider.</td></tr>
+
+            <tr class="group"><th colspan="3">9. Infrastructure security</th></tr>
+            <tr><td>TLS 1.2/1.3</td><td>Encrypting the connection between the browser and the server. Caddy, the front door installed together with the gateway, gets a certificate automatically and accepts only TLS 1.2 and 1.3. It adds a header telling the browser to use only an encrypted connection for a year (HSTS), plus other protective headers, and hides the server type.</td><td>Set <code>SITE_ADDRESS</code> to a domain. Without a domain there is no encryption.</td></tr>
+            <tr><td>Network segmentation</td><td>The gateway and Caddy sit on their own internal network. The gateway's port (8080) is not open to the outside, and only Caddy accepts connections.</td><td>Allow the server outbound access only to the AI providers and the company's MCP servers, and don't connect it to networks it has no reason to reach.</td></tr>
+            <tr><td>Firewall</td><td>The gateway doesn't manage the server's firewall.</td><td>Open only 443 and 80. Never open 8080.</td></tr>
+            <tr><td>Container security</td><td>The container runs as a user without administrator rights, with a read-only file system (except <code>/data</code>), no extra system privileges, no way to gain privileges later, and memory and process limits.</td><td>Rebuild from time to time to get updates (see the <a href="#operator">checklist</a>).</td></tr>
+            <tr><td>IAM and cloud permissions</td><td>The gateway needs no cloud permissions at all.</td><td>Give the server's cloud identity no permissions beyond running itself: no access to storage, permissions or billing.</td></tr>
+            <tr><td>Database security</td><td>The database is a single file in the <code>/data</code> folder, which only the gateway's user can access. Its sensitive content is encrypted, and queries are only sent in fixed form.</td><td>Limit who can sign in to the server. Disk encryption adds a layer.</td></tr>
+            <tr><td>Backup security</td><td>Before changing the database structure, the gateway backs it up to the <code>backups</code> folder. That backup is not encrypted.</td><td>Encrypt all backups of <code>/data</code>, and keep the encryption key separately from them.</td></tr>
+            <tr><td>Vulnerable dependencies</td><td>Few outside packages: pypdf for reading PDFs, and cryptography for encryption with two packages it needs. All of them are checked automatically against lists of known vulnerabilities. pypdf was upgraded from 6.14.2 to 6.19.0, because the old version had 15 known vulnerabilities.</td><td>Rebuild when an update comes out.</td></tr>
+
+            <tr class="group"><th colspan="3">10. Supply chain</th></tr>
+            <tr><td>CVEs in dependencies</td><td>A CVE is an official number for a known vulnerability. On every code change, pip-audit checks the Python packages, and Trivy scans the whole container and fails on a critical vulnerability that already has a fix.</td><td>Update when a check fails.</td></tr>
+            <tr><td>Outdated dependencies</td><td>Dependabot (a GitHub service) proposes updates once a week: Python packages, Docker images and GitHub actions.</td><td>Approve the updates and rebuild.</td></tr>
+            <tr><td>Malicious packages</td><td>Every package is installed at an exact version and checked against a fixed fingerprint of the file. A package someone swapped fails to install.</td><td>—</td></tr>
+            <tr><td>Dependency Confusion</td><td>Accidentally installing a package with the same name from another source. The gateway has no internal packages, and every file is checked against its fingerprint, so a different file won't be installed.</td><td>—</td></tr>
+            <tr><td>CI/CD security</td><td>CI means the checks that run automatically on GitHub for every change. The actions they use are pinned to an exact version, and the scanning tools are checked against a fingerprint before they run.</td><td>—</td></tr>
+            <tr><td>Secrets in Git</td><td>gitleaks scans the code's entire history on every change and fails if it finds a key or password. <code>.env</code>, the key file, the database and the backups never go into git.</td><td>Don't copy secrets into other files in the project.</td></tr>
+            <tr><td>Build integrity and signing</td><td>The container's base image is pinned to an exact version by fingerprint. Every build produces a list of everything in the container (SBOM). The container isn't published yet, so it isn't signed either.</td><td>When you start publishing the container, sign it following the instructions in <code>SECURITY.md</code>.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="security-settings">Server security settings</h3>
+        <p>In the <code>.env</code> file. All of them can be left empty; the defaults suit most cases.</p>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>FIREGATE_DATA_KEY</code></td><td>None</td><td>The database encryption key. Without it the gateway uses the <code>&lt;db&gt;.key</code> file next to the database, or creates it. See <a href="#encryption">Encryption and the encryption key</a>.</td></tr>
+            <tr><td><code>TRUSTED_PROXIES</code></td><td><code>127.0.0.1,::1</code></td><td>Which addresses the gateway believes when they pass on the client's address. With Docker the setting is <code>127.0.0.1,::1,172.28.0.0/24</code>, that is, Caddy's internal network.</td></tr>
+            <tr><td><code>MAX_BODY</code></td><td>40MiB</td><td>Maximum size of a document upload and of app requests (which may carry images and PDFs). Caddy is limited to the same size.</td></tr>
+            <tr><td><code>MAX_REQUEST_BODY</code></td><td>1MiB</td><td>Maximum size of every other request: chat and admin-screen changes.</td></tr>
+            <tr><td><code>MAX_OUTPUT_TOKENS</code></td><td>8192</td><td>The maximum answer length. An app asking for more gets this maximum, which may limit apps that need long answers.</td></tr>
+            <tr><td><code>MAX_CONCURRENT</code></td><td>4</td><td>Questions at once per account. Beyond that, code 429.</td></tr>
+            <tr><td><code>MAX_MESSAGES</code></td><td>500</td><td>Messages in a single request. Beyond that, code 400.</td></tr>
+            <tr><td><code>SOURCE_ROOTS</code></td><td>Not set</td><td>The folders that folder-type knowledge sources may come from, separated by commas. When set, a folder outside them is refused.</td></tr>
+            <tr><td><code>ALLOW_PRIVATE_MCP</code></td><td><code>1</code></td><td><code>0</code> = also block MCP servers at internal-network addresses. The server itself, local addresses and the cloud provider's information address are always blocked, and redirects are never followed.</td></tr>
+            <tr><td><code>PUBLIC_DEPLOY</code></td><td>Off</td><td><code>1</code> = the gateway doesn't distinguish the office from outside: the admin screen always asks for the password, and open mode is off. Required if anything sits in front of Caddy (a load balancer, a CDN), or if the gateway can be reached from the internet.</td></tr>
+            <tr><td><code>ALLOWED_HOSTS</code></td><td>Empty</td><td>Extra server names the gateway will answer to, separated by commas (the domain in <code>SITE_ADDRESS</code> is already included).</td></tr>
+            <tr><td><code>OPEN_ACCESS</code></td><td>Off</td><td><code>1</code> = chat without signing in on the office network, and anyone can pick any name. Turn it off as soon as there are real users.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="operator">Server operator checklist</h3>
+        <ul>
+          <li>Only 443 and 80 are open in the firewall (Caddy uses 80 to redirect to HTTPS and to get a certificate).</li>
+          <li><b>Never open 8080.</b> The gateway believes the client address Caddy passes on, so anyone who reaches it directly from an internal address can pretend to be in the office.</li>
+          <li><code>SITE_ADDRESS</code> holds a domain, so the connection is encrypted. <code>:80</code> (no encryption) is only for a closed office network.</li>
+          <li>If a load balancer or CDN sits in front of Caddy: <code>PUBLIC_DEPLOY=1</code>.</li>
+          <li>Everything the gateway writes is in <code>/data</code>: the database, the key file and the backups. Back it up encrypted, and keep the key separately.</li>
+          <li>The server goes out to the internet only to the AI providers (<code>api.anthropic.com</code>, <code>api.openai.com</code>, <code>generativelanguage.googleapis.com</code>) and the company's MCP servers. Everything else is blocked.</li>
+          <li>Rotate the provider keys from time to time, and give each one a spending limit at the provider.</li>
+          <li>Updating: <code>docker compose build --pull &amp;&amp; docker compose up -d</code></li>
+          <li>On every code change, automated checks run on GitHub: the gateway's tests, a search for known vulnerabilities in the packages (pip-audit), a search for leaked keys across the whole code history (gitleaks), a container scan (Trivy), and a list of everything in the container (SBOM).</li>
+          <li>Dependabot proposes updates once a week. All versions are pinned, with a fingerprint for every file.</li>
+          <li>Found a vulnerability? Report it privately on GitHub (Security → Report a vulnerability), not in a public discussion. Details are in <code>SECURITY.md</code>.</li>
+        </ul>`,
 
   "#logs": `
         <h2>Logs</h2>
         <ul>
           <li><b>Question log:</b> the last 200 questions with who, team, model, tokens, cost, and the full question and answer. Filter by name, team or model. All questions are kept in the database.</li>
-          <li><b>Change log:</b> every admin action: creating, updating and deleting accounts, teams, models and sources, including the before and after values for budget and price changes.</li>
+          <li><b>Change log:</b> every admin action: creating, updating, archiving and restoring accounts, teams, models, sources and documents, including the before and after values for budget and price changes. An employee moving one of their chats to the archive, or restoring it, is recorded here too.</li>
+        </ul>`,
+
+  "#archive": `
+        <h2>Archive</h2>
+        <p><b>Nothing is ever deleted.</b> Instead of a delete button there is "Move to archive": a user, team, model, knowledge source or document moved to the archive doesn't appear on the screens and doesn't work, but stays in the database with all its history.</p>
+        <ul>
+          <li>The "Archive" page (in the menu, under "Monitor") shows everything in the archive, with the date, and a "Restore" button for each item.</li>
+          <li>The spending of archived items stays in the question log and in the reports of the months it happened in.</li>
+          <li>The name of an archived item is taken: creating a user, team, model or source with the same name is refused, with a message to restore it.</li>
+          <li>Every move to the archive and every restore is recorded in the change log: what, which item and when.</li>
+          <li>Employees archive only their own chats, and restore them from the "Archive" link in the chat.</li>
+          <li>From another system: <code>POST /admin/api/archive</code> and <code>POST /admin/api/restore</code> with <code>kind</code> (<code>account</code>, <code>team</code>, <code>model</code>, <code>source</code> or <code>doc</code>) and <code>name</code>; for a document <code>name</code> is the source's name, plus <code>id</code>. The list: <code>GET /admin/api/archive</code>.</li>
         </ul>`,
 
   "#api": `
@@ -234,7 +406,8 @@ client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
             <tr><td><code>EMBEDDINGS</code></td><td>Provider for search by meaning: <code>openai</code>, <code>gemini</code> or <code>off</code>. Default: the first one that has a key.</td></tr>
             <tr><td><code>PORT</code>, <code>GATEWAY_DB</code></td><td>The server port (8080) and the location of the data file.</td></tr>
           </tbody>
-        </table>`,
+        </table>
+        <p>The security settings (the encryption key, size and rate limits, <code>PUBLIC_DEPLOY</code> and more) are listed in <a href="#security-settings">Server security settings</a>.</p>`,
 
   "#limits": `
         <h2>Known limitations</h2>
@@ -242,6 +415,7 @@ client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
           <li>In open mode, anyone on the network can pick any name and use that person's budget.</li>
           <li>Without a domain the connection is not encrypted.</li>
           <li>Questions and answers are kept with no time limit.</li>
+          <li>Nothing is ever deleted: whatever leaves use moves to the <a href="#archive">archive</a> and stays in the database. If something truly has to be deleted (for example by law), there is no button for it.</li>
           <li>A scanned PDF (an image with no text) can't be read.</li>
           <li>The requests-per-minute limit is kept in memory and resets when the gateway restarts.</li>
           <li>Alerts appear only on the admin screen; there's no email, Teams or Slack yet.</li>

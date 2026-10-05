@@ -1,3 +1,36 @@
+# Front door for FireGate. SITE_ADDRESS=ai.example.com -> automatic HTTPS (Let's Encrypt);
+# empty -> plain HTTP on :80 for an office network.
+#
+# Client IP: Caddy replaces any X-Forwarded-For the visitor sends with the address it actually sees.
+# The gateway trusts that header only when the direct peer is a private address (this Caddy container),
+# so the gateway port must never be reachable by anything except Caddy (docker-compose doesn't publish it).
+# If Caddy itself sits behind another load balancer, every visitor looks like that balancer's private
+# address: set PUBLIC_DEPLOY=1 in .env, or configure trusted_proxies here for that balancer.
+
+(hardening) {
+	request_body {
+		max_size 40MiB # same as the gateway's MAX_BODY: several PDF/Word files sent as base64
+	}
+	# '>' = applied after the gateway's own headers, so each header appears once.
+	# The gateway sends its own Content-Security-Policy; Caddy leaves it alone.
+	header {
+		>Strict-Transport-Security "max-age=31536000"
+		>X-Content-Type-Options "nosniff"
+		>Referrer-Policy "no-referrer"
+		>X-Frame-Options "DENY"
+		>Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		-Server
+	}
+	# Caddy ignores X-Forwarded-For sent by the visitor (no trusted_proxies set) and sends the gateway
+	# only the address it saw itself.
+	reverse_proxy gateway:8080 {
+		header_down -Server
+	}
+}
+
 {$SITE_ADDRESS::80} {
-	reverse_proxy gateway:8080
+	import hardening
+	# HTTPS uses TLS 1.2 and 1.3 only: that is Caddy's built-in default (older versions are refused).
+	# A "tls { protocols tls1.2 tls1.3 }" block would say the same, but Caddy rejects it when
+	# SITE_ADDRESS is plain :80, so it isn't written here.
 }

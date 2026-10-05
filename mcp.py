@@ -3,17 +3,97 @@
 Used by knowledge sources of kind "mcp": the gateway either calls one search tool on the server with the employee's
 question (live search), or copies the server's text resources into the document index (sync). Everything an MCP
 server returns is untrusted data: the caller scans and masks it before it reaches a model or the log.
+
+The server address is typed by an administrator, so it could point the gateway at things it must never talk to
+("server-side request forgery"): this machine itself, the cloud provider's metadata service, link-local devices.
+Every connection resolves the name, refuses those addresses, then connects to the exact address it checked (a name
+that changes its answer between the check and the connection can't slip through). Redirects are not followed and
+system proxy settings are ignored. Private company addresses (10.x, 172.16-31.x, 192.168.x) are allowed, because
+company MCP servers usually live there; ALLOW_PRIVATE_MCP=0 refuses them too.
 """
+import http.client
+import ipaddress
 import json
+import os
+import socket
 import urllib.error
 import urllib.request
 
 PROTOCOL = "2025-06-18"
 TIMEOUT = 20
+ALLOW_PRIVATE = os.environ.get("ALLOW_PRIVATE_MCP", "1").strip().lower() not in ("0", "false", "no", "off")
+ALLOW_LOOPBACK = False  # tests only: the test suite's fake MCP server runs on this machine
+METADATA = {ipaddress.ip_address("100.100.100.200"), ipaddress.ip_address("fd00:ec2::254")}  # Alibaba, AWS IPv6
 
 
 class MCPError(Exception):
     pass
+
+
+def blocked_ip(text):
+    ip = ipaddress.ip_address(text.split("%")[0])
+    if getattr(ip, "ipv4_mapped", None):
+        ip = ip.ipv4_mapped
+    if ip.is_loopback:
+        return not ALLOW_LOOPBACK
+    if ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved or ip in METADATA:
+        return True  # 169.254.169.254 (cloud metadata) is link-local
+    return ip.is_private and not ALLOW_PRIVATE
+
+
+def _connect(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, *rest):
+    host, port = address[0], address[1]
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    for *_, sa in infos:
+        if blocked_ip(sa[0]):
+            raise MCPError(f"address {sa[0]} is not allowed for MCP servers")
+    return socket.create_connection((infos[0][4][0], port), timeout, source_address)
+
+
+class _HTTP(http.client.HTTPConnection):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self._create_connection = _connect
+
+
+class _HTTPS(http.client.HTTPSConnection):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self._create_connection = _connect  # TLS still checks the certificate against the name
+
+
+class _HTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_HTTP, req)
+
+
+class _HTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_HTTPS, req, context=self._context)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a):
+        return None  # a 3xx answer becomes an error instead of a request somewhere else
+
+
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _HTTPHandler, _HTTPSHandler, _NoRedirect)
+
+
+def check_tool(tools, name, arg):
+    """Why the live search may not call this tool with this argument, or None. Tools the server marks as changing
+    data are refused (marked destructive, even if also marked read-only, or marked not read-only); a tool without such
+    marks is allowed (MCP servers often don't mark them)."""
+    t = next((t for t in tools if isinstance(t, dict) and t.get("name") == name), None)
+    if not t:
+        return "the server doesn't offer this tool"
+    ann = t.get("annotations") or {}
+    if ann.get("readOnlyHint") is False or ann.get("destructiveHint") is True:
+        return "the tool can change data"
+    props = (t.get("inputSchema") or {}).get("properties")
+    if isinstance(props, dict) and props and arg not in props:
+        return "the tool doesn't take this argument"
+    return None
 
 
 class Client:
@@ -30,7 +110,7 @@ class Client:
             headers["mcp-protocol-version"] = PROTOCOL
         req = urllib.request.Request(self.url, json.dumps(payload).encode(), headers)
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            with _OPENER.open(req, timeout=TIMEOUT) as r:
                 self.session = r.headers.get("mcp-session-id") or self.session
                 body, ctype = r.read(), r.headers.get("content-type", "")
         except urllib.error.HTTPError as e:

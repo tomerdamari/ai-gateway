@@ -4,7 +4,7 @@ let state = { models: [], accounts: [], teams: [], soft_limit: 0.8 };
 let logs = [];
 
 const $ = id => document.getElementById(id);
-const BUTTON_ICONS = { "עריכה": "edit", "מחיקה": "trash", "הסרה": "trash", "העלאת קבצים": "upload", "סנכרון עכשיו": "refresh",
+const BUTTON_ICONS = { "עריכה": "edit", "העברה לארכיון": "archive", "שחזור": "restore", "העלאת קבצים": "upload", "סנכרון עכשיו": "refresh",
   "מפתח חדש": "key", "יצירת מפתח": "key", "ביטול מפתח": "x", "להחיל": "save", "העתקה": "copy", "בדיקה": "zap" };
 function el(tag, props = {}, ...kids) {
   const { dataset, ...rest } = props;
@@ -26,7 +26,16 @@ const num = (text, cls = "num") => el("span", { className: cls, textContent: tex
 const actionNames = { create: "חשבון נוצר", update: "חשבון עודכן", delete: "חשבון נמחק", "key-new": "הונפק מפתח חדש",
   "key-revoke": "מפתח בוטל", "team-save": "צוות נשמר", "team-delete": "צוות נמחק", "source-save": "מקור מידע נשמר",
   "source-delete": "מקור מידע נמחק", "source-upload": "הועלו מסמכים", "source-sync": "תיקייה סונכרנה",
-  "model-save": "מודל נשמר", "model-delete": "מודל נמחק", "model-default": "נקבע מודל ברירת מחדל", "model-auto": "בחירה אוטומטית עודכנה" };
+  "model-save": "מודל נשמר", "model-delete": "מודל נמחק", "model-default": "נקבע מודל ברירת מחדל", "model-auto": "בחירה אוטומטית עודכנה",
+  "security-policy": "מדיניות האבטחה עודכנה", archive: "הועבר לארכיון", restore: "שוחזר מהארכיון" };
+// what can be archived (nothing is ever deleted) and restored from the archive page
+const ARCHIVE_KINDS = { account: "משתמש", team: "צוות", model: "מודל", source: "מקור מידע", doc: "מסמך", chat: "שיחה" };
+// archive one item after a confirm; the item leaves the lists and stops working, and stays restorable
+const archiveButton = (kind, name, extra, label, title, body, cls = "danger") => el("button", { className: cls, textContent: "העברה לארכיון",
+  onclick: run(() => UI.confirm({ title, body: body + " אפשר לשחזר מהארכיון.", ok: "העברה לארכיון", danger: true })
+    .then(ok => ok ? api("archive", { kind, name, ...extra }) : false), `${label} הועבר לארכיון.`) });
+const POLICY_NAMES = { block: "לחסום", log: "רק לרשום", mask: "להסתיר" };
+const dateOnly = ts => { const d = new Date(ts * 1000); return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`; };
 
 async function api(path, body) {
   const r = await fetch("/admin/api/" + path, {
@@ -197,12 +206,22 @@ const MODEL_ERRORS = {
   "turn the model on before making it the default": "קודם מדליקים את המודל, ואז אפשר לקבוע אותו כברירת מחדל" };
 const ERRORS = { ...MODEL_ERRORS, "nothing to update": "אין מה לעדכן", "pick at least one known model": "צריך לבחור לפחות מודל אחד",
   "password must be at least 8 characters": "הסיסמה צריכה להיות באורך 8 תווים לפחות", "budget must be >= 0": "התקציב לא יכול להיות שלילי",
-  "name is required": "צריך למלא שם", "give a password (chat login) or an API key, or both": "צריך סיסמה לצ'אט, מפתח API, או את שניהם" };
+  "name is required": "צריך למלא שם", "give a password (chat login) or an API key, or both": "צריך סיסמה לצ'אט, מפתח API, או את שניהם",
+  "request too large": "הבקשה גדולה מדי. אפשר להעלות פחות קבצים בכל פעם.", "daily tokens must be >= 0": "מספר הטוקנים ליום לא יכול להיות שלילי",
+  "key expiry must be a date like 2026-12-31": "תאריך התפוגה של המפתח לא תקין",
+  "folder path must be absolute": "צריך נתיב מלא לתיקייה בשרת (למשל /data/docs)",
+  "folder is outside the allowed source folders (SOURCE_ROOTS)": "התיקייה מחוץ לתיקיות שמותר לקרוא מהן (ההגדרה SOURCE_ROOTS בשרת)",
+  "MCP tool and argument names may use only letters, digits and . _ - : /": "שם הכלי או הפרמטר של שרת ה-MCP לא תקין",
+  "unknown security policy": "מדיניות לא מוכרת",
+  "the team still has people; move them to another team first": "יש עדיין אנשים בצוות. קודם מעבירים אותם לצוות אחר, ואז אפשר להעביר את הצוות לארכיון." };
 const hebrew = msg => ERRORS[msg] || (/already exists/.test(msg) ? "השם הזה כבר קיים" : /folder not found/.test(msg) ? "התיקייה לא נמצאה בשרת"
   : /^MCP server: /.test(msg) ? "שרת ה-MCP: " + msg.slice(12)
   : /could not read the file/.test(msg) ? `${msg.split(":")[0]}: לא הצלחנו לקרוא את הקובץ (פגום או מוצפן)`
   : /no text found/.test(msg) ? `${msg.split(":")[0]}: אין בקובץ טקסט (קובץ סרוק צריך זיהוי טקסט קודם)`
-  : /accounts still use this model/.test(msg) ? `${parseInt(msg)} משתמשים עדיין מורשים להשתמש במודל. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם` : msg);
+  : /accounts still use this model/.test(msg) ? `${parseInt(msg)} משתמשים עדיין מורשים להשתמש במודל. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם`
+  : /is in the archive; restore it instead/.test(msg) ? "השם הזה שייך לפריט שנמצא בארכיון. אפשר לשחזר אותו מעמוד הארכיון."
+  : /restore the team first/.test(msg) ? "הצוות של המשתמש נמצא בארכיון. קודם משחזרים את הצוות, ואז את המשתמש."
+  : msg);
 const fail = e => { if (e.message !== "unauthorized") UI.toast(hebrew(e.message), { kind: "bad", timeout: 9000 }); };
 const run = (fn, done) => async () => { try { const r = await fn(); if (r === false) return; await load(); if (done) UI.toast(done); } catch (e) { fail(e); } };
 
@@ -426,7 +445,7 @@ async function load() {
   if (!loadedOnce) $("loadState").replaceChildren(el("div", { className: "grid kpis" }, ...[1, 2, 3, 4].map(() => el("div", { className: "skeleton" }))));
   let data;
   try {
-    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity")]);
+    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity"), api("audit/verify"), api("archive")]);
   } catch (e) {
     if (e.message !== "unauthorized") {
       showTab(tab);
@@ -442,15 +461,17 @@ async function load() {
   }
   loadedOnce = true;
   $("loadState").replaceChildren();
-  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act] = data;
+  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act, verify, archived] = data;
   activity = act;
   sourceStatus = sstat;
   modelsData = mdl;
   modelsDaily = mdaily;
   security = sec;
+  auditCheck = verify;
   renderSecurity();
   state = ov; daily = d; logs = lg; sourceList = src;
   renderSources();
+  renderArchive(archived);
   $("login").hidden = true;
   showTab(tab);
 
@@ -490,7 +511,14 @@ async function load() {
     if (lv) alerts.push([lv, lv === "bad" ? `${a.name}: התקציב האישי נגמר (${money(a.spent)} מתוך ${money(a.budget)}). חסום עד 1 לחודש או עד הגדלת תקציב.`
       : `${a.name}: עבר ${Math.round(a.spent / a.budget * 100)}% מהתקציב האישי.`]);
     if (a.locked) alerts.push(["warn", `${a.name}: החשבון נעול אחרי 5 סיסמאות שגויות. איפוס סיסמה משחרר אותו.`]);
+    // API keys: replace before the expiry date (14 days ahead), and every 90 days in any case
+    const now = Date.now() / 1000, days = s => Math.max(Math.round(s / 86400), 0);
+    if (a.key_expires && a.key_expires < now) alerts.push(["bad", `${a.name}: המפתח לאפליקציות פג תוקף, ולכן הבקשות שלו נחסמות. צריך להנפיק מפתח חדש.`]);
+    else if (a.key_expires && a.key_expires - now < 14 * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות יפוג בעוד ${days(a.key_expires - now)} ימים. כדאי להנפיק מפתח חדש ולהעביר אותו לאפליקציה.`]);
+    else if (a.key_created && now - a.key_created > 90 * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות בשימוש כבר ${days(now - a.key_created)} ימים. מומלץ להחליף מפתח כל 90 יום.`]);
   }
+  for (const s of security.spikes || []) alerts.push(["bad", `${s.name}: הוצאה חריגה בשעה האחרונה (${money(s.hour)}, בדרך כלל ${money(s.average)} לשעה). כדאי לבדוק שהמפתח לא דלף.`, "security"]);
+  if (auditCheck && !auditCheck.ok) alerts.push(["bad", "מישהו שינה או מחק שורות ביומן השינויים מחוץ למערכת.", "security"]);
   for (const t of ov.teams) {
     const lv = level(t.spent, t.budget);
     if (lv) alerts.push([lv, lv === "bad" ? `צוות ${t.name}: תקציב הצוות נגמר. כל חברי הצוות חסומים.` : `צוות ${t.name}: עבר ${Math.round(t.spent / t.budget * 100)}% מתקציב הצוות.`]);
@@ -550,9 +578,8 @@ async function load() {
     el("td", { className: "num", dataset: { label: "סכום תקציבי החברים" } }, num(money(t.members_budget))),
     el("td", {}, el("div", { className: "actions" },
       el("button", { className: "ghost", textContent: "עריכה", onclick: () => openTeam(t) }),
-      el("button", { className: "danger", textContent: "מחיקה", onclick: run(() => UI.confirm({ title: `למחוק את צוות ${t.name}?`,
-        body: "החברים יישארו בלי צוות, והתקציב של הצוות יימחק. ההיסטוריה ביומן נשארת.", ok: "מחיקת הצוות", danger: true })
-        .then(ok => ok ? api("teams/delete", { name: t.name }) : false), `צוות ${t.name} נמחק.`) }))))));
+      archiveButton("team", t.name, {}, `צוות ${t.name}`, `להעביר את צוות ${t.name} לארכיון?`,
+        "הצוות ייעלם מהרשימות ומהבחירה של משתמשים. קודם צריך להעביר את האנשים שבו לצוות אחר. ההיסטוריה ביומן נשארת."))))));
   if (!ov.teams.length) $("teams").append(el("tr", {}, el("td", { colSpan: 7, className: "empty", textContent: "אין צוותים עדיין. לחצו על \"צוות חדש\"." })));
 
   renderLogs();
@@ -589,9 +616,8 @@ function renderAccounts() {
       a.rpm ? el("span", { className: "badge", textContent: a.rpm + " לדקה" }) : null)),
     el("td", {}, el("div", { className: "actions" },
       el("button", { className: "ghost", textContent: "עריכה", onclick: () => openAccount(a) }),
-      el("button", { className: "danger", textContent: "מחיקה", onclick: run(() => UI.confirm({ title: `למחוק את ${a.name}?`,
-        body: "הכניסה לצ'אט והמפתח יפסיקו לעבוד מיד. היסטוריית השאלות נשארת ביומן.", ok: "מחיקה", danger: true })
-        .then(ok => ok ? api("accounts/delete", { name: a.name }) : false), `${a.name} נמחק.`) }))))));
+      archiveButton("account", a.name, {}, a.name, `להעביר את ${a.name} לארכיון?`,
+        "הכניסה לצ'אט והמפתח יפסיקו לעבוד מיד. היסטוריית השאלות וההוצאה נשארת ביומן ובדוחות."))))));
   if (!rows.length) $("accounts").append(el("tr", {}, el("td", { colSpan: 8, className: "empty",
     textContent: state.accounts.length ? "אין משתמשים שמתאימים לחיפוש." : "אין משתמשים עדיין. לחצו על \"משתמש חדש\"." })));
 }
@@ -603,12 +629,17 @@ document.querySelectorAll("button.sort").forEach(b => b.onclick = () => {
 
 function describe(d) {
   const parts = [];
+  if (d.kind) parts.push(ARCHIVE_KINDS[d.kind] || d.kind);
   if (d.name) parts.push(d.name);
+  if (d.title) parts.push(d.title);
   if ("budget" in d) parts.push("old_budget" in d ? `תקציב ${money(d.old_budget)} ← ${money(d.budget)}` : `תקציב ${money(d.budget)}`);
   if (d.team) parts.push(`צוות ${d.team}`);
   if (d.models) parts.push(`מודלים: ${String(d.models).replaceAll(",", ", ")}`);
   if (typeof d.model === "string" && d.provider) parts.push(`${PROVIDER_FULL[d.provider] || d.provider} · ${d.model}`);
   if (d.rpm) parts.push(`${d.rpm} בקשות לדקה`);
+  if (d.daily_tokens) parts.push(`${d.daily_tokens} טוקנים ליום`);
+  if ("key_expires" in d) parts.push(d.key_expires ? `המפתח בתוקף עד ${dateOnly(d.key_expires)}` : "המפתח בלי תאריך תפוגה");
+  if (d.injection) parts.push(`עקיפת הוראות: ${POLICY_NAMES[d.injection]}`, `מידע רגיש: ${POLICY_NAMES[d.sensitive]}`);
   if (d.password === "changed") parts.push("סיסמה הוחלפה");
   if (d.changes) {
     const names = { price_in: "מחיר נכנס", price_out: "מחיר יוצא", price_cached: "מחיר מטמון", fallback: "גיבוי", model: "שם אצל הספק", provider: "ספק", enabled: "פעיל" };
@@ -618,6 +649,7 @@ function describe(d) {
   if (Array.isArray(d.teams)) parts.push("גישה: " + (d.teams.includes("*") ? "כל העובדים" : d.teams.join(", ") || "אף אחד"));
   if (Array.isArray(d.files)) parts.push(`${d.files.length} קבצים`);
   if (typeof d.files === "number") parts.push(`${d.files} קבצים${d.skipped ? `, ${d.skipped} דולגו` : ""}`);
+  if (Array.isArray(d.archived) && d.archived.length) parts.push(`${d.archived.length} הועברו לארכיון`);
   return parts.join(" · ");
 }
 
@@ -651,6 +683,9 @@ function openAccount(a) {
   $("aTeam").value = a ? a.team : "";
   $("aBudget").value = a ? a.budget : "";
   $("aRpm").value = a ? a.rpm : 0;
+  $("aDaily").value = a ? a.daily_tokens || 0 : 0;
+  const ymd = ts => { const d = new Date(ts * 1000), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+  $("aKeyExpires").value = $("aKeyExpires").dataset.was = a && a.key_expires ? ymd(a.key_expires) : "";
   modelChecks($("aModels"), a ? a.models : [state.default_model || state.models[0]]);
   $("pwLabel").textContent = a ? "סיסמה חדשה לצ'אט (ריק = בלי שינוי; גם משחרר נעילה)" : "סיסמה לכניסה לצ'אט (לפחות 8 תווים; ריק = בלי צ'אט)";
   $("aPassword").value = "";
@@ -678,7 +713,9 @@ function openAccount(a) {
 $("newAccount").onclick = () => openAccount(null);
 $("accountForm").onsubmit = async e => {
   e.preventDefault();
-  const body = { team: $("aTeam").value, budget: Number($("aBudget").value), rpm: Number($("aRpm").value || 0), models: checkedModels($("aModels")) };
+  const body = { team: $("aTeam").value, budget: Number($("aBudget").value), rpm: Number($("aRpm").value || 0), models: checkedModels($("aModels")),
+    daily_tokens: Number($("aDaily").value || 0) };
+  if ($("aKeyExpires").value !== $("aKeyExpires").dataset.was) body.key_expires = $("aKeyExpires").value;  // only a real change reaches the change log
   if ($("aPassword").value) body.password = $("aPassword").value;
   try {
     if (editingAccount) {
@@ -975,10 +1012,11 @@ function renderModels() {
         el("button", { className: "ghost", textContent: "בדיקה", title: "שולח שאלה קצרה לספק ובודק שהמפתח והשם עובדים",
           onclick: e => testModel(m, e.currentTarget) }),
         el("button", { className: "ghost", textContent: "עריכה", onclick: () => openModel(m) }),
-        el("button", { className: "danger", ariaLabel: `מחיקת ${m.label || m.alias}`, title: "מחיקה", onclick: run(() => UI.confirm({ title: `למחוק את ${m.label || m.alias}?`,
-          body: m.users ? `${m.users} משתמשים עדיין מורשים להשתמש בו, ולכן אי אפשר למחוק. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם.`
-            : "המודל יימחק מהרשימה. השאלות שנשאלו בו נשארות ביומן.", ok: "מחיקה", danger: true })
-          .then(ok => ok ? api("models/delete", { name: m.alias }) : false), `${m.label || m.alias} נמחק.`) }, icon("trash")))));
+        el("button", { className: "danger", ariaLabel: `העברה לארכיון של ${m.label || m.alias}`, title: "העברה לארכיון", onclick: run(() => UI.confirm({
+          title: `להעביר את ${m.label || m.alias} לארכיון?`,
+          body: m.users ? `${m.users} משתמשים עדיין מורשים להשתמש בו, ולכן אי אפשר להעביר אותו לארכיון. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם.`
+            : "המודל ייעלם מהרשימה ואי אפשר יהיה להשתמש בו. השאלות שנשאלו בו נשארות ביומן. אפשר לשחזר מהארכיון.", ok: "העברה לארכיון", danger: true })
+          .then(ok => ok ? api("archive", { kind: "model", name: m.alias }) : false), `${m.label || m.alias} הועבר לארכיון.`) }, icon("archive")))));
   }));
   drawModelCharts();
   if (!models.length) $("modelsTable").append(el("tr", {}, el("td", { colSpan: 8, className: "empty", textContent: "אין מודלים. לחצו על \"מודל חדש\"." })));
@@ -1019,13 +1057,22 @@ $("modelForm").onsubmit = async e => {
 };
 
 // ---------- security ----------
-let security = { events: [], counts: {}, checks: [] };
+let security = { events: [], counts: {}, checks: [], blocked: [], policy: {}, spikes: [] }, auditCheck = null;
 const secLabels = {
   kinds: { "suspicious-prompt": "שאלה חשודה", "dangerous-answer": "תשובה עם פקודה מסוכנת", "sensitive-data-masked": "מידע רגיש הוסתר",
+    "sensitive-data-blocked": "שאלה עם מידע רגיש נחסמה", "sensitive-data-logged": "מידע רגיש נשלח בלי הסתרה",
     "cross-site-request": "בקשה מאתר זר נחסמה", "bad-host": "כתובת לא מוכרת נחסמה", "account-locked": "חשבון ננעל",
-    "admin-denied": "סיסמת מנהל שגויה מבחוץ", "document-refused": "מסמך חשוד לא נקלט", "document-forced": "מסמך חשוד הועלה באישור" },
-  found: { "prompt-injection": "ניסיון לעקוף הוראות", "script": "קוד דפדפן", "dangerous-command": "פקודה מסוכנת" },
-  bad: new Set(["cross-site-request", "bad-host", "admin-denied", "account-locked", "document-forced"]),
+    "admin-denied": "סיסמת מנהל שגויה מבחוץ", "document-refused": "מסמך חשוד לא נקלט", "document-forced": "מסמך חשוד הועלה באישור",
+    "document-flagged": "מסמך חשוד נשלח למודל", "answer-masked": "מפתח גישה הוסתר מתשובה", "suspicious-link": "קישור חשוד בתשובה",
+    "prompt-leak": "התשובה חשפה את ההוראות של השער", "mcp-tool-refused": "כלי MCP שמשנה מידע לא הופעל",
+    "cost-spike": "הוצאה חריגה", "login-throttled": "יותר מדי סיסמאות שגויות מאותה כתובת" },
+  found: { "prompt-injection": "ניסיון לעקוף הוראות", "jailbreak": "ניסיון לשחרר את המודל מהכללים", "script": "קוד דפדפן", "dangerous-command": "פקודה מסוכנת" },
+  bad: new Set(["cross-site-request", "bad-host", "admin-denied", "account-locked", "document-forced", "sensitive-data-blocked",
+    "cost-spike", "login-throttled", "prompt-leak", "mcp-tool-refused"]),
+  reasons: { "budget": "התקציב האישי נגמר", "team-budget": "תקציב הצוות נגמר", "rate-limit": "יותר מדי בקשות בדקה",
+    "daily-quota": "נגמרו הטוקנים להיום", "concurrency": "יותר מדי שאלות במקביל", "policy-injection": "ניסיון לעקוף הוראות",
+    "policy-sensitive": "מידע רגיש", "model-not-allowed": "מודל לא מורשה", "model-off": "המודל כבוי", "key-expired": "מפתח שפג תוקפו",
+    "too-many-messages": "יותר מדי הודעות בבקשה אחת" },
 };
 function secDetail(e) {
   const d = e.detail, parts = [];
@@ -1037,6 +1084,12 @@ function secDetail(e) {
   if (d.host) parts.push(`שם שרת: ${d.host}`);
   if (d.origin) parts.push(`אתר מקור: ${d.origin}`);
   if (d.minutes) parts.push(`ל-${d.minutes} דקות`);
+  if (d.count && e.kind === "answer-masked") parts.splice(parts.indexOf(`${d.count} ערכים הוסתרו`), 1, `${d.count} מפתחות הוסתרו`);
+  if (d.reason) parts.push({ "the tool can change data": "הכלי יכול לשנות מידע", "the server doesn't offer this tool": "השרת לא מציע את הכלי",
+    "the tool doesn't take this argument": "הכלי לא מקבל את הפרמטר" }[d.reason] || d.reason);
+  if (Array.isArray(d.links)) parts.push(`קישורים: ${d.links.join(", ")}`);
+  if (e.kind === "cost-spike") parts.push(`שעה אחרונה ${money(d.hour)}, בדרך כלל ${money(d.average)} לשעה`);
+  if (d.action === "blocked") parts.push("נחסמה");
   const box = el("div", { className: "stack" }, el("span", { textContent: parts.join(" · ") }));
   if (d.excerpt) box.append(el("span", { className: "muted small", dir: "auto", textContent: "“" + d.excerpt + "”" }));
   return box;
@@ -1063,8 +1116,35 @@ function renderSecurity() {
     el("td", { textContent: e.name || "—", className: e.name ? "" : "muted" }),
     el("td", { className: "small" }, secDetail(e)))));
   if (!rows.length) $("secEvents").append(el("tr", {}, el("td", { colSpan: 4, className: "empty", textContent: "אין אירועים" })));
+
+  if (security.policy && security.policy.injection && document.activeElement?.closest("#policyForm") == null) {
+    $("pInjection").value = security.policy.injection;
+    $("pSensitive").value = security.policy.sensitive;
+  }
+  const v = auditCheck;
+  $("auditCheck").replaceChildren(!v ? "" : v.ok
+    ? el("div", { className: "alert good" }, icon("check"), el("span", { textContent: `כל ${v.rows} השורות ביומן השינויים שלמות: אף אחת לא נערכה או נמחקה מחוץ למערכת.` }))
+    : el("div", { className: "alert bad", role: "alert" }, icon("alert"), el("span", { textContent: v.first_bad && v.first_bad.ts
+      ? `השורה מ-${when(v.first_bad.ts)} ביומן השינויים נערכה, נמחקה או נוספה מחוץ למערכת. כל מה שאחריה לא מאומת.`
+      : "שורות נמחקו מסוף יומן השינויים מחוץ למערכת." })));
+
+  $("secBlocked").replaceChildren(...(security.blocked || []).map(b => el("tr", {},
+    el("td", {}, whenEl(b.ts)),
+    el("td", { textContent: b.name || "—", className: b.name ? "" : "muted" }),
+    el("td", {}, el("span", { className: "badge " + (b.reason.startsWith("policy") ? "bad" : "warn"), textContent: secLabels.reasons[b.reason] || b.reason })),
+    el("td", { className: "small ltr", textContent: b.model || "—" }),
+    el("td", { className: "small muted", dir: "auto", textContent: b.excerpt || "" }))));
+  if (!(security.blocked || []).length) $("secBlocked").append(el("tr", {}, el("td", { colSpan: 5, className: "empty", textContent: "לא נחסמו בקשות" })));
 }
 $("eventFilter").onchange = renderSecurity;
+$("policyForm").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    await api("security/policy", { name: "policy", injection: $("pInjection").value, sensitive: $("pSensitive").value });
+    await load();
+    UI.toast("המדיניות נשמרה.");
+  } catch (err) { fail(err); }
+};
 
 // ---------- knowledge sources ----------
 let sourceList = [], uploadTarget = null, editingSource = null, sourceStatus = { embeddings: null, vectors: {}, pdf: false };
@@ -1095,9 +1175,8 @@ function renderSources() {
       el("td", { className: "ltr", style: "text-align:start", textContent: d.title }),
       el("td", { className: "num muted small", textContent: size(d.chars) }),
       el("td", {}, whenEl(d.updated)),
-      el("td", {}, s.kind === "upload" ? el("button", { className: "danger sm", textContent: "הסרה",
-        onclick: run(() => UI.confirm({ title: `להסיר את ${d.title}?`, body: "המסמך לא יופיע יותר בחיפוש בצ'אט.", ok: "הסרה", danger: true })
-          .then(ok => ok ? api("sources/docs/delete", { name: s.name, id: d.id }) : false), `${d.title} הוסר.`) }) : null)));
+      el("td", {}, s.kind === "upload" ? archiveButton("doc", s.name, { id: d.id }, d.title, `להעביר את ${d.title} לארכיון?`,
+        "המסמך לא יופיע יותר בחיפוש בצ'אט.", "danger sm") : null)));
     return el("div", { className: "card" },
       el("header", {},
         el("div", { className: "grid", style: "gap:6px" },
@@ -1119,13 +1198,13 @@ function renderSources() {
             : el("button", { textContent: "סנכרון עכשיו", onclick: run(async () => {
                 const r = await api("sources/sync", { name: s.name });
                 UI.toast(`סונכרנו ${r.indexed} קבצים` + (r.skipped ? `. ${r.skipped} דולגו (לא טקסט, או גדולים מ-2MB)` : "")
+                  + ((r.archived || []).length ? `. ${r.archived.length} שהקובץ שלהם נעלם הועברו לארכיון` : "")
                   + (r.flagged.length ? `. ${r.flagged.length} לא נקלטו בגלל תוכן חשוד: ${r.flagged.join(", ")}` : "."),
                   { kind: r.flagged.length ? "bad" : "good", timeout: 10000, ...(r.flagged.length ? { action: "לפרטים", onAction: () => showTab("security") } : {}) });
               }) }),
           el("button", { className: "ghost", textContent: "עריכה", onclick: () => openSource(s) }),
-          el("button", { className: "danger", textContent: "מחיקה", onclick: run(() => UI.confirm({ title: `למחוק את המקור "${s.name}"?`,
-            body: "כל המסמכים שבו יימחקו מהשער ולא יופיעו בצ'אט. קבצים בתיקייה בשרת עצמו לא נמחקים.", ok: "מחיקת המקור", danger: true })
-            .then(ok => ok ? api("sources/delete", { name: s.name }) : false), `המקור ${s.name} נמחק.`) }))),
+          archiveButton("source", s.name, {}, `המקור ${s.name}`, `להעביר את המקור "${s.name}" לארכיון?`,
+            "המקור והמסמכים שבו לא יופיעו בצ'אט ובחיפוש. קבצים בתיקייה בשרת עצמו לא משתנים."))),
       el("div", { className: "row small muted", style: "margin-bottom:8px" },
         el("span", { textContent: `${s.docs.length} מסמכים · ${size(total)}` }),
         s.kind === "folder" || s.kind === "mcp" ? el("span", { className: "ltr", textContent: s.path }) : null,
@@ -1138,6 +1217,25 @@ function renderSources() {
             : s.kind === "folder" || s.kind === "mcp" ? "לחצו על \"סנכרון עכשיו\" כדי לקרוא את המסמכים" : "עוד אין מסמכים. לחצו על \"העלאת קבצים\"." }));
   }));
   if (!sourceList.length) $("sources").append(el("div", { className: "card empty", textContent: "אין מקורות מידע עדיין. לחצו על \"מקור חדש\"." }));
+}
+
+// ---------- archive: everything moved out of use, with a restore button each ----------
+function renderArchive(a) {
+  const rows = [
+    ...a.accounts.map(x => ["account", x.name, x.team ? `צוות ${x.team}` : "", x.archived, { name: x.name }]),
+    ...a.teams.map(x => ["team", x.name, "", x.archived, { name: x.name }]),
+    ...a.models.map(x => ["model", x.label || x.alias, x.alias, x.archived, { name: x.alias }]),
+    ...a.sources.map(x => ["source", x.name, "", x.archived, { name: x.name }]),
+    ...a.docs.map(x => ["doc", x.title, `במקור ${x.source}`, x.archived, { name: x.source, id: x.id }]),
+  ].sort((p, q) => q[3] - p[3]);
+  $("archiveList").replaceChildren(...rows.map(([kind, title, sub, ts, body]) => el("tr", {},
+    el("td", { dataset: { label: "סוג" } }, el("span", { className: "badge", textContent: ARCHIVE_KINDS[kind] })),
+    el("td", { className: "name" }, el("div", { className: "stack" }, el("b", { textContent: title }),
+      sub ? el("span", { className: "muted small", textContent: sub }) : null)),
+    el("td", { dataset: { label: "הועבר לארכיון" } }, whenEl(ts)),
+    el("td", {}, el("div", { className: "actions" }, el("button", { className: "ghost", textContent: "שחזור",
+      onclick: run(() => api("restore", { kind, ...body }), `${title} שוחזר מהארכיון.`) }))))));
+  if (!rows.length) $("archiveList").append(el("tr", {}, el("td", { colSpan: 4, className: "empty", textContent: "הארכיון ריק." })));
 }
 
 $("fileInput").onchange = run(async () => {

@@ -1,0 +1,15 @@
+# Only what the Dockerfile copies matters; keep secrets, data and history out of the build context.
+.git
+.github
+.env
+*.db
+*.db-*
+*.key
+backups/
+sources/
+pages/
+__pycache__/
+*.pyc
+.claude/
+.impeccable/
+test_gateway.py

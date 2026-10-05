@@ -341,6 +341,51 @@ window.EN = Object.assign(window.EN || {}, {
   "העובד קיבל אזהרה": "Employee was warned",
   "7 ימים אחרונים": "last 7 days",
   "אין אירועים": "No events",
+  "מה קורה לשאלה שמנסה לעקוף את ההוראות של המודל נקבע במדיניות למעלה. שאלות על קוד ופקודות רק נרשמות, כי עובדים שואלים עליהן בצדק. מסמכים חשודים נחסמים בהעלאה, כי הם מגיעים לכל מי שמחפש בהם. תשובה עם פקודה מסוכנת או קישור חשוד מקבלת אזהרה לעובד.":
+    "What happens to a question that tries to get around the model's instructions is set in the policy above. Questions about code and commands are only logged, because employees rightly ask about them. Suspicious documents are blocked on upload, because they reach everyone who searches them. An answer with a dangerous command or a suspicious link comes with a warning to the employee.",
+  "מדיניות": "Policy",
+  "ניסיון לעקוף את ההוראות של המודל": "Attempt to get around the model's instructions",
+  "לחסום את השאלה": "Block the question",
+  "לשלוח ולרשום ביומן": "Send it and log it",
+  "מידע רגיש (תעודת זהות, כרטיס אשראי, טלפון, אימייל, מפתחות)": "Sensitive data (ID numbers, credit cards, phone numbers, emails, keys)",
+  "להסתיר את המידע ולשלוח": "Hide the data and send",
+  "לשלוח בלי להסתיר ולרשום ביומן": "Send without hiding and log it",
+  "שמירת המדיניות": "Save policy",
+  "המדיניות נשמרה.": "Policy saved.",
+  "יומן השינויים לא שונה": "Change log is intact",
+  "מישהו שינה או מחק שורות ביומן השינויים מחוץ למערכת.": "Someone changed or deleted rows in the change log outside the system.",
+  "שורות נמחקו מסוף יומן השינויים מחוץ למערכת.": "Rows were deleted from the end of the change log outside the system.",
+  "200 האחרונות": "Last 200",
+  "סיבה": "Reason",
+  "קטע מהשאלה": "Question excerpt",
+  "לא נחסמו בקשות": "No blocked requests",
+  "שאלה עם מידע רגיש נחסמה": "Question with sensitive data blocked",
+  "מידע רגיש נשלח בלי הסתרה": "Sensitive data sent unhidden",
+  "מסמך חשוד נשלח למודל": "Suspicious document sent to the model",
+  "מפתח גישה הוסתר מתשובה": "Access key hidden from an answer",
+  "קישור חשוד בתשובה": "Suspicious link in an answer",
+  "התשובה חשפה את ההוראות של השער": "Answer revealed the gateway's instructions",
+  "כלי MCP שמשנה מידע לא הופעל": "MCP tool that changes data was not run",
+  "הוצאה חריגה": "Unusual spending",
+  "יותר מדי סיסמאות שגויות מאותה כתובת": "Too many wrong passwords from one address",
+  "ניסיון לשחרר את המודל מהכללים": "Attempt to free the model from its rules",
+  "הכלי יכול לשנות מידע": "the tool can change data",
+  "השרת לא מציע את הכלי": "the server doesn't offer this tool",
+  "הכלי לא מקבל את הפרמטר": "the tool doesn't take this argument",
+  "נחסמה": "blocked",
+  "התקציב האישי נגמר": "Personal budget used up",
+  "תקציב הצוות נגמר": "Team budget used up",
+  "יותר מדי בקשות בדקה": "Too many requests per minute",
+  "נגמרו הטוקנים להיום": "Daily tokens used up",
+  "יותר מדי שאלות במקביל": "Too many questions at once",
+  "מידע רגיש": "Sensitive data",
+  "מודל לא מורשה": "Model not allowed",
+  "המודל כבוי": "Model is off",
+  "מפתח שפג תוקפו": "Expired key",
+  "יותר מדי הודעות בבקשה אחת": "Too many messages in one request",
+  "השאלות והתשובות שמורות מוצפנות, והמפתח מוגדר בהגדרות השרת": "Questions and answers are stored encrypted, and the key is set in the server settings",
+  "השאלות והתשובות שמורות מוצפנות, אבל מפתח ההצפנה נמצא בקובץ ליד מסד הנתונים. כדאי לשמור עותק שלו במקום אחר: בלי המפתח אי אפשר לקרוא את השאלות, התשובות והשיחות.":
+    "Questions and answers are stored encrypted, but the encryption key is in a file next to the database. Keep a copy somewhere else: without the key the questions, answers and chats can't be read.",
   // health checks sent by the server
   "חיבור מוצפן (HTTPS) עם דומיין": "Encrypted connection (HTTPS) with a domain",
   "אין דומיין, ולכן החיבור לא מוצפן. השאלות והסיסמאות עוברות ברשת כטקסט גלוי. מתאים לרשת המשרד בלבד.": "No domain, so the connection isn't encrypted. Questions and passwords cross the network as plain text. Fine for the office network only.",
@@ -382,6 +427,17 @@ window.EN = Object.assign(window.EN || {}, {
   "מודל נמחק": "Model deleted",
   "נקבע מודל ברירת מחדל": "Default model set",
   "בחירה אוטומטית עודכנה": "Automatic choice updated",
+  "מדיניות האבטחה עודכנה": "Security policy updated",
+  "המפתח בלי תאריך תפוגה": "key without an expiry date",
+  "טוקנים ליום (0 = ללא הגבלה)": "Tokens per day (0 = no limit)",
+  "המפתח בתוקף עד (ריק = בלי תאריך תפוגה)": "Key valid until (empty = no expiry date)",
+  "הבקשה גדולה מדי. אפשר להעלות פחות קבצים בכל פעם.": "The request is too large. Upload fewer files at a time.",
+  "מספר הטוקנים ליום לא יכול להיות שלילי": "Tokens per day can't be negative",
+  "תאריך התפוגה של המפתח לא תקין": "The key's expiry date isn't valid",
+  "צריך נתיב מלא לתיקייה בשרת (למשל /data/docs)": "Give the folder's full path on the server (for example /data/docs)",
+  "התיקייה מחוץ לתיקיות שמותר לקרוא מהן (ההגדרה SOURCE_ROOTS בשרת)": "The folder is outside the folders the server may read (the SOURCE_ROOTS setting)",
+  "שם הכלי או הפרמטר של שרת ה-MCP לא תקין": "The MCP tool or argument name isn't valid",
+  "מדיניות לא מוכרת": "Unknown policy",
   "סיסמה הוחלפה": "Password changed",
   "הודלק": "turned on",
   "כובה": "turned off",
@@ -392,6 +448,32 @@ window.EN = Object.assign(window.EN || {}, {
   "קוד, ניתוח או השוואה": "code, analysis or comparison",
   "שיחה ארוכה": "long conversation",
   "שאלה קצרה ופשוטה": "short, simple question",
+
+  // archive (nothing is deleted)
+  "ארכיון": "Archive",
+  "העברה לארכיון": "Move to archive",
+  "שחזור": "Restore",
+  "הועבר לארכיון": "Archived",
+  "שוחזר מהארכיון": "Restored from archive",
+  "משתמש": "User",
+  "מקור מידע": "Knowledge source",
+  "מסמך": "Document",
+  "שיחה": "Chat",
+  "הארכיון ריק.": "The archive is empty.",
+  "שום מידע לא נמחק. משתמש, צוות, מודל, מקור מידע או מסמך שהועברו לארכיון לא מופיעים במסכים ולא עובדים, אבל נשמרים עם כל ההיסטוריה שלהם, ואפשר לשחזר אותם. ההוצאה שלהם נשארת ביומן ובדוחות.":
+    "Nothing is ever deleted. A user, team, model, knowledge source or document moved to the archive disappears from the screens and stops working, but is kept with all its history and can be restored. Its spending stays in the log and in the reports.",
+  "הצוות ייעלם מהרשימות ומהבחירה של משתמשים. קודם צריך להעביר את האנשים שבו לצוות אחר. ההיסטוריה ביומן נשארת. אפשר לשחזר מהארכיון.":
+    "The team disappears from the lists and from the choices for users. Move its people to another team first. The log history stays. It can be restored from the archive.",
+  "הכניסה לצ'אט והמפתח יפסיקו לעבוד מיד. היסטוריית השאלות וההוצאה נשארת ביומן ובדוחות. אפשר לשחזר מהארכיון.":
+    "Chat sign-in and the key stop working right away. The question and spending history stays in the log and the reports. It can be restored from the archive.",
+  "המסמך לא יופיע יותר בחיפוש בצ'אט. אפשר לשחזר מהארכיון.": "The document will no longer show up in chat search. It can be restored from the archive.",
+  "המקור והמסמכים שבו לא יופיעו בצ'אט ובחיפוש. קבצים בתיקייה בשרת עצמו לא משתנים. אפשר לשחזר מהארכיון.":
+    "The source and its documents won't appear in the chat or in search. Files in the server folder itself are not changed. It can be restored from the archive.",
+  "המודל ייעלם מהרשימה ואי אפשר יהיה להשתמש בו. השאלות שנשאלו בו נשארות ביומן. אפשר לשחזר מהארכיון.":
+    "The model disappears from the list and can't be used. Questions asked with it stay in the log. It can be restored from the archive.",
+  "השם הזה שייך לפריט שנמצא בארכיון. אפשר לשחזר אותו מעמוד הארכיון.": "That name belongs to an item in the archive. Restore it from the Archive page.",
+  "הצוות של המשתמש נמצא בארכיון. קודם משחזרים את הצוות, ואז את המשתמש.": "The user's team is in the archive. Restore the team first, then the user.",
+  "יש עדיין אנשים בצוות. קודם מעבירים אותם לצוות אחר, ואז אפשר להעביר את הצוות לארכיון.": "The team still has people. Move them to another team first, then the team can be archived.",
 });
 
 // texts with numbers, money or names inside. Order matters: the " · " splitter first, then specific patterns, generic ones last.
@@ -432,6 +514,12 @@ window.EN = Object.assign(window.EN || {}, {
     [/^צוות (.+): עבר (\d+)% מתקציב הצוות\.$/, "Team $1: passed $2% of the team budget."],
     [/^(.+): עבר (\d+)% מהתקציב האישי\.$/, "$1: passed $2% of the personal budget."],
     [/^(.+): החשבון נעול אחרי 5 סיסמאות שגויות\. איפוס סיסמה משחרר אותו\.$/, "$1: account locked after 5 wrong passwords. Resetting the password unlocks it."],
+    [/^(.+): המפתח לאפליקציות פג תוקף, ולכן הבקשות שלו נחסמות\. צריך להנפיק מפתח חדש\.$/, "$1: the API key has expired, so its requests are blocked. Issue a new key."],
+    [/^(.+): המפתח לאפליקציות יפוג בעוד (\d+) ימים\. כדאי להנפיק מפתח חדש ולהעביר אותו לאפליקציה\.$/, "$1: the API key expires in $2 days. Issue a new key and give it to the app."],
+    [/^(.+): המפתח לאפליקציות בשימוש כבר (\d+) ימים\. מומלץ להחליף מפתח כל 90 יום\.$/, "$1: the API key has been in use for $2 days. Replacing keys every 90 days is recommended."],
+    [R("(.+): הוצאה חריגה בשעה האחרונה \\($M, בדרך כלל $M לשעה\\)\\. כדאי לבדוק שהמפתח לא דלף\\."), "$1: unusual spending in the last hour ($2, usually $3 per hour). Check that the key hasn't leaked."],
+    [/^כל (\d+) השורות ביומן השינויים שלמות: אף אחת לא נערכה או נמחקה מחוץ למערכת\.$/, "All $1 rows of the change log are intact: none was edited or deleted outside the system."],
+    [/^השורה מ-(.+) ביומן השינויים נערכה, נמחקה או נוספה מחוץ למערכת\. כל מה שאחריה לא מאומת\.$/, "The change-log row from $1 was edited, deleted or added outside the system. Nothing after it can be trusted."],
     [/^(\d+) פריטים$/, "$1 items"],
     [/^(\d+)% מהתקציב$/, "$1% of budget"],
     [R("צפי $M"), "Projected $1"],
@@ -450,6 +538,16 @@ window.EN = Object.assign(window.EN || {}, {
     [/^(\d+) לדקה$/, "$1/min"],
     [/^עריכת צוות (.+)$/, "Edit team $1"],
     [/^עריכת (.+)$/, "Edit $1"],
+    [/^להעביר את צוות (.+) לארכיון\?$/, "Move team $1 to the archive?"],
+    [/^להעביר את המקור "(.+)" לארכיון\?$/, "Move the source \"$1\" to the archive?"],
+    [/^להעביר את (.+) לארכיון\?$/, "Move $1 to the archive?"],
+    [/^צוות (.+) הועבר לארכיון\.$/, "Team $1 moved to the archive."],
+    [/^המקור (.+) הועבר לארכיון\.$/, "Source $1 moved to the archive."],
+    [/^(.+) הועבר לארכיון\.$/, "$1 moved to the archive."],
+    [/^(.+) שוחזר מהארכיון\.$/, "$1 restored from the archive."],
+    [/^העברה לארכיון של (.+)$/, "Move $1 to the archive"],
+    [/^(\d+) הועברו לארכיון$/, "$1 moved to the archive"],
+    [/^במקור (.+)$/, "in source $1"],
     [/^למחוק את צוות (.+)\?$/, "Delete team $1?"],
     [/^למחוק את המקור "(.+)"\?$/, "Delete the source \"$1\"?"],
     [/^למחוק את (.+)\?$/, "Delete $1?"],
@@ -486,6 +584,7 @@ window.EN = Object.assign(window.EN || {}, {
     // models
     [/^לכבות את (.+)\?$/, "Turn off $1?"],
     [/^(\d+) משתמשים ואפליקציות מורשים להשתמש בו\. מרגע הכיבוי הם יקבלו הודעה שהמודל כבוי, עד שתדליקו אותו שוב\.$/, "$1 users and apps are allowed to use it. Once it's off they get a message that the model is off, until you turn it back on."],
+    [/^(\d+) משתמשים עדיין מורשים להשתמש בו, ולכן אי אפשר להעביר אותו לארכיון\. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם\.$/, "$1 users are still allowed to use it, so it can't be archived. Turn it off, or remove it from those users first."],
     [/^(\d+) משתמשים עדיין מורשים להשתמש בו, ולכן אי אפשר למחוק\. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם\.$/, "$1 users are still allowed to use it, so it can't be deleted. Turn it off, or remove it from those users first."],
     [/^(.+) עונה: החיבור תקין \((\d+) מילישניות\)\.$/, "$1 answers: connection OK ($2 ms)."],
     [/^(.+) לא עונה: אין מפתח של (.+) בקובץ \.env$/, "$1 isn't answering: no $2 key in the .env file"],
@@ -509,6 +608,13 @@ window.EN = Object.assign(window.EN || {}, {
 
     // security
     [/^(\d+) ערכים הוסתרו$/, "$1 values masked"],
+    [/^(\d+) מפתחות הוסתרו$/, "$1 keys masked"],
+    [/^קישורים: (.+)$/, "Links: $1"],
+    [R("שעה אחרונה $M, בדרך כלל $M לשעה"), "Last hour $1, usually $2 per hour"],
+    [/^(\d+) טוקנים ליום$/, "$1 tokens per day"],
+    [/^המפתח בתוקף עד (.+)$/, "key valid until $1"],
+    [/^(עקיפת הוראות|מידע רגיש): (לחסום|רק לרשום|להסתיר)$/, (_, k, v) =>
+      `${k === "מידע רגיש" ? "Sensitive data" : "Instruction override"}: ${{ "לחסום": "block", "רק לרשום": "log only", "להסתיר": "mask" }[v]}`],
     [/^קובץ: (.+)$/, "File: $1"],
     [/^כתובת: (.+)$/, "IP: $1"],
     [/^שם שרת: (.+)$/, "Host: $1"],
@@ -527,6 +633,7 @@ window.EN = Object.assign(window.EN || {}, {
     [/^(.+): לא מחובר \((.*)\)$/, "$1: not connected ($2)"],
     [/^סונכרנו (\d+) קבצים(.*)$/, (_, n, rest) => `Synced ${n} files` + rest
       .replace(/^\. (\d+) דולגו \(לא טקסט, או גדולים מ-2MB\)/, ". $1 skipped (not text, or larger than 2MB)")
+      .replace(/\. (\d+) שהקובץ שלהם נעלם הועברו לארכיון/, ". $1 whose file is gone were moved to the archive")
       .replace(/\. (\d+) לא נקלטו בגלל תוכן חשוד: /, ". $1 refused for suspicious content: ")],
     [/^אפשר להעלות קבצים עד 5MB\. גדולים מדי: (.+)$/, "Files up to 5MB can be uploaded. Too big: $1"],
     [/^(.+): (.*)\. מסמך כזה יגיע לכל מי שמחפש במקור\. ההחלטה תירשם ביומן האבטחה\.$/, (_, f, k) =>
@@ -543,5 +650,5 @@ window.EN = Object.assign(window.EN || {}, {
 
 // static prose split across inline tags
 window.EN_HTML = Object.assign(window.EN_HTML || {}, {
-  "#keyDialog p.small": "The key is shown <b>only once</b>. The gateway keeps only an encrypted fingerprint of it, so it can't be recovered. Copy it and hand it over now.",
+  "#keyDialog p.small": "The key is shown <b>only once</b>. The gateway keeps only a one-way fingerprint of it (SHA-256), so it can't be recovered. Copy it and hand it over now.",
 });

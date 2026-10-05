@@ -41,23 +41,25 @@ def post(path, body, opener):
 
 
 admin = {k: get("/admin/api/" + k) for k in ("overview", "usage", "daily", "logs", "audit", "sources", "security", "models",
-                                              "models/daily", "sources/status", "activity")}
+                                              "models/daily", "sources/status", "activity", "audit/verify", "archive")}
 months = get("/admin/api/report")["months"]
 for m in months:
     admin["report?month=" + m] = get("/admin/api/report?month=" + m)
 admin["report_default"] = months[0]
 
 people = get("/api/people")
-me, conversations, items = {}, {}, {}
+me, conversations, archived, items = {}, {}, {}, {}
 for p in people:
     o = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     post("/api/as", {"name": p["name"]}, o)
     me[p["name"]] = get("/api/me", o)
     conversations[p["name"]] = get("/api/conversations", o)
-    items[p["name"]] = {c["id"]: get("/api/conversations/" + c["id"], o) for c in conversations[p["name"]]}
+    archived[p["name"]] = get("/api/conversations/archived", o)
+    items[p["name"]] = {c["id"]: get("/api/conversations/" + c["id"], o) for c in conversations[p["name"]] + archived[p["name"]]}
 srv.shutdown()
 
-data = {"admin": admin, "people": people, "me": me, "conversations": conversations, "conversation_items": items}
+data = {"admin": admin, "people": people, "me": me, "conversations": conversations, "archived_conversations": archived,
+        "conversation_items": items}
 
 # ---- write the site: relative paths (Pages serves under /<repo>/), recorded data, the mock ----
 shutil.rmtree(OUT, ignore_errors=True)

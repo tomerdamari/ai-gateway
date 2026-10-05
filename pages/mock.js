@@ -72,6 +72,7 @@
     if (!me) return json({ error: "not logged in" }, 401);
     if (path === "/api/me") return json(me);
     if (path === "/api/conversations" && method === "GET") return json(D.conversations[who()] || []);
+    if (path === "/api/conversations/archived") return json((D.archived_conversations || {})[who()] || []);
     if (path.startsWith("/api/conversations/") && method === "GET") {
       const item = (D.conversation_items[who()] || {})[path.split("/").pop()];
       return item ? json(item) : json({ error: "not found" }, 404);
@@ -90,7 +91,7 @@
 
   // success notices after a change say that nothing was stored
   addEventListener("DOMContentLoaded", () => {
-    if (window.UI) {
+    if (typeof UI !== "undefined") {  // ui.js declares "const UI": a global, but not a property of window
       const toast = UI.toast;
       UI.toast = (text, opts = {}) => toast(Date.now() - lastWrite < 5000 && opts.kind !== "bad"
         ? `${text} (בהדגמה: לא נשמר באמת)` : text, { ...opts, action: undefined });

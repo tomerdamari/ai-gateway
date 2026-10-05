@@ -44,6 +44,15 @@ window.EN = Object.assign(window.EN || {}, {
     "Your monthly budget is used up. It resets on the 1st of the month, or you can ask your admin for more.",
   "התקציב החודשי של הצוות שלך נגמר. הוא יתחדש ב-1 לחודש, או שאפשר לבקש הגדלה מהמנהל.":
     "Your team's monthly budget is used up. It resets on the 1st of the month, or you can ask your admin for more.",
+  "השאלה נחסמה כי היא נראית כמו ניסיון לעקוף את ההוראות של המודל. אם זו טעות, פנו למנהל המערכת.":
+    "The question was blocked because it looks like an attempt to get around the model's instructions. If this is a mistake, ask your administrator.",
+  "השאלה נחסמה כי יש בה מידע רגיש (כמו תעודת זהות, כרטיס אשראי, טלפון או מפתח גישה). הסירו אותו ונסו שוב.":
+    "The question was blocked because it contains sensitive data (such as an ID number, credit card, phone number or access key). Remove it and try again.",
+  "נגמרה המכסה היומית שלך. היא תתחדש מחר, או שאפשר לבקש הגדלה מהמנהל.":
+    "You've used up your daily quota. It renews tomorrow, or you can ask your admin for more.",
+  "כבר יש לך כמה שאלות שרצות במקביל. חכו שהן יסתיימו ונסו שוב.": "You already have several questions running at once. Wait for them to finish and try again.",
+  "השיחה ארוכה מדי. פתחו שיחה חדשה.": "This chat is too long. Start a new chat.",
+  "השאלה ארוכה מדי. קצרו אותה ונסו שוב.": "The question is too long. Shorten it and try again.",
   "בחרו את השם שלכם": "Pick your name",
   "ברוכים הבאים": "Welcome",
   "בחרו את השם שלכם כדי להתחיל. ההוצאה נרשמת על השם והצוות שבחרתם.":
@@ -60,6 +69,14 @@ window.EN = Object.assign(window.EN || {}, {
   "השיחה תימחק מהרשימה שלך. העותק ביומן של המנהל נשאר.": "The chat is removed from your list. The admin's log keeps its copy.",
   "מחיקה": "Delete",
   "עוד אין שיחות": "No chats yet",
+  "ארכיון": "Archive",
+  "ארכיון שיחות": "Archived chats",
+  "חזרה לשיחות": "Back to chats",
+  "אין שיחות בארכיון": "No archived chats",
+  "העברה לארכיון": "Move to archive",
+  "שחזור השיחה": "Restore chat",
+  "להעביר את השיחה לארכיון?": "Move this chat to the archive?",
+  "השיחה תוסתר מהרשימה שלך. אפשר לשחזר אותה מהארכיון שבתפריט.": "The chat is hidden from your list. You can restore it from the archive in the side menu.",
   "חיפוש במסמכים:": "Search documents:",
   "מבוסס על:": "Based on:",
   "עצירה": "Stop",
@@ -81,6 +98,8 @@ window.EN = Object.assign(window.EN || {}, {
   "אזהרת אבטחה:": "Security warning:",
   "התשובה כוללת פקודה שעלולה למחוק מידע או להריץ קוד מהאינטרנט. אל תריצו אותה בלי לבדוק בדיוק מה היא עושה.":
     "The answer includes a command that could delete data or run code from the internet. Don't run it without checking exactly what it does.",
+  "התשובה כוללת קישור חשוד (כתובת מספרית, קיצור קישורים או שם שמתחזה לאתר מוכר). אל תלחצו עליו בלי לבדוק לאן הוא מוביל.":
+    "The answer includes a suspicious link (a numeric address, a link shortener or a name posing as a known site). Don't click it without checking where it leads.",
 
   // pages/mock.js (demo build)
   "זו תצוגת הדגמה, אין חיבור לשרתים": "This is a demo, there is no connection to servers",
@@ -98,6 +117,8 @@ window.EN_PATTERNS = [
   [/^(.+) · צוות (.+)$/, "$1 · Team $2"],
   [/^צוות (.+)$/, "Team $1"],
   [/^מחיקת השיחה "(.*)"$/, (m, t) => `Delete chat "${t === "שיחה" ? "Chat" : t}"`],
+  [/^העברת השיחה "(.*)" לארכיון$/, (m, t) => `Move chat "${t === "שיחה" ? "Chat" : t}" to the archive`],
+  [/^שחזור השיחה "(.*)"$/, (m, t) => `Restore chat "${t === "שיחה" ? "Chat" : t}"`],
   [/^(.+) \/ דוגמה$/, "$1 / sample"],
   // answer header: model name · why that model
   [new RegExp(`^(.+) · (${enRoute})$`), (m, label, route) => `${enPart(label)} · ${enRoute2(route)}`],

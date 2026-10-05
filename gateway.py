@@ -21,12 +21,17 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import mcp
 import security
@@ -73,7 +78,19 @@ SOFT_LIMIT = 0.8  # warn at 80% of budget, block at 100%
 SESSION_HOURS = 12
 LOCK_AFTER, LOCK_MINUTES = 5, 15  # wrong passwords in a row -> account locked for a while
 PBKDF2_ROUNDS = 200_000
-MAX_BODY = 40 * 1024 * 1024  # uploads of several PDF/Word files, sent as base64
+_int = lambda k, d: int(os.environ.get(k, "").strip() or d)
+MAX_BODY = _int("MAX_BODY", 40 * 1024 * 1024)  # bytes: document uploads (base64) and app calls (may carry images/PDFs)
+MAX_REQUEST_BODY = _int("MAX_REQUEST_BODY", 1024 * 1024)  # bytes: every other request (chat, admin changes)
+MAX_OUTPUT_TOKENS = _int("MAX_OUTPUT_TOKENS", 8192)  # an app asking for more answer tokens is clamped to this
+MAX_CONCURRENT = _int("MAX_CONCURRENT", 4)  # questions in progress at once per account; more -> 429
+MAX_MESSAGES = _int("MAX_MESSAGES", 500)  # messages in one request
+LOGIN_IP_LIMIT, LOGIN_IP_MINUTES = 10, 15  # wrong passwords from one address (any names) -> that address waits
+SPIKE_MIN, SPIKE_FACTOR = 5.0, 5  # cost-spike alert: last hour above max($5, 5x the account's usual hour)
+# Proxies whose X-Forwarded-For / X-Forwarded-Proto we believe (IPs or CIDR ranges, comma-separated). Anyone else
+# sending those headers is ignored: otherwise a visitor could claim an office address and skip the admin password.
+TRUSTED_PROXIES = [ipaddress.ip_network(p.strip(), strict=False)
+                   for p in os.environ.get("TRUSTED_PROXIES", "127.0.0.1,::1").split(",") if p.strip()]
+REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 # provider -> (client-facing path, upstream URL, auth headers, usage field names for input/output tokens).
 # Each provider keeps its own request format, so apps use the provider's own SDK pointed at us.
@@ -133,6 +150,9 @@ create table if not exists audit(ts real, action text, detail text);
 create table if not exists models(alias text primary key, label text not null default '', provider text not null, model text not null,
     price_in real not null, price_out real not null, enabled int not null default 1, created real);
 create table if not exists settings(key text primary key, value text);
+create table if not exists blocked_requests(ts real, name text, team text, reason text, model text, request_id text, excerpt text);
+create index if not exists blocked_requests_ts on blocked_requests(ts);
+create index if not exists logs_name_ts on logs(name, ts);
 """
 
 
@@ -155,20 +175,194 @@ def db():
     return c
 
 
+_migrate_lock = threading.Lock()
+
+
 def migrate(c):
-    """Columns added after the first release; runs once per process."""
-    global _migrated
-    if _migrated:
+    """Columns and tables added after the first release, the data key, and one-time rewrites; runs once per process.
+    Data is never deleted: columns are only added, and before any rewrite of existing rows the whole database is
+    copied to backups/ next to it."""
+    global _migrated, _aead
+    with _migrate_lock:
+        if _migrated:
+            return
+        for table, col in (("models", "price_cached real"), ("models", "fallback text"), ("logs", "cache_read int not null default 0"),
+                           ("logs", "cache_write int not null default 0"), ("logs", "note text"), ("sources", "config text"),
+                           ("logs", "request_id text"), ("accounts", "key_expires real"), ("accounts", "key_created real"),
+                           ("accounts", "daily_tokens int not null default 0"),
+                           ("audit", "seq int"), ("audit", "prev_hash text"), ("audit", "hash text"),
+                           # archive instead of delete: when the item was archived, NULL = in use
+                           *((t, "archived real") for t in ("accounts", "teams", "models", "sources", "docs", "conversations"))):
+            try:
+                c.execute(f"alter table {table} add column {col}")
+            except sqlite3.OperationalError:
+                pass  # already there
+        with c:
+            c.execute("update models set price_cached = round(price_in * 0.1, 6) where price_cached is null")
+            c.execute("update accounts set key_created = ? where key_hash is not null and key_created is null", (time.time(),))
+        _aead = load_key(c, DB)
+        pending = [name for name, needed in (("encrypt", plaintext_left(c)), ("audit-chain", audit_unchained(c))) if needed]
+        if pending:
+            backup(c, "+".join(pending))
+            encrypt_existing(c)
+            chain_audit(c)
+        _migrated = True
+
+
+# --- encryption at rest: questions, answers, saved chats and stored secrets ---
+# AES-256-GCM. Each value is stored as "enc1:" + base64(12-byte nonce + ciphertext + tag); values without the prefix are
+# older plaintext rows, which the one-time migration encrypts. The document search index (chunks) stays plaintext:
+# full-text search can't search encrypted text.
+ENC = "enc1:"
+KEY_CHECK = "firegate-data-key"
+_aead = None
+ENCRYPTED = {"logs": ("request", "response"), "conversations": ("title", "messages"), "sources": ("config",),
+             "blocked_requests": ("excerpt",)}
+
+
+class DataKeyError(RuntimeError):
+    pass
+
+
+def encrypt(s):
+    if not isinstance(s, str) or s == "":
+        return s
+    nonce = os.urandom(12)
+    return ENC + base64.urlsafe_b64encode(nonce + _aead.encrypt(nonce, s.encode(), None)).decode()
+
+
+def decrypt(s):
+    if not isinstance(s, str) or not s.startswith(ENC):
+        return s  # older plaintext row
+    try:
+        raw = base64.urlsafe_b64decode(s[len(ENC):])
+        return _aead.decrypt(raw[:12], raw[12:], None).decode()
+    except (ValueError, InvalidTag):
+        return "[cannot decrypt: wrong FIREGATE_DATA_KEY]"
+
+
+def key_path(db_path):
+    return os.path.abspath(db_path) + ".key"
+
+
+def load_key(c, db_path):
+    """The data key: FIREGATE_DATA_KEY, else the key file next to the database, else a new key written there. Refuses
+    (DataKeyError) when encrypted data exists but no key is found, or the key doesn't match: a new key could never
+    read the old data, so starting would only bury it."""
+    env, path = os.environ.get("FIREGATE_DATA_KEY", "").strip(), key_path(db_path)
+    check = setting(c, "data_key_check")
+    if env:
+        raw = env
+    elif os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            raw = f.read().strip()
+    elif check or c.execute("select 1 from logs where request like 'enc1:%' or response like 'enc1:%' limit 1").fetchone():
+        raise DataKeyError(f"The database {os.path.abspath(db_path)} holds encrypted data, but there is no key: FIREGATE_DATA_KEY "
+                           f"is empty and {path} is missing. Set FIREGATE_DATA_KEY or put the key file back. Refusing to "
+                           "start: a new key could never read the existing questions and answers.")
+    else:
+        raw = base64.urlsafe_b64encode(os.urandom(32)).decode()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)  # owner-only where the OS supports it
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(raw + "\n")
+        print("\n" + "!" * 78 + f"\nNEW DATA ENCRYPTION KEY created: {path}\nBACK IT UP NOW, somewhere other than this server's "
+              "disk. Without it the saved questions,\nanswers and chats can never be read again. Or move it into the "
+              "FIREGATE_DATA_KEY setting.\n" + "!" * 78 + "\n", flush=True)
+    try:
+        key = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+    except ValueError:
+        key = b""
+    if len(key) != 32:
+        raise DataKeyError("FIREGATE_DATA_KEY must be 32 random bytes in URL-safe base64, for example the output of: "
+                           "python -c \"import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())\"")
+    aead = AESGCM(key)
+    global _aead
+    old, _aead = _aead, aead
+    try:
+        if check:
+            if decrypt(check) != KEY_CHECK:
+                raise DataKeyError("FIREGATE_DATA_KEY (or the key file) is not the key this database was encrypted with. "
+                                   "Refusing to start; put back the original key.")
+        else:
+            with c:
+                c.execute("insert into settings values ('data_key_check', ?)", (encrypt(KEY_CHECK),))
+    finally:
+        _aead = old
+    return aead
+
+
+def _plain_where(cols):
+    return " or ".join(f"({col} is not null and {col} != '' and {col} not like 'enc1:%')" for col in cols)
+
+
+def plaintext_left(c):
+    return any(c.execute(f"select 1 from {t} where {_plain_where(cols)} limit 1").fetchone() for t, cols in ENCRYPTED.items())
+
+
+def encrypt_existing(c):
+    """One-time: encrypt rows written before encryption existed, in batches (an interrupted run just continues)."""
+    for table, cols in ENCRYPTED.items():
+        while True:
+            rows = c.execute(f"select rowid, {', '.join(cols)} from {table} where {_plain_where(cols)} limit 2000").fetchall()
+            if not rows:
+                break
+            with c:
+                c.executemany(f"update {table} set {', '.join(col + ' = ?' for col in cols)} where rowid = ?",
+                              [(*[v if not isinstance(v, str) or v.startswith(ENC) else encrypt(v) for v in r[1:]], r[0]) for r in rows])
+
+
+def backup(c, label):
+    """Consistent copy of the whole database (SQLite backup API) to backups/ in the database's own folder."""
+    folder = os.path.join(os.path.dirname(os.path.abspath(DB)), "backups")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{os.path.splitext(os.path.basename(DB))[0]}-before-{label}-{time.strftime('%Y%m%d-%H%M%S')}.db")
+    dst = sqlite3.connect(path)
+    try:
+        c.backup(dst)
+    finally:
+        dst.close()
+    print(f"database backed up before migration ({label}): {path}", flush=True)
+    return path
+
+
+# --- tamper-evident change log: each row's hash covers the previous row's hash ---
+
+def audit_hash(prev, ts, action, detail):
+    return hashlib.sha256(f"{prev}{float(ts)!r}{action}{detail}".encode()).hexdigest()
+
+
+def audit_unchained(c):
+    """True when the change log has rows but no chain yet (first start after the upgrade)."""
+    return bool(c.execute("select 1 from audit limit 1").fetchone()) and not c.execute(
+        "select 1 from audit where hash is not null limit 1").fetchone()
+
+
+def chain_audit(c):
+    """One-time: chain the existing rows in time order. Their content is not changed."""
+    if not audit_unchained(c):
         return
-    for table, col in (("models", "price_cached real"), ("models", "fallback text"), ("logs", "cache_read int not null default 0"),
-                       ("logs", "cache_write int not null default 0"), ("logs", "note text"), ("sources", "config text")):
-        try:
-            c.execute(f"alter table {table} add column {col}")
-        except sqlite3.OperationalError:
-            pass  # already there
+    prev, seq = "", 0
     with c:
-        c.execute("update models set price_cached = round(price_in * 0.1, 6) where price_cached is null")
-    _migrated = True
+        for r in c.execute("select rowid, ts, action, detail from audit order by ts, rowid").fetchall():
+            seq += 1
+            h = audit_hash(prev, r["ts"], r["action"], r["detail"])
+            c.execute("update audit set seq = ?, prev_hash = ?, hash = ? where rowid = ?", (seq, prev, h, r["rowid"]))
+            prev = h
+        c.execute("insert into settings values ('audit_head', ?) on conflict(key) do update set value = excluded.value", (f"{seq}:{prev}",))
+
+
+def verify_audit(c):
+    """Walk the chain. A row edited, removed or added outside the gateway breaks it; first_bad says where."""
+    rows = c.execute("select seq, ts, action, detail, prev_hash, hash from audit order by seq is null, seq, rowid").fetchall()
+    prev = ""
+    for i, r in enumerate(rows):
+        if r["seq"] != i + 1 or r["prev_hash"] != prev or r["hash"] != audit_hash(prev, r["ts"], r["action"], r["detail"]):
+            return {"ok": False, "rows": len(rows), "first_bad": {"seq": i + 1, "ts": r["ts"], "action": r["action"]}}
+        prev = r["hash"]
+    head = setting(c, "audit_head")
+    if (head or rows) and head != f"{len(rows)}:{prev}":  # rows removed from the end
+        return {"ok": False, "rows": len(rows), "first_bad": {"seq": len(rows) + 1, "ts": None, "action": None}}
+    return {"ok": True, "rows": len(rows), "first_bad": None}
 
 
 def setting(c, key, default=None):
@@ -179,7 +373,7 @@ def setting(c, key, default=None):
 def refresh_models(c):
     global MODELS, ALL_MODELS, MODEL_EXTRA
     rows = c.execute("select alias, provider, model, price_in, price_out, enabled, price_cached, fallback from models"
-                     " order by created, alias").fetchall()
+                     " where archived is null order by created, alias").fetchall()
     ALL_MODELS = {r["alias"]: (r["provider"], r["model"], r["price_in"], r["price_out"]) for r in rows}
     MODEL_EXTRA = {r["alias"]: {"price_cached": r["price_cached"] if r["price_cached"] is not None else r["price_in"] * 0.1,
                                 "fallback": r["fallback"] or None} for r in rows}
@@ -191,8 +385,74 @@ def default_model(c):
     return row[0] if row and row[0] in MODELS else next(iter(MODELS), None)
 
 
-def audit(c, action, detail):
-    c.execute("insert into audit values (?,?,?)", (time.time(), action, json.dumps(detail, ensure_ascii=False)))
+def audit(c, action, detail, ts=None):
+    ts = time.time() if ts is None else ts
+    d = json.dumps(detail, ensure_ascii=False)
+    # insert first: that takes the database's write lock, so two changes can't both chain onto the same previous row
+    rowid = c.execute("insert into audit(ts, action, detail) values (?,?,?)", (ts, action, d)).lastrowid
+    last = c.execute("select seq, hash from audit where seq is not null order by seq desc limit 1").fetchone()
+    seq, prev = (last[0] + 1, last[1]) if last else (1, "")
+    h = audit_hash(prev, ts, action, d)
+    c.execute("update audit set seq = ?, prev_hash = ?, hash = ? where rowid = ?", (seq, prev, h, rowid))
+    c.execute("insert into settings values ('audit_head', ?) on conflict(key) do update set value = excluded.value", (f"{seq}:{h}",))
+
+
+# --- archive: nothing is deleted. An archived row stays in the database, out of every list and out of use, until restored ---
+# kind -> (table, key column)
+ARCHIVE = {"account": ("accounts", "name"), "team": ("teams", "name"), "model": ("models", "alias"), "source": ("sources", "name")}
+
+
+def not_archived(c, kind, name):
+    """Refuses a new item whose name belongs to an archived one: restoring it is the way back."""
+    table, col = ARCHIVE[kind]
+    if c.execute(f"select 1 from {table} where {col} = ? and archived is not null", (name,)).fetchone():
+        raise ValueError(f"name '{name}' is in the archive; restore it instead")
+
+
+def archive_list(c):
+    return {"accounts": [dict(r) for r in c.execute("select name, team, archived from accounts where archived is not null order by archived desc")],
+            "teams": [dict(r) for r in c.execute("select name, archived from teams where archived is not null order by archived desc")],
+            "models": [dict(r) for r in c.execute("select alias, label, archived from models where archived is not null order by archived desc")],
+            "sources": [dict(r) for r in c.execute("select name, kind, archived from sources where archived is not null order by archived desc")],
+            "docs": [dict(r) for r in c.execute("select d.id, d.source, d.title, d.archived from docs d join sources s on s.name = d.source"
+                                                " where d.archived is not null and s.archived is null order by d.archived desc")]}
+
+
+def set_archived(c, kind, body, name, restore):
+    """Archive (or restore) one item. Returns (http status, reply body); writes the change log."""
+    now = None if restore else time.time()
+    if kind == "doc":
+        doc_id = int(body.get("id"))
+        title = c.execute("select title from docs where id = ? and source = ?", (doc_id, name)).fetchone()
+        n = c.execute(f"update docs set archived = ? where id = ? and source = ? and archived is {'not ' if restore else ''}null",
+                      (now, doc_id, name)).rowcount
+        detail = {"kind": kind, "name": name, "title": title[0] if title else None, "id": doc_id}
+    elif kind in ARCHIVE:
+        table, col = ARCHIVE[kind]
+        if not c.execute(f"select 1 from {table} where {col} = ? and archived is {'not ' if restore else ''}null", (name,)).fetchone():
+            return 404, {"error": f"no {kind} '{name}'" + (" in the archive" if restore else "")}
+        if not restore and kind == "team" and c.execute("select 1 from accounts where team = ? and archived is null", (name,)).fetchone():
+            raise ValueError("the team still has people; move them to another team first")
+        if not restore and kind == "model":
+            users = c.execute("select count(*) from accounts where archived is null and ',' || models || ',' like ?", (f"%,{name},%",)).fetchone()[0]
+            if users:
+                raise ValueError(f"{users} accounts still use this model; remove it from them or turn it off instead")
+            if setting(c, "default_model") == name:
+                raise ValueError("this is the default model; choose another default first")
+        if restore and kind == "account":
+            team = c.execute("select team from accounts where name = ?", (name,)).fetchone()[0]
+            if team and c.execute("select 1 from teams where name = ? and archived is not null", (team,)).fetchone():
+                raise ValueError(f"the account's team '{team}' is in the archive; restore the team first")
+        n = c.execute(f"update {table} set archived = ? where {col} = ?", (now, name)).rowcount
+        if kind == "account":
+            c.execute("delete from sessions where name = ?", (name,))  # login tokens, not data: archived means logged out
+        detail = {"kind": kind, "name": name}
+    else:
+        raise ValueError("unknown kind")
+    if not n:
+        return 404, {"error": "not found"}
+    audit(c, "restore" if restore else "archive", detail)
+    return 200, {"ok": True}
 
 
 # --- secrets: only hashes are stored ---
@@ -221,7 +481,7 @@ DUMMY_HASH = hash_password(secrets.token_hex(16))
 def new_key(c, name):
     """Give the account a fresh gateway key; the old one stops working. Returns the key (shown once)."""
     key = "gw-" + secrets.token_urlsafe(32)
-    c.execute("update accounts set key_hash = ?, key_prefix = ? where name = ?", (sha(key), key[:10], name))
+    c.execute("update accounts set key_hash = ?, key_prefix = ?, key_created = ? where name = ?", (sha(key), key[:10], time.time(), name))
     return key
 
 
@@ -245,9 +505,19 @@ def account_fields(c, body, partial):
         out["models"] = ",".join(models)
     if "team" in body:
         out["team"] = str(body["team"] or "")
-        if out["team"] and not c.execute("select 1 from teams where name = ?", (out["team"],)).fetchone():
+        if out["team"] and not c.execute("select 1 from teams where name = ? and archived is null", (out["team"],)).fetchone():
             raise ValueError(f"team '{out['team']}' does not exist")
-    return out
+    if "daily_tokens" in body:
+        out["daily_tokens"] = int(body["daily_tokens"] or 0)
+        if out["daily_tokens"] < 0:
+            raise ValueError("daily tokens must be >= 0")
+    if "key_expires" in body:  # a date (the key works until the end of that day), or empty for no expiry
+        v = str(body["key_expires"] or "").strip()
+        try:
+            out["key_expires"] = time.mktime((*map(int, v.split("-")), 23, 59, 59, 0, 0, -1)) if v else None
+        except (ValueError, TypeError):
+            raise ValueError("key expiry must be a date like 2026-12-31")
+    return out  # only these fields: anything else in the request (spent, key_hash, pw_hash...) is ignored
 
 
 def check_new_password(pw):
@@ -272,24 +542,83 @@ def _il_id(digits):  # Israeli ID check digit
 
 _CARD = re.compile(r"\b\d(?:[ -]?\d){12,18}\b")
 _ID = re.compile(r"\b\d{9}\b")
-_SECRET = re.compile(r"\b(?:sk|gw|AIza|ghp|xox[bp])[-_A-Za-z0-9]{16,}\b")
+# access keys: provider and gateway keys (prefix + separator), Google keys, AWS key ids, private-key blocks
+_SECRET = re.compile(r"\b(?:(?:sk|gw|ghp|gho|ghs|github_pat|glpat|hf|xox[bpoas])[-_]|AIza)[-_A-Za-z0-9]{16,}|\bAKIA[0-9A-Z]{16}\b"
+                     r"|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)")
+_IBAN = re.compile(r"\bIL\d{2}(?:[ -]?\d{4}){4}[ -]?\d{3}\b")
+_PHONE = re.compile(r"(?<![\w+])(?:\+972[- ]?|0)(?:5\d|7\d|[2-4689])[- ]?\d{3}[- ]?\d{4}\b")  # Israeli mobiles and landlines
+_EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b")
+# bank accounts and passports only next to a label saying so: bare numbers are too often something else
+_BANK = re.compile(r"((?:חשבון\s+בנק|מס(?:פר|')\s+חשבון\s+בנק|סניף\s+\d{3}\s*,?\s*חשבון|bank\s+account(?:\s+(?:no\.?|number|#))?)"
+                   r"\s*[:#]?\s*)(?:\d{2,3}[-/ ]\d{3}[-/ ])?\d{4,9}\b", re.I)
+_PASSPORT = re.compile(r"((?:passport|דרכון)[^\d\n]{0,20}?)[A-Z]?\d{7,9}\b", re.I)
 
 
 def redact_text(s):
     s = _SECRET.sub("[REDACTED_SECRET]", s)
+    s = _IBAN.sub("[REDACTED_IBAN]", s)
     s = _CARD.sub(lambda m: "[REDACTED_CARD]" if _luhn(re.sub(r"\D", "", m[0])) else m[0], s)
-    return _ID.sub(lambda m: "[REDACTED_ID]" if _il_id(m[0]) else m[0], s)
+    s = _ID.sub(lambda m: "[REDACTED_ID]" if _il_id(m[0]) else m[0], s)
+    s = _PHONE.sub("[REDACTED_PHONE]", s)
+    s = _EMAIL.sub("[REDACTED_EMAIL]", s)
+    s = _BANK.sub(lambda m: m[1] + "[REDACTED_BANK]", s)
+    return _PASSPORT.sub(lambda m: m[1] + "[REDACTED_PASSPORT]", s)
 
 
-def redact(obj):
-    # ponytail: always on for every account; add a per-account switch if a team must send IDs to a model
+def redact(obj, fn=None):
+    # ponytail: one policy for every account; add a per-account switch if a team must send IDs to a model
+    fn = fn or redact_text
     if isinstance(obj, str):
-        return redact_text(obj)
+        return fn(obj)
     if isinstance(obj, list):
-        return [redact(v) for v in obj]
+        return [redact(v, fn) for v in obj]
     if isinstance(obj, dict):
-        return {k: redact(v) for k, v in obj.items()}
+        return {k: redact(v, fn) for k, v in obj.items()}
     return obj
+
+
+def mask_answer(s):
+    """Answers: only access keys and credentials are masked (an answer may rightly contain an email or a phone)."""
+    return _SECRET.sub("[REDACTED_SECRET]", s)
+
+
+class AnswerMasker:
+    """Masks keys in a streamed answer. Text is held back until whitespace (a key never contains any), and a
+    private-key block until its end line, so a key split across pieces is still caught."""
+    def __init__(self):
+        self.buf, self.count = "", 0
+
+    def _out(self, s):
+        m = mask_answer(s)
+        self.count += m.count("[REDACTED_SECRET]") - s.count("[REDACTED_SECRET]")
+        return m
+
+    def feed(self, piece):
+        self.buf += piece
+        if "-----BEGIN" in self.buf and "-----END" not in self.buf.split("-----BEGIN")[-1]:
+            return ""
+        cut = max(self.buf.rfind(" "), self.buf.rfind("\n"), self.buf.rfind("\t")) + 1
+        out, self.buf = self.buf[:cut], self.buf[cut:]
+        return self._out(out)
+
+    def flush(self):
+        out, self.buf = self.buf, ""
+        return self._out(out)
+
+
+def leaked(text, secret, n=60):
+    """Mask every run of n+ characters of secret (the gateway's own instructions) that appears word for word in text.
+    Returns (text, how many runs)."""
+    found, i = 0, 0
+    while i + n <= len(secret):
+        if secret[i:i + n] in text:
+            j = i + n
+            while j < len(secret) and secret[i:j + 1] in text:
+                j += 1
+            text, found, i = text.replace(secret[i:j], "[REDACTED_SYSTEM_PROMPT]"), found + 1, j
+        else:
+            i += 1
+    return text, found
 
 
 def masked(before, after):
@@ -317,23 +646,93 @@ def rate_ok(name, rpm):
         return True
 
 
+# --- questions in progress per account, and wrong passwords per client address (memory) ---
+# ponytail: per-process memory, resets on restart; move to the DB if running several gateway processes
+_inflight = collections.Counter()
+_login_fails = collections.defaultdict(collections.deque)
+
+
+def inflight_enter(name):
+    with _hits_lock:
+        if _inflight[name] >= MAX_CONCURRENT:
+            return False
+        _inflight[name] += 1
+        return True
+
+
+def inflight_leave(name):
+    with _hits_lock:
+        _inflight[name] -= 1
+
+
+def login_fails(ip, add=False):
+    """Wrong passwords from this address in the last LOGIN_IP_MINUTES (after recording one more if add)."""
+    now = time.time()
+    with _hits_lock:
+        q = _login_fails[ip]
+        while q and q[0] < now - LOGIN_IP_MINUTES * 60:
+            q.popleft()
+        if add:
+            q.append(now)
+        return len(q)
+
+
 # --- budgets ---
 
+def day_start(t=None):
+    lt = time.localtime(t)
+    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+
+
 def authorize(c, acct, alias):
-    """None if the account may call this model now, else (http status, message)."""
+    """None if the account may call this model now, else (http status, message, reason code)."""
     if alias in ALL_MODELS and alias not in MODELS and alias in acct["models"].split(","):
-        return 403, f"model '{alias}' is turned off by the administrator"
+        return 403, f"model '{alias}' is turned off by the administrator", "model-off"
     if alias not in MODELS or alias not in acct["models"].split(","):
-        return 403, f"model '{alias}' not allowed"
+        return 403, f"model '{alias}' not allowed", "model-not-allowed"
     # ponytail: check-then-charge, concurrent requests can overshoot a budget by one request each
     if acct["spent"] >= acct["budget"]:
-        return 402, "personal monthly budget exhausted"
+        return 402, "personal monthly budget exhausted", "budget"
     team = c.execute("select budget, spent from teams where name = ?", (acct["team"],)).fetchone()
     if team and team["budget"] and team["spent"] >= team["budget"]:
-        return 402, "team monthly budget exhausted"
+        return 402, "team monthly budget exhausted", "team-budget"
+    if acct["daily_tokens"] and c.execute("select coalesce(sum(tokens_in + tokens_out), 0) from logs where name = ? and ts >= ?",
+                                          (acct["name"], day_start())).fetchone()[0] >= acct["daily_tokens"]:
+        return 429, "daily token quota reached", "daily-quota"
     if not rate_ok(acct["name"], acct["rpm"]):
-        return 429, f"rate limit: {acct['rpm']} requests per minute"
+        return 429, f"rate limit: {acct['rpm']} requests per minute", "rate-limit"
     return None
+
+
+def policy(c):
+    """(injection policy: block|log, sensitive-data policy: mask|block|log), set on the admin security page."""
+    inj, sens = setting(c, "policy_injection", "block"), setting(c, "policy_sensitive", "mask")
+    return inj if inj in ("block", "log") else "block", sens if sens in ("mask", "block", "log") else "mask"
+
+
+def last_user_text(messages):
+    """Text of the newest message if the user wrote it (string or a list of text parts)."""
+    m = messages[-1] if isinstance(messages, list) and messages else None
+    if not isinstance(m, dict) or m.get("role") != "user":
+        return ""
+    content = m.get("content")
+    if isinstance(content, list):
+        return "\n".join(p["text"] for p in content if isinstance(p, dict) and isinstance(p.get("text"), str))
+    return content if isinstance(content, str) else ""
+
+
+def check_spike(c, name):
+    """Security event (once per account per day) when the last hour cost more than max($5, 5x the account's average
+    hour over the 7 days before it)."""
+    now = time.time()
+    hour = c.execute("select coalesce(sum(cost), 0) from logs where name = ? and ts >= ?", (name, now - 3600)).fetchone()[0]
+    if hour <= SPIKE_MIN:
+        return
+    week = c.execute("select coalesce(sum(cost), 0) from logs where name = ? and ts >= ? and ts < ?",
+                     (name, now - 7 * 86400 - 3600, now - 3600)).fetchone()[0]
+    if hour > max(SPIKE_MIN, SPIKE_FACTOR * week / 168) and not c.execute(
+            "select 1 from security_events where kind = 'cost-spike' and name = ? and ts >= ?", (name, day_start())).fetchone():
+        security.event(c, "cost-spike", name, {"hour": round(hour, 4), "average": round(week / 168, 4)})
 
 
 def new_usage():
@@ -345,20 +744,21 @@ def price_usage(price_in, price_out, price_cached, u):
     return (u["in"] * price_in + u["cache_write"] * price_in * 1.25 + u["cache_read"] * price_cached + u["out"] * price_out) / 1e6
 
 
-def log_call(c, name, team, model, u, cost, request, response, note=""):
-    c.execute("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, request, response, cache_read, cache_write, note)"
-              " values (?,?,?,?,?,?,?,?,?,?,?,?)",
-              (time.time(), name, team, model, u["in"] + u["cache_read"] + u["cache_write"], u["out"], cost, request, response,
-               u["cache_read"], u["cache_write"], note or None))
+def log_call(c, name, team, model, u, cost, request, response, note="", request_id=None):
+    c.execute("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, request, response, cache_read, cache_write, note,"
+              " request_id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              (time.time(), name, team, model, u["in"] + u["cache_read"] + u["cache_write"], u["out"], cost, encrypt(request),
+               encrypt(response), u["cache_read"], u["cache_write"], note or None, request_id))
 
 
-def charge(c, acct, alias, u, request, response, note=""):
+def charge(c, acct, alias, u, request, response, note="", request_id=None):
     _, real, price_in, price_out = ALL_MODELS[alias]
     cost = price_usage(price_in, price_out, MODEL_EXTRA.get(alias, {}).get("price_cached", price_in * 0.1), u)
     with c:
         c.execute("update accounts set spent = spent + ? where name = ?", (cost, acct["name"]))
         c.execute("update teams set spent = spent + ? where name = ?", (cost, acct["team"]))
-        log_call(c, acct["name"], acct["team"], real, u, cost, request, response, note)
+        log_call(c, acct["name"], acct["team"], real, u, cost, request, response, note, request_id)
+        check_spike(c, acct["name"])
     if acct["spent"] < acct["budget"] * SOFT_LIMIT <= acct["spent"] + cost:
         print(f"WARNING: {acct['name']} passed {SOFT_LIMIT:.0%} of budget (${acct['budget']})", flush=True)
     return cost
@@ -482,6 +882,7 @@ def embed_texts(c, texts):
 
 
 sources.EMBED = embed_texts
+sources.ENCRYPT = encrypt
 
 
 # --- MCP knowledge sources ---
@@ -490,40 +891,53 @@ MCP_MAX_RESOURCES = 300
 
 
 def mcp_config(row):
+    return load_config(row["config"])
+
+
+def load_config(raw):
+    """A source's settings (stored encrypted: they hold the MCP server's token)."""
     try:
-        return json.loads(row["config"] or "{}")
+        cfg = json.loads(decrypt(raw) or "{}")
+        return cfg if isinstance(cfg, dict) else {}
     except ValueError:
         return {}
 
 
-def mcp_search(c, names, question, who):
+MCP_NAME = re.compile(r"^[A-Za-z0-9_.:/-]{1,64}$")
+
+
+def mcp_search(c, names, question, who, request_id=None):
     """Live search: call the configured tool of each chosen MCP source with the question. Returns [(source, title, text)].
-    A failing or suspicious server is skipped (and logged), never allowed to break the chat."""
+    Only that one tool, only with that one argument, and only if the server doesn't mark it as changing data.
+    A failing server is skipped (and logged), never allowed to break the chat. The caller screens the text."""
     hits = []
     marks = ",".join("?" * len(names))
     for row in c.execute(f"select * from sources where kind = 'mcp' and name in ({marks})", names).fetchall() if names else []:
         cfg = mcp_config(row)
-        if cfg.get("mode") != "search" or not cfg.get("tool"):
+        tool, arg = str(cfg.get("tool") or ""), str(cfg.get("arg") or "query")
+        if cfg.get("mode") != "search" or not MCP_NAME.match(tool) or not MCP_NAME.match(arg):
             continue
         try:
             client = mcp.Client(row["path"], cfg.get("token", ""))
             client.connect()
-            text = client.run_tool(cfg["tool"], {cfg.get("arg") or "query": question})[:MCP_RESULT_CHARS]
+            refused = mcp.check_tool(client.tools(), tool, arg)
+            if refused:
+                with c:
+                    security.event(c, "mcp-tool-refused", row["name"], {"file": f"MCP: {tool}", "reason": refused, "user": who,
+                                                                        "request_id": request_id})
+                continue
+            text = client.run_tool(tool, {arg: question})[:MCP_RESULT_CHARS]
         except mcp.MCPError as e:
             print(f"MCP source {row['name']} failed: {e}", flush=True)
             continue
-        found = security.scan(text)
-        if "prompt-injection" in found or "script" in found:
-            with c:
-                security.event(c, "document-refused", row["name"], {"file": f"MCP: {cfg['tool']}", "found": found, "user": who})
-            continue
         if text.strip():
-            hits.append((row["name"], cfg["tool"], redact_text(text)))
+            hits.append((row["name"], tool, redact_text(text)))
     return hits
 
 
 def mcp_sync(c, row):
-    """Copy the server's text resources (and PDF/Word blobs) into the document index. Returns (indexed, skipped, flagged)."""
+    """Copy the server's text resources (and PDF/Word blobs) into the document index; resources that are gone are archived.
+    Returns (indexed, skipped, flagged, archived titles)."""
     client = mcp.Client(row["path"], mcp_config(row).get("token", ""))
     client.connect()
     seen, skipped, flagged = set(), 0, []
@@ -549,11 +963,9 @@ def mcp_sync(c, row):
             continue
         sources.add_doc(c, row["name"], title, text.strip())
         seen.add(title)
-    for doc_id, title in c.execute("select id, title from docs where source = ?", (row["name"],)).fetchall():
-        if title not in seen:
-            sources.delete_doc(c, row["name"], doc_id)
+    gone = sources.archive_missing(c, row["name"], seen)
     c.execute("update sources set synced = ? where name = ?", (time.time(), row["name"]))
-    return len(seen), skipped, flagged
+    return len(seen), skipped, flagged, gone
 
 
 def fallback_for(alias, path=None):
@@ -599,11 +1011,64 @@ def delta_text(provider, ev):
     return (choices[0].get("delta") or {}).get("content") if choices else None
 
 
+class TooLarge(Exception):
+    pass
+
+
+def trusted_proxy(ip):
+    try:
+        ip = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(ip in net for net in TRUSTED_PROXIES if net.version == ip.version)
+
+
+PROVIDER_PATHS = {p[0] for p in PROVIDERS.values()}
+
+
 class Handler(BaseHTTPRequestHandler):
     timeout = 60  # a client that stops sending mid-request is dropped instead of holding a thread forever
+    rid = None
     # ---------- helpers ----------
+    def send_header(self, keyword, value):
+        # every header goes out through here: a line break in a value would start a header (or a body) of its own
+        super().send_header(keyword, re.sub(r"[^\t\x20-\x7e\xa0-\xff]", "", str(value)))
+
+    def end_headers(self):
+        if self.rid:
+            self.send_header("x-request-id", self.rid)
+        super().end_headers()
+
+    def log_message(self, fmt, *args):
+        # method, path without the query string, status: never bodies, keys or cookies
+        line = (getattr(self, "requestline", "") or "-").split(" ")
+        path = line[1].split("?")[0][:200] if len(line) > 1 else ""
+        status = args[1] if fmt.startswith('"%s" %s') and len(args) > 1 else "-"
+        try:
+            ip = self.client_ip()
+        except (AttributeError, ValueError):
+            ip = self.client_address[0]
+        sys.stderr.write(f"{ip} {self.log_date_time_string()} {line[0][:10]} {path} {status} {self.rid or ''}\n")
+
+    def start(self):
+        """Per request: a trace id (the client's own if it looks sane) and a check of how the body is framed."""
+        given = self.headers.get("x-request-id") or ""
+        self.rid = given if REQUEST_ID.match(given) else uuid.uuid4().hex
+        te, lengths = self.headers.get("transfer-encoding"), self.headers.get_all("content-length") or []
+        # two ways of saying where the body ends is how "request smuggling" makes two servers disagree
+        if te and lengths:
+            return 400, "conflicting content-length and transfer-encoding"
+        if te:
+            return 400, "chunked request bodies are not supported; send content-length"
+        if len(set(lengths)) > 1 or any(not v.strip().isdigit() for v in lengths):
+            return 400, "invalid content-length"
+        return None
+
     def reply(self, status, obj, headers=()):
         self.send_raw(status, json.dumps(obj, ensure_ascii=False).encode(), "application/json", headers)
+
+    def https(self):
+        return trusted_proxy(self.client_address[0]) and self.headers.get("x-forwarded-proto") == "https"
 
     def send_raw(self, status, data, ctype, headers=()):
         self.send_response(status)
@@ -611,17 +1076,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("content-length", str(len(data)))
         self.send_header("x-content-type-options", "nosniff")
         self.send_header("referrer-policy", "no-referrer")
-        if self.headers.get("x-forwarded-proto") == "https":
+        if self.https():
             self.send_header("strict-transport-security", "max-age=31536000")
         for k, v in headers:
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
 
-    def json_body(self):
+    def json_body(self, path):
         n = int(self.headers.get("content-length") or 0)
-        if n > MAX_BODY:
-            raise ValueError("request too large")
+        if n > (MAX_BODY if path == "/admin/api/sources/upload" or path in PROVIDER_PATHS else MAX_REQUEST_BODY):
+            raise TooLarge()
         body = json.loads(self.rfile.read(n) or b"{}")
         if not isinstance(body, dict):
             raise ValueError("body must be a JSON object")
@@ -629,12 +1094,56 @@ class Handler(BaseHTTPRequestHandler):
 
     def client_ip(self):
         ip = self.client_address[0]
-        # Behind Caddy the direct peer is Caddy (private address); the real client is the last forwarded hop.
-        # A public peer can't use this header to pretend it's inside.
-        fwd = self.headers.get("x-forwarded-for")
-        if fwd and ipaddress.ip_address(ip).is_private:
-            ip = fwd.split(",")[-1].strip()
+        # Behind Caddy the direct peer is Caddy; the real client is the right-most forwarded address that isn't
+        # one of our own proxies. From anyone else the header is ignored: it's just text the sender typed.
+        if not trusted_proxy(ip):
+            return ip
+        for hop in reversed((self.headers.get("x-forwarded-for") or "").split(",")):
+            hop = hop.strip()
+            try:
+                ipaddress.ip_address(hop)
+            except ValueError:
+                break
+            if not trusted_proxy(hop):
+                return hop
+            ip = hop
         return ip
+
+    def event(self, c, kind, name, detail):
+        security.event(c, kind, name, {**detail, "request_id": self.rid})
+
+    def refuse(self, c, acct, status, message, reason, model=None, text=""):
+        """Turn a request away, and remember it (with a masked, encrypted excerpt of the question at most)."""
+        with c:
+            c.execute("insert into blocked_requests values (?,?,?,?,?,?,?)",
+                      (time.time(), acct["name"] if acct else "", acct["team"] if acct else "", reason,
+                       model if isinstance(model, str) else None, self.rid, encrypt(redact_text(text)[:200]) if text else None))
+        self.reply(status, {"error": message, "code": reason})
+
+    def screen(self, c, acct, text, model):
+        """The injection policy for the newest question. True if the request may continue; otherwise it was refused."""
+        found = security.scan(text)
+        blocked = bool(security.ATTACKS & set(found)) and policy(c)[0] == "block"
+        if found:
+            with c:
+                self.event(c, "suspicious-prompt", acct["name"], {"found": found, "excerpt": encrypt(redact_text(text)[:200]),
+                                                                  "action": "blocked" if blocked else "logged"})
+        if blocked:
+            self.refuse(c, acct, 403, "request blocked: possible prompt injection or jailbreak", "policy-injection", model, text)
+        return not blocked
+
+    def sensitive(self, c, acct, original, masked_obj, count, model, text):
+        """The sensitive-data policy. Returns what to send on (masked or original), or None if refused."""
+        if not count:
+            return masked_obj
+        mode = policy(c)[1]
+        kind = {"mask": "sensitive-data-masked", "block": "sensitive-data-blocked", "log": "sensitive-data-logged"}[mode]
+        with c:
+            self.event(c, kind, acct["name"], {"count": count})
+        if mode == "block":
+            self.refuse(c, acct, 403, "request blocked: sensitive data", "policy-sensitive", model, text)
+            return None
+        return masked_obj if mode == "mask" else original
 
     def host_ok(self):
         host = (self.headers.get("host") or "").lower()
@@ -658,8 +1167,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def blocked(self, kind, status, message):
         with db() as c:
-            security.event(c, kind, "", {"path": self.path.split("?")[0], "ip": self.client_ip(),
-                                         "host": self.headers.get("host"), "origin": self.headers.get("origin")})
+            self.event(c, kind, "", {"path": self.path.split("?")[0], "ip": self.client_ip(),
+                                     "host": self.headers.get("host"), "origin": self.headers.get("origin")})
         self.reply(status, {"error": message})
 
     def inside(self):
@@ -680,7 +1189,7 @@ class Handler(BaseHTTPRequestHandler):
             return True
         if given:  # a wrong password from outside is worth knowing about; a page load without one is not
             with db() as c:
-                security.event(c, "admin-denied", "", {"ip": self.client_ip(), "path": self.path})
+                self.event(c, "admin-denied", "", {"ip": self.client_ip(), "path": self.path.split("?")[0]})
         self.reply(401, {"error": "admin is open only from the office network" if not ADMIN_PASSWORD else "wrong admin password"})
         return False
 
@@ -692,15 +1201,18 @@ class Handler(BaseHTTPRequestHandler):
         if not token:
             return None
         return c.execute("select a.* from sessions s join accounts a on a.name = s.name"
-                         " where s.token_hash = ? and s.expires > ?", (sha(token.value), time.time())).fetchone()
+                         " where s.token_hash = ? and s.expires > ? and a.archived is null", (sha(token.value), time.time())).fetchone()
 
     def cookie(self, value, max_age):
-        secure = "; Secure" if self.headers.get("x-forwarded-proto") == "https" else ""
+        secure = "; Secure" if self.https() else ""
         return ("set-cookie", f"session={value}; HttpOnly; SameSite=Strict; Path=/; Max-Age={max_age}{secure}")
 
     # ---------- routing ----------
     def do_GET(self):
         path = self.path.split("?")[0]
+        bad = self.start()
+        if bad:
+            return self.reply(bad[0], {"error": bad[1]})
         if not self.host_ok():
             return self.blocked("bad-host", 421, "unknown host name; add it to ALLOWED_HOSTS")
         if path == "/health":
@@ -724,21 +1236,27 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+        bad = self.start()
+        if bad:
+            return self.reply(bad[0], {"error": bad[1]})
         if not self.host_ok():
             return self.blocked("bad-host", 421, "unknown host name; add it to ALLOWED_HOSTS")
         # apps calling the provider paths authenticate with a key, which a hostile page can't attach
-        if path not in {p[0] for p in PROVIDERS.values()} and not self.browser_post_ok():
+        if path not in PROVIDER_PATHS and not self.browser_post_ok():
             return self.blocked("cross-site-request", 403, "request must come from this site's own pages")
         try:
             if path.startswith("/admin/api/"):
                 if self.admin_ok():
-                    self.admin_post(path, self.json_body())
+                    self.admin_post(path, self.json_body(path))
                 return
             if path.startswith("/api/"):
-                return self.user_post(path, self.json_body())
-            if path in {p[0] for p in PROVIDERS.values()}:
-                return self.proxy(path, self.json_body())
+                return self.user_post(path, self.json_body(path))
+            if path in PROVIDER_PATHS:
+                return self.proxy(path, self.json_body(path))
             self.reply(404, {"error": "not found"})
+        except TooLarge:
+            self.close_connection = True  # the unread body must not be taken for a next request
+            self.reply(413, {"error": "request too large"})
         except (ValueError, KeyError, TypeError) as e:
             self.reply(400, {"error": str(e)})
 
@@ -765,26 +1283,44 @@ class Handler(BaseHTTPRequestHandler):
     def proxy(self, path, body):
         key = self.headers.get("x-api-key") or self.headers.get("authorization", "").removeprefix("Bearer ")
         c = db()
-        acct = c.execute("select * from accounts where key_hash = ?", (sha(key),)).fetchone() if key else None
+        acct = c.execute("select * from accounts where key_hash = ? and archived is null", (sha(key),)).fetchone() if key else None
         if not acct:
             return self.reply(401, {"error": "invalid key"})
-        alias = body.get("model")
+        alias, question = body.get("model"), last_user_text(body.get("messages"))
+        if acct["key_expires"] and acct["key_expires"] < time.time():
+            return self.refuse(c, acct, 401, "api key expired", "key-expired", alias, question)
+        if isinstance(body.get("messages"), list) and len(body["messages"]) > MAX_MESSAGES:
+            return self.refuse(c, acct, 400, "too many messages", "too-many-messages", alias)
         err = authorize(c, acct, alias)
         if err:
-            return self.reply(err[0], {"error": err[1]})
+            return self.refuse(c, acct, *err, alias, question)
         provider = MODELS[alias][0]
         if PROVIDERS[provider][0] != path:
             return self.reply(400, {"error": f"model '{alias}' must be called via {PROVIDERS[provider][0]}"})
+        if not self.screen(c, acct, question, alias):
+            return
+        clean = redact(body)  # masked before anything leaves for the provider; the log keeps the same masked version
+        body = self.sensitive(c, acct, body, clean, masked(json.dumps(body, ensure_ascii=False), json.dumps(clean, ensure_ascii=False)),
+                              alias, question)
+        if body is None:
+            return
+        for k in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+            if isinstance(body.get(k), (int, float)) and body[k] > MAX_OUTPUT_TOKENS:
+                body[k] = MAX_OUTPUT_TOKENS
+        if not inflight_enter(acct["name"]):
+            return self.refuse(c, acct, 429, "too many requests in progress", "concurrency", alias, question)
+        try:
+            self.forward(c, acct, path, alias, body)
+        finally:
+            inflight_leave(acct["name"])
 
-        before = json.dumps(body, ensure_ascii=False)
-        body = redact(body)
-        self.inspect(c, acct["name"], before, masked(before, json.dumps(body, ensure_ascii=False)))
+    def forward(self, c, acct, path, alias, body):
         def build(a):
             up = {**body, "model": MODELS[a][1]}
             if body.get("stream") and path == "/v1/chat/completions":
                 up["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}
             return up
-        started = []
+        started, sent, hidden = [], [], [0]
 
         def on_line(line, ev):
             if not started:
@@ -793,27 +1329,44 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("x-gateway-model", self.current_alias)
                 self.end_headers()  # no content-length: HTTP/1.0 closes the connection at the end
                 started.append(True)
+            if isinstance(ev, dict):  # keys in the answer are masked event by event (one split across events gets through)
+                clean = redact(ev, mask_answer)
+                if clean != ev:
+                    hidden[0] += 1
+                    line = b"data: " + json.dumps(clean, ensure_ascii=False).encode() + b"\n"
+            sent.append(line)
             self.wfile.write(line)
             self.wfile.flush()
 
         used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, path)
         if status >= 400 and not u["in"] and not u["out"] and b"provider unreachable" in data:
             return self.reply(502, json.loads(data))
-        charge(c, acct, used_alias, u, json.dumps(body, ensure_ascii=False), data.decode(errors="replace"), note)
-        if "dangerous-command" in security.scan(data.decode(errors="replace")):
-            with c:
-                security.event(c, "dangerous-answer", acct["name"], {"model": real})
+        if started:
+            data = b"".join(sent)
+        else:
+            try:
+                parsed = json.loads(data)
+                clean = redact(parsed, mask_answer)
+                if clean != parsed:
+                    hidden[0] += 1
+                    data = json.dumps(clean, ensure_ascii=False).encode()
+            except ValueError:
+                pass
+        text = data.decode(errors="replace")
+        charge(c, acct, used_alias, u, json.dumps(body, ensure_ascii=False), text, note, self.rid)
+        self.answer_events(c, acct, used_alias, text, hidden[0], security.bad_links(text))
         if not started:
             self.send_raw(status, data, "application/json", [("x-gateway-model", used_alias)])
 
-    def inspect(self, c, name, text, masked_count):
-        """Log suspicious content in a question and any sensitive values that were masked out of it."""
+    def answer_events(self, c, acct, alias, text, hidden, links):
         found = security.scan(text)
         with c:
-            if found:
-                security.event(c, "suspicious-prompt", name, {"found": found, "excerpt": redact_text(text)[:200]})
-            if masked_count:
-                security.event(c, "sensitive-data-masked", name, {"count": masked_count})
+            if "dangerous-command" in found:
+                self.event(c, "dangerous-answer", acct["name"], {"model": MODELS[alias][1]})
+            if hidden:
+                self.event(c, "answer-masked", acct["name"], {"model": MODELS[alias][1], "count": hidden})
+            if links:
+                self.event(c, "suspicious-link", acct["name"], {"model": MODELS[alias][1], "links": links[:5]})
 
     # ---------- employees: login + chat ----------
     def user_get(self, path):
@@ -821,7 +1374,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             return self.reply(200, {"open": self.open_ok()})
         if path == "/api/people" and self.open_ok():
-            rows = c.execute("select name, team from accounts where pw_hash is not null order by team, name")
+            rows = c.execute("select name, team from accounts where pw_hash is not null and archived is null order by team, name")
             return self.reply(200, [dict(r) for r in rows])
         acct = self.session_account(c)
         if not acct:
@@ -838,15 +1391,16 @@ class Handler(BaseHTTPRequestHandler):
                                     "budget": acct["budget"], "spent": acct["spent"],
                                     "team_budget": team["budget"] if team else 0, "team_spent": team["spent"] if team else 0,
                                     "sources": readable})
-        if path == "/api/conversations":
-            rows = c.execute("select id, title, updated from conversations where name = ? order by updated desc limit 200", (acct["name"],))
-            return self.reply(200, [dict(r) for r in rows])
+        if path in ("/api/conversations", "/api/conversations/archived"):  # saved chats, or the ones moved to the archive
+            rows = c.execute("select id, title, updated, archived from conversations where name = ? and archived is "
+                             + ("not null" if path.endswith("archived") else "null") + " order by updated desc limit 200", (acct["name"],))
+            return self.reply(200, [{**dict(r), "title": decrypt(r["title"])} for r in rows])
         if path.startswith("/api/conversations/"):
             row = c.execute("select id, title, messages from conversations where id = ? and name = ?",
                             (path.rsplit("/", 1)[1], acct["name"])).fetchone()
             if not row:
                 return self.reply(404, {"error": "not found"})
-            return self.reply(200, {"id": row["id"], "title": row["title"], "messages": json.loads(row["messages"])})
+            return self.reply(200, {"id": row["id"], "title": decrypt(row["title"]), "messages": json.loads(decrypt(row["messages"]))})
         self.reply(404, {"error": "not found"})
 
     def user_post(self, path, body):
@@ -857,7 +1411,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self.open_ok():
                 return self.reply(403, {"error": "open access is off"})
             name = str(body.get("name", ""))
-            if not c.execute("select 1 from accounts where name = ? and pw_hash is not null", (name,)).fetchone():
+            if not c.execute("select 1 from accounts where name = ? and pw_hash is not null and archived is null", (name,)).fetchone():
                 return self.reply(404, {"error": "no such user"})
             return self.start_session(c, name)
         acct = self.session_account(c)
@@ -886,31 +1440,41 @@ class Handler(BaseHTTPRequestHandler):
                 owner = c.execute("select name from conversations where id = ?", (cid,)).fetchone()
                 if owner and owner["name"] != acct["name"]:
                     return self.reply(404, {"error": "not found"})
-                c.execute("insert or replace into conversations values (?,?,?,?,?)",
-                          (cid, acct["name"], redact_text(str(body.get("title") or ""))[:100], time.time(),
-                           json.dumps(redact(messages), ensure_ascii=False)))
+                c.execute("insert or replace into conversations(id, name, title, updated, messages) values (?,?,?,?,?)",
+                          (cid, acct["name"], encrypt(redact_text(str(body.get("title") or ""))[:100]), time.time(),
+                           encrypt(json.dumps(redact(messages), ensure_ascii=False))))
             return self.reply(200, {"id": cid})
-        if path == "/api/conversations/delete":
+        if path in ("/api/conversations/archive", "/api/conversations/restore"):  # own chats only; nothing is deleted
+            restore, cid = path.endswith("restore"), str(body.get("id"))
             with c:
-                c.execute("delete from conversations where id = ? and name = ?", (str(body.get("id")), acct["name"]))
-            return self.reply(200, {"ok": True})
+                n = c.execute("update conversations set archived = ? where id = ? and name = ? and archived is "
+                              + ("not null" if restore else "null"), (None if restore else time.time(), cid, acct["name"])).rowcount
+                if n:
+                    audit(c, "restore" if restore else "archive", {"kind": "chat", "name": acct["name"], "id": cid})
+            return self.reply(200 if n else 404, {"ok": True} if n else {"error": "not found"})
         self.reply(404, {"error": "not found"})
 
     def login(self, c, body):
         name, pw = str(body.get("name", "")), str(body.get("password", ""))
-        acct = c.execute("select * from accounts where name = ?", (name,)).fetchone()
-        now = time.time()
+        acct = c.execute("select * from accounts where name = ? and archived is null", (name,)).fetchone()  # archived: as if unknown
+        now, ip = time.time(), self.client_ip()
+        # guessing across many names from one address: that address waits, whatever name it tries next
+        if login_fails(ip) >= LOGIN_IP_LIMIT:
+            return self.reply(429, {"error": f"too many wrong passwords from this address, try again in {LOGIN_IP_MINUTES} minutes"})
         if acct and acct["locked_until"] > now:
             return self.reply(429, {"error": f"too many wrong passwords, try again in {LOCK_MINUTES} minutes"})
         # unknown names still pay the password-hash cost, so response time doesn't reveal which names exist
         if not check_password(pw, acct["pw_hash"] if acct and acct["pw_hash"] else DUMMY_HASH) or not acct:
+            if login_fails(ip, add=True) == LOGIN_IP_LIMIT:
+                with c:
+                    self.event(c, "login-throttled", "", {"ip": ip, "minutes": LOGIN_IP_MINUTES})
             if acct:
                 with c:
                     failed = acct["failed"] + 1
                     c.execute("update accounts set failed = ?, locked_until = ? where name = ?",
                               (0 if failed >= LOCK_AFTER else failed, now + LOCK_MINUTES * 60 if failed >= LOCK_AFTER else 0, name))
                     if failed >= LOCK_AFTER:
-                        security.event(c, "account-locked", name, {"ip": self.client_ip(), "minutes": LOCK_MINUTES})
+                        self.event(c, "account-locked", name, {"ip": ip, "minutes": LOCK_MINUTES})
             return self.reply(401, {"error": "wrong name or password"})
         with c:
             c.execute("update accounts set failed = 0 where name = ?", (name,))
@@ -936,22 +1500,53 @@ class Handler(BaseHTTPRequestHandler):
             alias, route = route_auto(c, acct, messages)
             if not alias:
                 return self.reply(403, {"error": route})
+        last = messages[-1]["content"]
+        if len(messages) > MAX_MESSAGES:
+            return self.refuse(c, acct, 400, "too many messages", "too-many-messages", alias)
         err = authorize(c, acct, alias)
         if err:
-            return self.reply(err[0], {"error": err[1]})
-        last = messages[-1]["content"]
-        messages = redact([{"role": m["role"], "content": m["content"]} for m in messages])
-        self.inspect(c, acct["name"], last, masked(last, messages[-1]["content"]))
+            return self.refuse(c, acct, *err, alias, last)
+        if not self.screen(c, acct, last if messages[-1]["role"] == "user" else "", alias):
+            return
+        original = [{"role": m["role"], "content": m["content"]} for m in messages]
+        clean = redact(original)
+        messages = self.sensitive(c, acct, original, clean, masked(last, clean[-1]["content"]), alias, last)
+        if messages is None:
+            return
+        if not inflight_enter(acct["name"]):
+            return self.refuse(c, acct, 429, "too many requests in progress", "concurrency", alias, last)
+        try:
+            self.chat_forward(c, acct, alias, route, messages, body.get("sources") or [])
+        finally:
+            inflight_leave(acct["name"])
+
+    def screen_hits(self, c, acct, hits):
+        """Retrieved passages are data handed to the model: a passage with browser code is always left out, one that
+        tries to give the model instructions is left out under the block policy (and only logged otherwise)."""
+        out, block = [], policy(c)[0] == "block"
+        for source, title, body in hits:
+            found = security.scan(body)
+            drop = "script" in found or (block and security.ATTACKS & set(found))
+            if found:
+                with c:
+                    self.event(c, "document-refused" if drop else "document-flagged", source,
+                               {"file": title, "found": found, "user": acct["name"]})
+            if not drop:
+                out.append((source, title, body))
+        return out
+
+    def chat_forward(self, c, acct, alias, route, messages, wanted):
         # company documents: only sources the user's team may read, and only the ones the user switched on
         names = [n for n in sources.allowed(c, acct["team"]) if n in wanted]
-        hits = sources.search(c, names, messages[-1]["content"]) if messages[-1]["role"] == "user" else []
-        hits = mcp_search(c, names, messages[-1]["content"], acct["name"]) + hits if messages[-1]["role"] == "user" else hits
+        question = messages[-1]["content"] if messages[-1]["role"] == "user" else None
+        hits = (mcp_search(c, names, question, acct["name"], self.rid) + sources.search(c, names, question)) if question else []
+        hits = self.screen_hits(c, acct, hits)
         system = redact_text(sources.system_prompt(hits)) if hits else None
         used = list(dict.fromkeys(f"{s} / {t}" for s, t, _ in hits))
         def build(a):
             up = {"model": MODELS[a][1], "messages": messages, "stream": True}
             if MODELS[a][0] == "anthropic":
-                up["max_tokens"] = 8192
+                up["max_tokens"] = MAX_OUTPUT_TOKENS
                 # provider-side cache: the conversation so far is re-read at about a tenth of the input price next turn
                 up["cache_control"] = {"type": "ephemeral"}
                 if system:
@@ -961,8 +1556,14 @@ class Handler(BaseHTTPRequestHandler):
                 if system:
                     up["messages"] = [{"role": "system", "content": system}, *messages]
             return up
-        started, text = [], []
+        started, text, masker = [], [], AnswerMasker()
         labels = dict(c.execute("select alias, label from models").fetchall())
+
+        def write(s):
+            if s:
+                text.append(s)
+                self.wfile.write(s.encode())
+                self.wfile.flush()
 
         def on_line(line, ev):
             if not started:
@@ -978,21 +1579,26 @@ class Handler(BaseHTTPRequestHandler):
                 started.append(True)
             piece = delta_text(MODELS[self.current_alias][0], ev)
             if piece:
-                text.append(piece)
-                self.wfile.write(piece.encode())
-                self.wfile.flush()
+                write(masker.feed(piece))  # keys in the answer are masked before they reach the employee
 
         used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started)
-        warning = security.answer_warning(security.scan("".join(text)))
-        if started and warning:
-            text.append(warning)
-            self.wfile.write(warning.encode())
-            with c:
-                security.event(c, "dangerous-answer", acct["name"], {"model": MODELS[used_alias][1]})
+        answer = ""
+        if started:
+            write(masker.flush())
+            answer = "".join(text)
+            links = security.bad_links(answer)
+            warning = security.answer_warning(security.scan(answer), links)
+            write(warning)
+            self.answer_events(c, acct, used_alias, answer, masker.count, links)
+            # the gateway's own instructions repeated word for word: kept out of the log, and flagged
+            answer, leaks = leaked("".join(text), sources.HEADER) if system else ("".join(text), 0)
+            if leaks:
+                with c:
+                    self.event(c, "prompt-leak", acct["name"], {"model": MODELS[used_alias][1], "count": leaks})
         logged = {"sources": used, "messages": messages} if used else messages
         note = "; ".join(x for x in (f"auto: {route}" if route else "", note) if x)
         charge(c, acct, used_alias, u, json.dumps(logged, ensure_ascii=False),
-               "".join(text) if started else data.decode(errors="replace"), note)
+               answer if started else data.decode(errors="replace"), note, self.rid)
         if not started:
             self.reply(502 if status < 400 else status, {"error": "provider error", "detail": data.decode(errors="replace")[:500]})
 
@@ -1029,29 +1635,32 @@ class Handler(BaseHTTPRequestHandler):
             last = dict(c.execute("select name, sum(cost) from logs where ts >= ? and ts < ? group by name", (prev, start)).fetchall())
             last_team = dict(c.execute("select team, sum(cost) from logs where ts >= ? and ts < ? group by team", (prev, start)).fetchall())
             accounts = []
-            for a in c.execute("select * from accounts order by team, name"):
+            for a in c.execute("select * from accounts where archived is null order by team, name"):
                 projected, recommended = forecast(a["spent"], last.get(a["name"]) or 0)
                 accounts.append({"name": a["name"], "team": a["team"], "models": a["models"].split(","), "budget": a["budget"],
                                  "spent": a["spent"], "rpm": a["rpm"], "has_password": bool(a["pw_hash"]),
                                  "key_prefix": a["key_prefix"] if a["key_hash"] else None,
                                  "locked": a["locked_until"] > time.time(), "last_month": last.get(a["name"]) or 0,
+                                 "key_expires": a["key_expires"] if a["key_hash"] else None,
+                                 "key_created": a["key_created"] if a["key_hash"] else None, "daily_tokens": a["daily_tokens"],
                                  "projected": projected, "recommended": recommended})
             teams = []
-            for t in c.execute("select * from teams order by name"):
+            for t in c.execute("select * from teams where archived is null order by name"):
                 projected, recommended = forecast(t["spent"], last_team.get(t["name"]) or 0)
-                members = c.execute("select count(*), coalesce(sum(budget), 0) from accounts where team = ?", (t["name"],)).fetchone()
+                members = c.execute("select count(*), coalesce(sum(budget), 0) from accounts where team = ? and archived is null", (t["name"],)).fetchone()
                 teams.append({"name": t["name"], "budget": t["budget"], "spent": t["spent"], "members": members[0],
                               "members_budget": members[1], "last_month": last_team.get(t["name"]) or 0,
                               "projected": projected, "recommended": recommended})
             model_info = {r["alias"]: {"provider": r["provider"], "model": r["model"], "price_in": r["price_in"], "price_out": r["price_out"],
                                        "label": r["label"], "enabled": bool(r["enabled"])}
-                          for r in c.execute("select * from models order by created, alias")}
+                          for r in c.execute("select * from models where archived is null order by created, alias")}
             return self.reply(200, {"models": list(model_info), "model_info": model_info, "default_model": default_model(c), "soft_limit": SOFT_LIMIT,
                                     "accounts": accounts, "teams": teams})
         if path == "/admin/api/logs":
             # ponytail: last 200 only, add paging/search when someone needs older rows in the UI
-            rows = c.execute("select ts, name, team, model, tokens_in, tokens_out, cost, request, response from logs order by ts desc limit 200")
-            return self.reply(200, [dict(r) for r in rows])
+            rows = c.execute("select ts, name, team, model, tokens_in, tokens_out, cost, request, response, request_id from logs"
+                             " order by ts desc limit 200")
+            return self.reply(200, [{**dict(r), "request": decrypt(r["request"]), "response": decrypt(r["response"])} for r in rows])
         if path == "/admin/api/usage":
             rows = c.execute("select name, team, model, count(*) requests, sum(tokens_in) tokens_in, sum(tokens_out) tokens_out,"
                              " sum(cost) cost from logs where ts >= ? group by name, model order by cost desc", (month_bounds()[0],))
@@ -1086,8 +1695,9 @@ class Handler(BaseHTTPRequestHandler):
                                     "extensions": sorted(sources.ALL_EXT)})
         if path == "/admin/api/sources":
             out = []
-            for s in c.execute("select * from sources order by name").fetchall():
-                docs = [dict(d) for d in c.execute("select id, title, chars, updated from docs where source = ? order by title", (s["name"],))]
+            for s in c.execute("select * from sources where archived is null order by name").fetchall():
+                docs = [dict(d) for d in c.execute("select id, title, chars, updated from docs where source = ? and archived is null"
+                                                   " order by title", (s["name"],))]
                 cfg = mcp_config(s)
                 public = {k: v for k, v in cfg.items() if k != "token"}
                 out.append({**{k: s[k] for k in s.keys() if k != "config"}, "teams": [t for t in s["teams"].split(",") if t],
@@ -1095,10 +1705,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, out)
         if path == "/admin/api/security":
             week = time.time() - 7 * 86400
-            events = [{"ts": r["ts"], "kind": r["kind"], "name": r["name"], "detail": json.loads(r["detail"])}
+            def detail(raw):
+                d = json.loads(raw)
+                if isinstance(d, dict) and "excerpt" in d:
+                    d["excerpt"] = decrypt(d["excerpt"])
+                return d
+            events = [{"ts": r["ts"], "kind": r["kind"], "name": r["name"], "detail": detail(r["detail"])}
                       for r in c.execute("select * from security_events order by ts desc limit 200")]
+            blocked = [{**dict(r), "excerpt": decrypt(r["excerpt"])} for r in c.execute(
+                "select ts, name, team, reason, model, request_id, excerpt from blocked_requests order by ts desc limit 200")]
+            blocked_counts = dict(c.execute("select reason, count(*) from blocked_requests where ts >= ? group by reason", (week,)).fetchall())
+            spikes = [{"name": r["name"], "ts": r["ts"], **json.loads(r["detail"])} for r in c.execute(
+                "select * from security_events where kind = 'cost-spike' and ts >= ? order by ts desc", (time.time() - 86400,))]
+            inj, sens = policy(c)
             counts = dict(c.execute("select kind, count(*) from security_events where ts >= ? group by kind", (week,)).fetchall())
-            open_keys = c.execute("select count(*) from accounts where key_hash is not null and rpm = 0").fetchone()[0]
+            open_keys = c.execute("select count(*) from accounts where key_hash is not null and rpm = 0 and archived is null").fetchone()[0]
             providers = [p for p, (_, _, auth, _) in PROVIDERS.items() if any(v.removeprefix("Bearer ").strip() for v in auth.values() if v != "2023-06-01")]
             checks = [
                 {"ok": bool(ALLOWED_HOSTS), "text": "חיבור מוצפן (HTTPS) עם דומיין" if ALLOWED_HOSTS else
@@ -1110,8 +1731,16 @@ class Handler(BaseHTTPRequestHandler):
                 {"ok": not OPEN_ACCESS, "text": "כניסה לצ'אט עם סיסמה" if not OPEN_ACCESS else
                  "הצ'אט פתוח בלי סיסמה ברשת המשרד (OPEN_ACCESS): כל אחד יכול לבחור כל שם, להשתמש בתקציב שלו ולראות את השיחות שלו."},
                 {"ok": bool(providers), "text": "ספקים מחוברים: " + ", ".join(providers) if providers else "אין מפתחות ספקים בקובץ ⁦.env⁩"},
+                {"ok": bool(os.environ.get("FIREGATE_DATA_KEY", "").strip()), "text":
+                 "השאלות והתשובות שמורות מוצפנות, והמפתח מוגדר בהגדרות השרת" if os.environ.get("FIREGATE_DATA_KEY", "").strip() else
+                 "השאלות והתשובות שמורות מוצפנות, אבל מפתח ההצפנה נמצא בקובץ ליד מסד הנתונים. כדאי לשמור עותק שלו במקום אחר: "
+                 "בלי המפתח אי אפשר לקרוא את השאלות, התשובות והשיחות."},
             ]
-            return self.reply(200, {"events": events, "counts": counts, "checks": checks, "providers": providers})
+            return self.reply(200, {"events": events, "counts": counts, "checks": checks, "providers": providers,
+                                    "policy": {"injection": inj, "sensitive": sens}, "blocked": blocked,
+                                    "blocked_counts": blocked_counts, "spikes": spikes})
+        if path == "/admin/api/audit/verify":
+            return self.reply(200, verify_audit(c))
         if path == "/admin/api/report":
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             month = (q.get("month") or [time.strftime("%Y-%m")])[0]
@@ -1159,8 +1788,9 @@ class Handler(BaseHTTPRequestHandler):
             backups = {r["model"]: r["n"] for r in c.execute(
                 "select model, count(*) n from logs where ts >= ? and note like '%backup:%' group by model", (start,))}
             rows, saved = [], 0.0
-            for r in c.execute("select * from models order by created, alias"):
-                users = c.execute("select count(*) from accounts where ',' || models || ',' like ?", (f"%,{r['alias']},%",)).fetchone()[0]
+            for r in c.execute("select * from models where archived is null order by created, alias"):
+                users = c.execute("select count(*) from accounts where archived is null and ',' || models || ',' like ?",
+                                  (f"%,{r['alias']},%",)).fetchone()[0]
                 u = usage.get(r["model"], {})
                 cr, cw = cache.get(r["model"], (0, 0))
                 # what the cache saved: reads billed at the cache rate instead of full input, minus the 25% write premium
@@ -1176,6 +1806,8 @@ class Handler(BaseHTTPRequestHandler):
                     "count": c.execute("select count(*) from logs where ts >= ? and note like 'auto:%'", (start,)).fetchone()[0]}
             return self.reply(200, {"models": rows, "default_model": default_model(c), "providers": providers,
                                     "cache_saved": round(saved, 6), "auto": auto})
+        if path == "/admin/api/archive":
+            return self.reply(200, archive_list(c))
         if path == "/admin/api/audit":
             rows = c.execute("select ts, action, detail from audit order by ts desc limit 100")
             return self.reply(200, [{"ts": r["ts"], "action": r["action"], "detail": json.loads(r["detail"])} for r in rows])
@@ -1193,7 +1825,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def admin_write(self, c, path, body, name):
         """Returns (http status, reply body)."""
+        if path in ("/admin/api/archive", "/admin/api/restore"):  # kind + name (a document: name = its source, plus id)
+            return set_archived(c, str(body.get("kind")), body, name, path.endswith("restore"))
         if path == "/admin/api/teams":  # create or update
+            not_archived(c, "team", name)
             budget = float(body.get("budget") or 0)
             if budget < 0:
                 raise ValueError("budget must be >= 0")
@@ -1202,34 +1837,33 @@ class Handler(BaseHTTPRequestHandler):
                       (name, budget, time.strftime("%Y-%m")))
             audit(c, "team-save", {"name": name, "budget": budget, **({"old_budget": old[0]} if old else {})})
             return (200, {"ok": True})
-        if path == "/admin/api/teams/delete":
-            c.execute("delete from teams where name = ?", (name,))
-            c.execute("update accounts set team = '' where team = ?", (name,))
-            audit(c, "team-delete", {"name": name})
-            return (200, {"ok": True})
         if path == "/admin/api/sources":  # create or update
             kind = body.get("kind")
             if kind not in ("upload", "folder", "mcp"):
                 raise ValueError("kind must be upload, folder or mcp")
+            not_archived(c, "source", name)
             folder = str(body.get("path") or "").strip() if kind in ("folder", "mcp") else None
-            if kind == "folder" and not os.path.isdir(folder or ""):
-                raise ValueError(f"folder not found on the server: {folder}")
+            if kind == "folder":
+                sources.check_folder(folder)
             config = None
             if kind == "mcp":
                 if not re.match(r"^https?://", folder or ""):
                     raise ValueError("MCP server address must start with http:// or https://")
                 old = c.execute("select config from sources where name = ?", (name,)).fetchone()
-                old_cfg = json.loads(old[0] or "{}") if old and old[0] else {}
+                old_cfg = load_config(old[0]) if old else {}
                 mode = body.get("mode")
                 if mode not in ("search", "resources"):
                     raise ValueError("MCP mode must be search or resources")
                 if mode == "search" and not body.get("tool"):
                     raise ValueError("choose the MCP tool to call")
-                # a blank token on edit keeps the saved one
-                config = json.dumps({"token": str(body.get("token") or "") or old_cfg.get("token", ""), "mode": mode,
-                                     "tool": str(body.get("tool") or ""), "arg": str(body.get("arg") or "query")}, ensure_ascii=False)
+                tool, arg = str(body.get("tool") or ""), str(body.get("arg") or "query")
+                if (tool and not MCP_NAME.match(tool)) or not MCP_NAME.match(arg):
+                    raise ValueError("MCP tool and argument names may use only letters, digits and . _ - : /")
+                # a blank token on edit keeps the saved one; stored encrypted
+                config = encrypt(json.dumps({"token": str(body.get("token") or "") or old_cfg.get("token", ""), "mode": mode,
+                                             "tool": tool, "arg": arg}, ensure_ascii=False))
             teams = [str(t) for t in body.get("teams") or []]
-            known = {r[0] for r in c.execute("select name from teams")} | {sources.EVERYONE}
+            known = {r[0] for r in c.execute("select name from teams where archived is null")} | {sources.EVERYONE}
             if any(t not in known for t in teams):
                 raise ValueError("unknown team in access list")
             c.execute("insert into sources(name, description, kind, path, teams, config) values (?,?,?,?,?,?) on conflict(name) do update set"
@@ -1245,19 +1879,15 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("MCP server address must start with http:// or https://")
             if not token and body.get("source"):
                 row = c.execute("select config from sources where name = ?", (str(body["source"]),)).fetchone()
-                token = (json.loads(row[0] or "{}") if row and row[0] else {}).get("token", "")
+                token = (load_config(row[0]) if row else {}).get("token", "")
             try:
                 return (200, {"ok": True, **mcp.probe(url, token)})
             except mcp.MCPError as e:
                 return (200, {"ok": False, "error": str(e)})
         if path.startswith("/admin/api/sources/"):
-            source = c.execute("select * from sources where name = ?", (name,)).fetchone()
+            source = c.execute("select * from sources where name = ? and archived is null", (name,)).fetchone()
             if not source:
                 return (404, {"error": f"no source '{name}'"})
-            if path == "/admin/api/sources/delete":
-                sources.delete_source(c, name)
-                audit(c, "source-delete", {"name": name})
-                return (200, {"ok": True})
             if path == "/admin/api/sources/upload":
                 added = []
                 for f in body.get("files") or []:
@@ -1274,7 +1904,7 @@ class Handler(BaseHTTPRequestHandler):
                     if found and not body.get("force"):
                         raise ValueError(f"suspicious content in {title}: {', '.join(found)}")
                     if found:
-                        security.event(c, "document-forced", name, {"file": title, "found": found})
+                        self.event(c, "document-forced", name, {"file": title, "found": found})
                     sources.add_doc(c, name, title, text)
                     added.append(title)
                 audit(c, "source-upload", {"name": name, "files": added})
@@ -1282,28 +1912,27 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/admin/api/sources/sync":
                 if source["kind"] == "mcp" and mcp_config(source).get("mode") == "resources":
                     try:
-                        indexed, skipped, flagged = mcp_sync(c, source)
+                        indexed, skipped, flagged, gone = mcp_sync(c, source)
                     except mcp.MCPError as e:
                         raise ValueError(f"MCP server: {e}")
                 elif source["kind"] == "folder":
-                    indexed, skipped, flagged = sources.sync_folder(c, name, source["path"], security.scan)
+                    indexed, skipped, flagged, gone = sources.sync_folder(c, name, source["path"], security.scan)
                 else:
                     raise ValueError("only folder sources and MCP sources in sync mode can be synced")
                 for title, found in flagged:
-                    security.event(c, "document-refused", name, {"file": title, "found": found})
-                audit(c, "source-sync", {"name": name, "files": indexed, "skipped": skipped, "flagged": len(flagged)})
-                return (200, {"ok": True, "indexed": indexed, "skipped": skipped, "flagged": [t for t, _ in flagged]})
+                    self.event(c, "document-refused", name, {"file": title, "found": found})
+                audit(c, "source-sync", {"name": name, "files": indexed, "skipped": skipped, "flagged": len(flagged), "archived": gone})
+                return (200, {"ok": True, "indexed": indexed, "skipped": skipped, "flagged": [t for t, _ in flagged], "archived": gone})
             if path == "/admin/api/sources/reindex":
                 if not embed_provider():
                     raise ValueError("meaning search needs an OpenAI or Google key in .env")
                 added, missing = sources.reindex(c, name)
                 return (200, {"ok": True, "added": added, "missing": missing})
-            if path == "/admin/api/sources/docs/delete":
-                return (200 if sources.delete_doc(c, name, int(body.get("id"))) else 404, {"ok": True})
             return (404, {"error": "not found"})
         if path == "/admin/api/models":  # create or update; name = alias
             if not MODEL_ALIAS.match(name):
                 raise ValueError("alias must be 2-40 lowercase letters, digits, dot, dash or underscore")
+            not_archived(c, "model", name)
             provider, model = str(body.get("provider", "")), str(body.get("model", "")).strip()
             if provider not in PROVIDERS:
                 raise ValueError("unknown provider")
@@ -1335,6 +1964,15 @@ class Handler(BaseHTTPRequestHandler):
             audit(c, "model-save", {"name": name, "model": model, "provider": provider, "price_in": price_in, "price_out": price_out,
                                     "enabled": bool(enabled), **({"changes": changes} if changes else {"new": not old})})
             return (200, {"ok": True})
+        if path == "/admin/api/security/policy":  # name is "policy"
+            inj, sens = str(body.get("injection", "")), str(body.get("sensitive", ""))
+            if inj not in ("block", "log") or sens not in ("mask", "block", "log"):
+                raise ValueError("unknown security policy")
+            old = policy(c)
+            for k, v in (("policy_injection", inj), ("policy_sensitive", sens)):
+                c.execute("insert into settings values (?, ?) on conflict(key) do update set value = excluded.value", (k, v))
+            audit(c, "security-policy", {"name": "policy", "injection": inj, "sensitive": sens, "old": list(old)})
+            return (200, {"ok": True})
         if path == "/admin/api/models/auto":  # automatic choice settings; name is "auto"
             cheap, strong = str(body.get("cheap", "")), str(body.get("strong", ""))
             if cheap not in ALL_MODELS or strong not in ALL_MODELS:
@@ -1344,7 +1982,7 @@ class Handler(BaseHTTPRequestHandler):
             audit(c, "model-auto", {"name": "auto", "enabled": bool(body.get("enabled")), "cheap": cheap, "strong": strong})
             return (200, {"ok": True})
         if path.startswith("/admin/api/models/"):
-            row = c.execute("select * from models where alias = ?", (name,)).fetchone()
+            row = c.execute("select * from models where alias = ? and archived is null", (name,)).fetchone()
             if not row:
                 return (404, {"error": f"no model '{name}'"})
             if path == "/admin/api/models/default":
@@ -1353,34 +1991,27 @@ class Handler(BaseHTTPRequestHandler):
                 c.execute("insert into settings values ('default_model', ?) on conflict(key) do update set value = excluded.value", (name,))
                 audit(c, "model-default", {"name": name})
                 return (200, {"ok": True})
-            if path == "/admin/api/models/delete":
-                users = c.execute("select count(*) from accounts where ',' || models || ',' like ?", (f"%,{name},%",)).fetchone()[0]
-                if users:
-                    raise ValueError(f"{users} accounts still use this model; remove it from them or turn it off instead")
-                if c.execute("select value from settings where key = 'default_model'").fetchone()[0] == name:
-                    raise ValueError("this is the default model; choose another default first")
-                c.execute("update models set fallback = null where fallback = ?", (name,))
-                c.execute("delete from models where alias = ?", (name,))
-                audit(c, "model-delete", {"name": name, "model": row["model"]})
-                return (200, {"ok": True})
             if path == "/admin/api/models/test":
                 return (200, self.test_model(c, row))
             return (404, {"error": "not found"})
         if path == "/admin/api/accounts":  # create
+            not_archived(c, "account", name)
             fields = account_fields(c, body, partial=False)
             pw = body.get("password")
             if not pw and not body.get("api_key"):
                 raise ValueError("give a password (chat login) or an API key, or both")
             try:
-                c.execute("insert into accounts(name, team, models, budget, rpm, month, pw_hash) values (?,?,?,?,?,?,?)",
+                c.execute("insert into accounts(name, team, models, budget, rpm, month, pw_hash, daily_tokens, key_expires)"
+                          " values (?,?,?,?,?,?,?,?,?)",
                           (name, fields.get("team", ""), fields["models"], fields["budget"], fields.get("rpm", 0),
-                           time.strftime("%Y-%m"), hash_password(check_new_password(pw)) if pw else None))
+                           time.strftime("%Y-%m"), hash_password(check_new_password(pw)) if pw else None,
+                           fields.get("daily_tokens", 0), fields.get("key_expires")))
             except sqlite3.IntegrityError:
                 raise ValueError(f"name '{name}' already exists")
             key = new_key(c, name) if body.get("api_key") else None
             audit(c, "create", {"name": name, **fields, "password": bool(pw), "api_key": bool(key)})
             return (200, {"ok": True, "key": key})
-        if not c.execute("select 1 from accounts where name = ?", (name,)).fetchone():
+        if not c.execute("select 1 from accounts where name = ? and archived is null", (name,)).fetchone():
             return (404, {"error": f"no account '{name}'"})
         if path == "/admin/api/accounts/update":
             fields = account_fields(c, body, partial=True)
@@ -1401,17 +2032,17 @@ class Handler(BaseHTTPRequestHandler):
                 audit(c, "key-revoke", {"name": name})
                 return (200, {"ok": True})
             key = new_key(c, name)
+            c.execute("update accounts set key_expires = null where name = ?", (name,))  # a new key starts without an expiry date
             audit(c, "key-new", {"name": name})
             return (200, {"ok": True, "key": key})
-        if path == "/admin/api/accounts/delete":
-            c.execute("delete from accounts where name = ?", (name,))
-            c.execute("delete from sessions where name = ?", (name,))
-            audit(c, "delete", {"name": name})
-            return (200, {"ok": True})
         return 404, {"error": "not found"}
 
 
 if __name__ == "__main__":
+    try:
+        db().close()  # schema, data key and one-time migrations before the first request
+    except DataKeyError as e:
+        sys.exit(f"FireGate cannot start: {e}")
     if os.environ.get("SEED_DEMO", "").strip().lower() in ("1", "true", "yes", "on"):
         # demo hosting whose disk resets on restart: start every time with sample data
         import seed_demo  # noqa: F401  (fills an empty database; leaves a filled one alone)

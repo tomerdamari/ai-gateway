@@ -1,9 +1,9 @@
 const $ = id => document.getElementById(id);
-function trashIcon() {
+function icon(name) {
   const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"), use = document.createElementNS(ns, "use");
   svg.setAttribute("class", "icon");
   svg.setAttribute("aria-hidden", "true");
-  use.setAttribute("href", "#i-trash");
+  use.setAttribute("href", "#i-" + name);
   svg.append(use);
   return svg;
 }
@@ -18,9 +18,15 @@ const modelNames = { "fast": "Claude מהיר", "smart": "Claude חכם", "gpt-f
 const errors = {
   "personal monthly budget exhausted": "התקציב החודשי שלך נגמר. הוא יתחדש ב-1 לחודש, או שאפשר לבקש הגדלה מהמנהל.",
   "team monthly budget exhausted": "התקציב החודשי של הצוות שלך נגמר. הוא יתחדש ב-1 לחודש, או שאפשר לבקש הגדלה מהמנהל.",
+  "request blocked: possible prompt injection or jailbreak": "השאלה נחסמה כי היא נראית כמו ניסיון לעקוף את ההוראות של המודל. אם זו טעות, פנו למנהל המערכת.",
+  "request blocked: sensitive data": "השאלה נחסמה כי יש בה מידע רגיש (כמו תעודת זהות, כרטיס אשראי, טלפון או מפתח גישה). הסירו אותו ונסו שוב.",
+  "daily token quota reached": "נגמרה המכסה היומית שלך. היא תתחדש מחר, או שאפשר לבקש הגדלה מהמנהל.",
+  "too many requests in progress": "כבר יש לך כמה שאלות שרצות במקביל. חכו שהן יסתיימו ונסו שוב.",
+  "too many messages": "השיחה ארוכה מדי. פתחו שיחה חדשה.",
+  "request too large": "השאלה ארוכה מדי. קצרו אותה ונסו שוב.",
 };
 
-let me = null, conv = { id: null, title: "", messages: [] }, controller = null, openMode = false;
+let me = null, conv = { id: null, title: "", messages: [] }, controller = null, openMode = false, showArchived = false;
 
 async function call(path, body) {
   const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -128,18 +134,28 @@ function renderBudget() {
   $("budgetHint").textContent = `נשאר לך החודש ${money(left)}` + (me.budget && left / me.budget < 0.2 ? " · התקציב עומד להיגמר" : "");
 }
 
+// the side list: saved chats, or (after "ארכיון") the chats moved to the archive, each with a restore button.
+// Nothing is deleted; continuing an archived chat brings it back to the list.
 async function loadConvs() {
-  const list = await call("/api/conversations");
+  const list = await call(showArchived ? "/api/conversations/archived" : "/api/conversations");
+  $("convsTitle").textContent = showArchived ? "ארכיון שיחות" : "שיחות";
+  $("archiveToggle").textContent = showArchived ? "חזרה לשיחות" : "ארכיון";
   $("convs").replaceChildren(...list.map(c => el("div", { className: "conv" + (c.id === conv.id ? " on" : "") },
     el("button", { className: "open", textContent: c.title || "שיחה", title: c.title, onclick: () => openConv(c.id) }),
-    el("button", { className: "del", title: "מחיקת השיחה", ariaLabel: `מחיקת השיחה "${c.title || "שיחה"}"`, onclick: async () => {
-      if (!await UI.confirm({ title: "למחוק את השיחה?", body: "השיחה תימחק מהרשימה שלך. העותק ביומן של המנהל נשאר.", ok: "מחיקה", danger: true })) return;
-      await call("/api/conversations/delete", { id: c.id });
-      if (c.id === conv.id) newChat();
-      loadConvs();
-    } }, trashIcon()))));
-  if (!list.length) $("convs").append(el("p", { className: "muted small", style: "padding:8px 10px", textContent: "עוד אין שיחות" }));
+    showArchived
+      ? el("button", { className: "del keep", title: "שחזור השיחה", ariaLabel: `שחזור השיחה "${c.title || "שיחה"}"`, onclick: async () => {
+          await call("/api/conversations/restore", { id: c.id });
+          loadConvs();
+        } }, icon("restore"))
+      : el("button", { className: "del", title: "העברה לארכיון", ariaLabel: `העברת השיחה "${c.title || "שיחה"}" לארכיון`, onclick: async () => {
+          if (!await UI.confirm({ title: "להעביר את השיחה לארכיון?", body: "השיחה תוסתר מהרשימה שלך. אפשר לשחזר אותה מהארכיון שבתפריט.", ok: "העברה לארכיון" })) return;
+          await call("/api/conversations/archive", { id: c.id });
+          if (c.id === conv.id) newChat(); else loadConvs();
+        } }, icon("archive")))));
+  if (!list.length) $("convs").append(el("p", { className: "muted small", style: "padding:8px 10px",
+    textContent: showArchived ? "אין שיחות בארכיון" : "עוד אין שיחות" }));
 }
+$("archiveToggle").onclick = () => { showArchived = !showArchived; loadConvs(); };
 
 async function openConv(id) {
   const c = await call("/api/conversations/" + id);
