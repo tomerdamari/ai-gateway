@@ -19,6 +19,7 @@ SEED_VERSION = 2
 # a public demo sets DEMO_PASSWORD (Render generates one); the fixed value is for local use only
 DEMO_PASSWORD = gateway.os.environ.get("DEMO_PASSWORD") or "demo-pass-1"
 DAYS = 90
+VOLUME = 3  # requests per person per day, times the BUSY ranges below
 
 # extra models with prices from the providers' pricing pages (checked 2026-10-05)
 EXTRA_MODELS = [
@@ -120,10 +121,10 @@ def seed(c):
                 used_names.add(name)
                 lo, hi = BUSY[team]
                 people.append({"name": name, "team": team, "models": models, "weights": weights, "busy": random.randint(lo, hi),
-                               "size": 40000, "app": False, "rpm": 0})
+                               "size": 180000, "app": False, "rpm": 0})
         if "demo" not in used_names:
             people.append({"name": "demo", "team": "פיתוח", "models": ALL, "weights": TEAMS["פיתוח"][2], "busy": 12,
-                           "size": 40000, "app": False, "rpm": 0})
+                           "size": 180000, "app": False, "rpm": 0})
         for name, team, models, busy, size, rpm in APPS:
             if name not in used_names:
                 people.append({"name": name, "team": team, "models": models, "weights": {m: 1 for m in models}, "busy": busy,
@@ -142,7 +143,7 @@ def seed(c):
             load = 0.25 if wd == 4 else 0.05 if wd == 5 else 1.0
             growth = 0.75 + 0.25 * (DAYS - day) / DAYS  # adoption grows over the quarter
             for p in people:
-                n = int(random.gauss(p["busy"] * load * growth, p["busy"] * 0.15))
+                n = int(random.gauss(p["busy"] * VOLUME * load * growth, p["busy"] * VOLUME * 0.15))
                 for _ in range(max(0, n)):
                     alias = random.choices(list(p["weights"]), weights=list(p["weights"].values()))[0]
                     provider, real, pi, po = gateway.ALL_MODELS[alias]
@@ -150,8 +151,8 @@ def seed(c):
                     ts = time.mktime(time.localtime(when)[:3] + (hour, random.randint(0, 59), random.randint(0, 59), 0, 0, -1))
                     if ts > now:
                         continue
-                    t_in = int(random.lognormvariate(0, 0.6) * p["size"] * (3 if alias.endswith("top") else 1))
-                    t_out = int(random.lognormvariate(7.1, 0.7))
+                    t_in = int(random.lognormvariate(0, 0.6) * p["size"] * (2 if alias.endswith("top") else 1))
+                    t_out = int(random.lognormvariate(8.0, 0.6))
                     cache_read = int(t_in * random.uniform(0.3, 0.8)) if provider == "anthropic" and random.random() < 0.45 else 0
                     u = {"in": t_in - cache_read, "out": t_out, "cache_read": cache_read, "cache_write": 0}
                     cost = gateway.price_usage(pi, po, gateway.MODEL_EXTRA.get(alias, {}).get("price_cached", pi * 0.1), u)
