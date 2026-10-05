@@ -1,9 +1,9 @@
 # FireGate
 
-**הדגמה חיה:** https://tomerdamari.github.io/ai-gateway/ (ניהול) · [צ'אט](https://tomerdamari.github.io/ai-gateway/chat.html) · [תיעוד](https://tomerdamari.github.io/ai-gateway/docs.html)
+**הדגמה חיה:** https://tomerdamari.github.io/firegate/ (ניהול) · [צ'אט](https://tomerdamari.github.io/firegate/chat.html) · [תיעוד](https://tomerdamari.github.io/firegate/docs.html)
 ההדגמה היא אתר סטטי: אותם מסכים עם נתוני דוגמה, בלי שרת. שינויים לא נשמרים והצ'אט עונה תשובה קבועה. בונים אותה מחדש עם `python pages/build.py` ומעלים את `pages/site` לענף `gh-pages`.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/tomerdamari/ai-gateway)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/tomerdamari/firegate)
 
 **הדגמה בלחיצה:** הכפתור מקים שרת חינמי ב-Render עם נתוני דוגמה. סיסמת המנהל וסיסמת משתמשי הדוגמה נוצרות אקראית ומופיעות בלוח הבקרה של Render, בלשונית Environment. בתוכנית החינמית השרת נרדם אחרי 15 דקות בלי ביקורים, והנתונים מתאפסים בכל הפעלה מחדש. לשימוש אמיתי צריך שרת עם דיסק קבוע (ראו "הרצה על השרת").
 

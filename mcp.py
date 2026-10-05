@@ -59,7 +59,7 @@ class Client:
 
     def connect(self):
         result = self.call("initialize", {"protocolVersion": PROTOCOL, "capabilities": {},
-                                          "clientInfo": {"name": "ai-gateway", "version": "1.0"}})
+                                          "clientInfo": {"name": "firegate", "version": "1.0"}})
         self._post({"jsonrpc": "2.0", "method": "notifications/initialized"})
         return result
 

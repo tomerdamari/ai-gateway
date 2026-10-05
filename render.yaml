@@ -2,7 +2,7 @@
 # The free plan has no persistent disk: data resets on every restart, so the demo reloads sample data each start.
 services:
   - type: web
-    name: ai-gateway
+    name: firegate
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
