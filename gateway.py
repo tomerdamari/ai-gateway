@@ -46,7 +46,7 @@ if os.path.exists(_env):
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip())
 
-VERSION = "1.0.1"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
+VERSION = "1.0.2"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
 DB =os.environ.get("GATEWAY_DB", "gateway.db")
 # Admin from a private-network address (office LAN, this machine) needs no password.
 # From anywhere else: this password, or no access at all when it's empty.

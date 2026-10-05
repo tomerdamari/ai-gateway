@@ -53,8 +53,8 @@
   --ease: cubic-bezier(.4, 0, .2, 1);
   --dur: 180ms;
   /* chart series (validated categorical order) */
-  --chart: #2a78d6;        /* the one blue: chart lines, areas, heat cells */
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300;
+  --chart: #8b5cf6;        /* Slate-style violet: chart lines, areas, heat cells (no blue) */
+  --s1: #8b5cf6; --s2: #f59e0b; --s3: #10b981; --s4: #db2777; --s5: #fb923c; --s6: #15803d;  /* validated: CVD-safe neighbours */
   --font: "Heebo", "Segoe UI", system-ui, -apple-system, "Noto Sans Hebrew", Arial, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
@@ -93,8 +93,8 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .25);
     --shadow-elevated: 0 8px 24px rgba(0, 0, 0, .45);
     --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-    --chart: #3987e5;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+    --chart: #8b5cf6;
+    --s1: #8b5cf6; --s2: #d97706; --s3: #10b981; --s4: #db2777; --s5: #ea580c; --s6: #16a34a;
   }
 }
 
@@ -433,3 +433,6 @@ legend { padding: 0 .4rem; font-weight: 700; color: var(--ink); font-size: .8125
 .date-panel .date-clear { align-self: center; font-size: .8125rem; font-weight: 600; color: var(--muted); padding: 6px 10px; border-radius: var(--radius-sm); }
 .date-panel .date-clear:hover { color: var(--danger); background: transparent; }
 @media (max-width: 767px) { .date-panel { width: min(340px, calc(100vw - 16px)); } }
+
+/* dashboard sections as in Slate: no fill of their own (the page's grey shows through), a 2px border and the soft shadow */
+[data-page="overview"] .card { background: transparent; border: 2px solid var(--line); }

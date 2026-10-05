@@ -1,5 +1,17 @@
 # שינויים / Changelog
 
+## 1.0.2 — 2026-10-05
+
+- צבעי הגרפים בלוח הבקרה חיים יותר, כמו בסלייט, ובלי כחול: סגול, ענבר, ירוק, ורוד, כתום וירוק כהה. הצבעים נבדקו כך שגם עיוורי צבעים מבדילים בין שכנים.
+- המקטעים בלוח הבקרה בלי רקע משלהם, כמו בסלייט: האפור של הדף, מסגרת דקה וצל רך.
+- "המשתמשים שהוציאו הכי הרבה" ו"צוותים מול תקציב" עברו לתחתית לוח הבקרה.
+
+---
+
+- Livelier dashboard chart colours, as in Slate, with no blue: violet, amber, green, pink, orange and dark green, checked so colour-blind readers can tell neighbours apart.
+- Dashboard sections have no fill of their own, as in Slate: the page grey, a thin border and a soft shadow.
+- "Top spenders" and "Teams vs. budget" moved to the bottom of the dashboard.
+
 ## 1.0.1 — 2026-10-05
 
 - רשימות נפתחות בעיצוב חדש: חץ משלנו, ורשימה פתוחה ככרטיס מעוגל עם סימון ✓ (בכרום ובאדג').
