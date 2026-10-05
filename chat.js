@@ -13,8 +13,7 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 const money = v => "$" + (v >= 1 ? v.toFixed(2) : v.toFixed(4));
-const modelNames = { "fast": "Claude מהיר", "smart": "Claude חכם", "gpt-fast": "GPT מהיר", "gpt-smart": "GPT חכם",
-  "gemini-fast": "Gemini מהיר", "gemini-smart": "Gemini חכם" };
+const modelNames = { "fast": "Claude Haiku 4.5", "smart": "Claude Sonnet 5.5", "gpt-fast": "GPT-6 Luna", "gpt-smart": "GPT-6.1 Sol", "gemini-fast": "Gemini 3.8 Flash", "gemini-smart": "Gemini 3.1 Pro" };
 const errors = {
   "personal monthly budget exhausted": "התקציב החודשי שלך נגמר. הוא יתחדש ב-1 לחודש, או שאפשר לבקש הגדלה מהמנהל.",
   "team monthly budget exhausted": "התקציב החודשי של הצוות שלך נגמר. הוא יתחדש ב-1 לחודש, או שאפשר לבקש הגדלה מהמנהל.",

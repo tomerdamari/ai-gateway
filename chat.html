@@ -23,8 +23,9 @@
   .side-actions button { justify-content: center; background: #fff; color: #18181b; border-color: #fff; }
   .side-actions button:hover { background: #e9e9eb; border-color: #e9e9eb; }
   .who-pick { display: grid; gap: 6px; color: var(--sidebar-header); font-size: .75rem; font-weight: 600; }
-  .who-pick select { background: rgba(255, 255, 255, .06); color: #f7f7f7; border-color: rgba(255, 255, 255, .18); }
-  .who-pick select option { color: #18181b; background: #fff; }
+  .who-pick select { background-color: rgba(255, 255, 255, .06); color: #f7f7f7; border-color: rgba(255, 255, 255, .18); }
+  .who-pick select::picker-icon { background: #d4d4d8; }
+  @supports not (appearance: base-select) { .who-pick select option { color: #18181b; background: #fff; } }
   .sidebar .sidebar-header { padding-inline: 1.75rem 1.25rem; }
   .convs { flex: 1; overflow-y: auto; min-height: 0; padding-bottom: .75rem; }
   .conv { display: flex; align-items: center; margin-inline: .75rem; border-radius: var(--radius-sm); transition: background var(--dur) var(--ease); }
@@ -85,7 +86,7 @@
   .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .msg .used { font-size: .75rem; color: var(--muted); margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .composer .bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
-  .composer select { font-size: .8125rem; min-height: 40px; border-color: var(--line); background: var(--surface-2); min-width: 0; flex: 0 1 auto; width: auto; max-width: 100%; }
+  .composer select { font-size: .8125rem; min-height: var(--control); border-color: var(--line); background: var(--surface-2); min-width: 0; flex: 0 1 auto; width: auto; max-width: 100%; }
   [dir="rtl"] #send .icon { transform: scaleX(-1); }
   .hint { margin: 8px 0 0; text-align: center; font-size: .75rem; color: var(--muted); }
 
@@ -95,7 +96,7 @@
 </style>
 </head>
 <body>
-<svg xmlns="http://www.w3.org/2000/svg" hidden>
+<svg xmlns="http://www.w3.org/2000/svg" hidden><symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></g></symbol>
   <symbol id="i-menu" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
   <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
@@ -147,7 +148,7 @@
     <header class="navbar">
       <button class="toggle" id="menu" aria-label="הצגה או הסתרה של התפריט"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
       <h1 id="convTitle">שיחה חדשה</h1>
-      <div class="navbar-end"><button class="ghost sm lang-switch" data-lang-switch lang="en">English</button><span class="muted small" id="topWho"></span></div>
+      <div class="navbar-end"><button class="ghost lang-switch" data-lang-switch><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg><span lang="en">English</span></button><span class="muted small" id="topWho"></span></div>
     </header>
     <div class="scroll" id="scroll">
       <div class="welcome" id="welcome">

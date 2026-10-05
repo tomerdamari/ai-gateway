@@ -1,5 +1,35 @@
 # שינויים / Changelog
 
+## 1.0.1 — 2026-10-05
+
+- רשימות נפתחות בעיצוב חדש: חץ משלנו, ורשימה פתוחה ככרטיס מעוגל עם סימון ✓ (בכרום ובאדג').
+- דף חדש "לטיפול" מתחת ללוח הבקרה: צעדים ראשונים ודורש טיפול, עם מספר הפריטים הפתוחים בתפריט.
+- שמות המודלים האמיתיים (Claude Opus 5.5, GPT-6.1 Sol, Gemini 3.1 Pro…) במקום "Claude מהיר" / "Claude חכם". שם שהמנהל נתן בעצמו נשמר.
+- "יומן שאלות" נקרא עכשיו "לוג טוקנים".
+- כל הכפתורים באותו גובה, כולל כפתור השפה, שקיבל אייקון של גלובוס.
+- התיעוד ברוחב מסך מלא.
+- בלי צבע ברקע כשעוברים עם העכבר על שורות בטבלה.
+- שדות שמתאימים את הכיוון לשפת ההקלדה מיושרים לימין כשהם ריקים.
+- שורת "שאלו את הבינה" בלוח הבקרה מוסתרת בינתיים.
+- בחירת תאריך בסגנון Slate: שדה עם אייקון לוח שנה, חלון חודש עם ימים עגולים, סימון היום, תצוגת שנים וכפתור ניקוי.
+- בשדה קלט שבפוקוס רק צבע המסגרת מתכהה, בלי טבעת מסביב.
+- סמן של יד במעבר מעל תיבות סימון.
+
+---
+
+- Redesigned dropdowns: our own arrow, and the open list as a rounded card with a ✓ mark (Chrome and Edge).
+- New "To handle" page under the dashboard: getting started and needs attention, with the number of open items in the menu.
+- Real model names (Claude Opus 5.5, GPT-6.1 Sol, Gemini 3.1 Pro…) instead of "Claude fast" / "Claude smart". A name the admin set is kept.
+- "Question log" is now "Token log".
+- All buttons share one height, including the language button, which got a globe icon.
+- Documentation at full screen width.
+- No background colour on table rows under the mouse.
+- Fields that follow the typed language sit on the page's side while empty.
+- The "Ask the AI" bar on the dashboard is hidden for now.
+- Slate-style date picker: a field with a calendar icon, a month panel with round days, today marked, a year view and a clear button.
+- A focused field only darkens its border, with no ring around it.
+- A hand pointer over checkboxes.
+
 ## 1.0.0 — 2026-10-05
 
 הגרסה הראשונה של FireGate: שער אחד שכל בקשה לבינה מלאכותית בחברה עוברת דרכו.

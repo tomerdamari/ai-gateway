@@ -23,9 +23,9 @@ VOLUME = 3  # requests per person per day, times the BUSY ranges below
 
 # extra models with prices from the providers' pricing pages (checked 2026-10-05)
 EXTRA_MODELS = [
-    ("claude-top", "Claude הכי חזק", "anthropic", "claude-opus-5-5", 4.0, 20.0),
-    ("gpt-top", "GPT הכי חזק", "openai", "gpt-6-astra", 10.0, 50.0),
-    ("gemini-lite", "Gemini חסכוני", "gemini", "gemini-3.5-flash-lite", 0.30, 2.50),
+    ("claude-top", "Claude Opus 5.5", "anthropic", "claude-opus-5-5", 4.0, 20.0),
+    ("gpt-top", "GPT-6 Astra", "openai", "gpt-6-astra", 10.0, 50.0),
+    ("gemini-lite", "Gemini 3.5 Flash-Lite", "gemini", "gemini-3.5-flash-lite", 0.30, 2.50),
 ]
 ALL = ["fast", "smart", "gpt-fast", "gpt-smart", "gemini-fast", "gemini-smart", "claude-top", "gpt-top", "gemini-lite"]
 

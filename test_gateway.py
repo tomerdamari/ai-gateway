@@ -484,17 +484,17 @@ assert "ignore all previous" in next(e for e in sec["events"] if e["kind"] == "s
 # --- models page: list, add, price, turn off, default, delete, connection test ---
 ml = adm("models")[1]
 assert len(ml["models"]) == 6 and ml["default_model"] == "fast" and ml["providers"] == {"anthropic": True, "openai": True, "gemini": True}
-assert next(m for m in ml["models"] if m["alias"] == "fast")["label"] == "Claude מהיר"
+assert next(m for m in ml["models"] if m["alias"] == "fast")["label"] == "Claude Haiku 4.5"
 assert adm("models", {"name": "Bad Alias", "provider": "anthropic", "model": "x", "price_in": 1, "price_out": 1})[0] == 400
 assert adm("models", {"name": "top", "provider": "nope", "model": "x", "price_in": 1, "price_out": 1})[0] == 400
 assert adm("models", {"name": "top", "provider": "anthropic", "model": "x", "price_in": -1, "price_out": 1})[0] == 400
-assert adm("models", {"name": "top", "label": "Claude הכי חזק", "provider": "anthropic", "model": "claude-opus-5-5",
+assert adm("models", {"name": "top", "label": "Claude Opus 5.5", "provider": "anthropic", "model": "claude-opus-5-5",
                       "price_in": 4, "price_out": 20})[0] == 200
 s, r = adm("accounts", {"name": "modeltester", "budget": 5, "models": ["top", "fast"], "api_key": True})
 k_mt = r["key"]
 assert api(k_mt, "top")[0] == 200 and received["/v1/messages"]["model"] == "claude-opus-5-5"
 assert close(acct("modeltester")["spent"], (1000 * 4 + 1000 * 20) / 1e6)
-assert adm("models", {"name": "top", "label": "Claude הכי חזק", "provider": "anthropic", "model": "claude-opus-5-5",
+assert adm("models", {"name": "top", "label": "Claude Opus 5.5", "provider": "anthropic", "model": "claude-opus-5-5",
                       "price_in": 4, "price_out": 20, "enabled": False})[0] == 200
 status, data = api(k_mt, "top")
 assert status == 403 and b"turned off" in data
@@ -514,7 +514,7 @@ assert gateway.db().execute("select count(*) from logs where name = '(בדיקת
 gateway.PROVIDERS["gemini"][2]["authorization"] = "Bearer "
 assert adm("models/test", {"name": "gemini-fast"})[1] == {"ok": False, "error": "no API key for this provider in .env"}
 gateway.PROVIDERS["gemini"][2]["authorization"] = "Bearer real-gemini"
-assert adm("models", {"name": "fast", "label": "Claude מהיר", "provider": "anthropic", "model": "claude-haiku-4-5-20251001",
+assert adm("models", {"name": "fast", "label": "Claude Haiku 4.5", "provider": "anthropic", "model": "claude-haiku-4-5-20251001",
                       "price_in": 1.5, "price_out": 5})[0] == 200
 assert next(a for a in adm("audit")[1] if a["action"] == "model-save")["detail"]["changes"] == {"price_in": [1.0, 1.5], "price_cached": [0.1, 0.15]}
 adm("models/default", {"name": "fast"})
@@ -1098,4 +1098,13 @@ assert len(old) == 1 and old[0][0].startswith("enc1:") and gateway.decrypt(old[0
 # one version number: the server's and the one the pages show
 ui_version = re.search(r'const VERSION = "([^"]+)"', open(os.path.join(here, "ui.js"), encoding="utf-8").read()).group(1)
 assert ui_version == gateway.VERSION, (ui_version, gateway.VERSION)
+
+# databases from before 1.0.1: generic default model names are renamed, an admin's own name is kept
+with gateway.db() as c:
+    c.execute("update models set label = 'Claude מהיר' where alias = 'fast'")
+    c.execute("update models set label = 'my own name' where alias = 'smart'")
+gateway._migrated = False
+c = gateway.db()
+labels = dict(c.execute("select alias, label from models").fetchall())
+assert labels["fast"] == "Claude Haiku 4.5" and labels["smart"] == "my own name", labels
 print("ok")

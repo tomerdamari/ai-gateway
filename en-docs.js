@@ -111,6 +111,7 @@ python gateway.py</pre>
         <h2>Dashboard</h2>
         <p>The gateway's main screen (<code>/</code>, and also <code>/admin</code>). From the office network it opens without a password; from outside only with <code>ADMIN_PASSWORD</code>.</p>
         <ul>
+          <li><b>The "To handle" page</b> (in the menu, under the dashboard) gathers what waits for the admin, and the menu shows the number of open items next to it. It has two parts:</li>
           <li><b>First steps:</b> shown until the system is ready: connecting a provider, a team, a user and a first question, with a button for each step.</li>
           <li><b>Needs attention:</b> budget overruns (from 80% and from 100%), locked accounts and open security notes. When there is nothing, it says "All good".</li>
           <li><b>Four numbers:</b> spend this month, forecast for the end of the month, requests, and active users. Each with the percentage change from the previous week or month.</li>
@@ -282,7 +283,7 @@ python gateway.py</pre>
             <tr class="group"><th colspan="3">6. Data leakage</th></tr>
             <tr><td>Leaking PII and sensitive data</td><td>PII means information that identifies a person. ID numbers, credit cards, IBANs, phone numbers, emails and keys are hidden before the question goes out to the provider and before it is stored.</td><td>Choose a <a href="#policy">policy</a>. Use "send without hiding" only with good reason and a suitable agreement with the provider.</td></tr>
             <tr><td>Storing questions and answers</td><td>Kept with no time limit, after hiding, and encrypted. A chat an employee moves to the archive leaves only their list; the chat itself and the copy in the log stay.</td><td>—</td></tr>
-            <tr><td>Unauthorized access to data</td><td>The question log is only on the admin screen. An employee sees only their own chats, and knowledge sources are limited by team. The content in the database is encrypted.</td><td>Protect <code>ADMIN_PASSWORD</code>, and never expose the gateway directly to the network (only through Caddy).</td></tr>
+            <tr><td>Unauthorized access to data</td><td>The token log is only on the admin screen. An employee sees only their own chats, and knowledge sources are limited by team. The content in the database is encrypted.</td><td>Protect <code>ADMIN_PASSWORD</code>, and never expose the gateway directly to the network (only through Caddy).</td></tr>
             <tr><td>Exposing data through logs</td><td>The excerpts kept from blocked requests and security events are up to 200 characters, after hiding, and encrypted. The lines the server prints contain no content.</td><td>—</td></tr>
             <tr><td>Sending data to AI providers</td><td>The provider receives only the question, after hiding, and the relevant document passages (up to 6). The provider never gets the gateway's keys or details about employees beyond what is written in the question.</td><td>Check each provider's terms on keeping data and using it for training, and choose providers accordingly.</td></tr>
             <tr><td>Complete data deletion</td><td>By the owner's decision, <b>nothing is ever deleted</b>. There is no way to delete questions, answers, logs or the change log. Users, teams, models, knowledge sources, documents and chats aren't deleted either: they move to the <a href="#archive">archive</a>, leave use, and can be restored. Instead of deletion, sensitive data is hidden before it is stored, what is stored is encrypted, and access to it is limited to the admin screen. What is deleted: chat sign-ins that expired or were signed out (they are only proof of sign-in, not data). And uploading a document again under the same name gives it the new content, while the previous version is kept, encrypted, in the database.</td><td>If a law, a customer or an employee requires deletion, know in advance that the system doesn't support it.</td></tr>
@@ -292,7 +293,7 @@ python gateway.py</pre>
             <tr><td>Preventing changes to or deletion of the change log</td><td>Each row in the change log has a seal calculated partly from the seal of the row before it, like links in a chain. Changing or deleting a row breaks the chain. The "Security" tab shows whether the chain is intact, the dashboard warns if it isn't, and it can also be checked at <code>GET /admin/api/audit/verify</code>.</td><td>Act on the alert at once. The seal isn't secret: someone who holds the database file and knows what they're doing can recalculate the whole chain. So limit access to the server and keep backups elsewhere, for comparison.</td></tr>
             <tr><td>Keeping sensitive data out of logs</td><td>Hiding before storing, encrypting what is stored, and server lines without content.</td><td>—</td></tr>
             <tr><td>Tracking admin actions</td><td>The change log: creating, updating, archiving and restoring accounts, teams, models, sources and documents, and policy changes, including the before and after values.</td><td>—</td></tr>
-            <tr><td>End-to-end request tracing</td><td>Every request gets an ID number, returned to the app in the <code>x-request-id</code> header and stored in the question log and the blocked-requests log. An app can send its own number; it is kept only if it is up to 64 characters of English letters, digits, dot, underscore and hyphen.</td><td>Store the number in the app's own logs too, to find a request on both sides.</td></tr>
+            <tr><td>End-to-end request tracing</td><td>Every request gets an ID number, returned to the app in the <code>x-request-id</code> header and stored in the token log and the blocked-requests log. An app can send its own number; it is kept only if it is up to 64 characters of English letters, digits, dot, underscore and hyphen.</td><td>Store the number in the app's own logs too, to find a request on both sides.</td></tr>
 
             <tr class="group"><th colspan="3">8. Rate limiting and abuse</th></tr>
             <tr><td>Brute Force</td><td>Guessing passwords by force. 5 wrong passwords lock the account for 15 minutes. 10 failed sign-ins from one address within 15 minutes, for any names, block that address (code 429). The response time is the same even for a username that doesn't exist.</td><td>—</td></tr>
@@ -361,7 +362,7 @@ python gateway.py</pre>
   "#logs": `
         <h2>Logs</h2>
         <ul>
-          <li><b>Question log:</b> the last 200 questions with who, team, model, tokens, cost, and the full question and answer. Filter by name, team or model. All questions are kept in the database.</li>
+          <li><b>Token log:</b> the last 200 questions with who, team, model, tokens, cost, and the full question and answer. Filter by name, team or model. All questions are kept in the database.</li>
           <li><b>Change log:</b> every admin action: creating, updating, archiving and restoring accounts, teams, models, sources and documents, including the before and after values for budget and price changes. An employee moving one of their chats to the archive, or restoring it, is recorded here too.</li>
         </ul>`,
 
@@ -370,7 +371,7 @@ python gateway.py</pre>
         <p><b>Nothing is ever deleted.</b> Instead of a delete button there is "Move to archive": a user, team, model, knowledge source or document moved to the archive doesn't appear on the screens and doesn't work, but stays in the database with all its history.</p>
         <ul>
           <li>The "Archive" page (in the menu, under "Monitor") shows everything in the archive, with the date, and a "Restore" button for each item.</li>
-          <li>The spending of archived items stays in the question log and in the reports of the months it happened in.</li>
+          <li>The spending of archived items stays in the token log and in the reports of the months it happened in.</li>
           <li>The name of an archived item is taken: creating a user, team, model or source with the same name is refused, with a message to restore it.</li>
           <li>Every move to the archive and every restore is recorded in the change log: what, which item and when.</li>
           <li>Employees archive only their own chats, and restore them from the "Archive" link in the chat.</li>

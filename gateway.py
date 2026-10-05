@@ -46,7 +46,7 @@ if os.path.exists(_env):
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip())
 
-VERSION = "1.0.0"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
+VERSION = "1.0.1"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
 DB =os.environ.get("GATEWAY_DB", "gateway.db")
 # Admin from a private-network address (office LAN, this machine) needs no password.
 # From anywhere else: this password, or no access at all when it's empty.
@@ -120,12 +120,12 @@ PROVIDERS = {
 # These are only the first-run defaults: alias, label, provider, real model, $ per 1M input / output tokens.
 # Prices checked 2026-10-04; Gemini 3.8 Flash price is promotional until 2026-12-31.
 DEFAULT_MODELS = [
-    ("fast", "Claude מהיר", "anthropic", "claude-haiku-4-5-20251001", 1.0, 5.0),
-    ("smart", "Claude חכם", "anthropic", "claude-sonnet-5-5", 2.0, 10.0),
-    ("gpt-fast", "GPT מהיר", "openai", "gpt-6-luna", 0.10, 0.50),
-    ("gpt-smart", "GPT חכם", "openai", "gpt-6.1-sol", 2.0, 10.0),
-    ("gemini-fast", "Gemini מהיר", "gemini", "gemini-3.8-flash", 0.75, 3.75),
-    ("gemini-smart", "Gemini חכם", "gemini", "gemini-3.1-pro-preview", 2.0, 12.0),
+    ("fast", "Claude Haiku 4.5", "anthropic", "claude-haiku-4-5-20251001", 1.0, 5.0),
+    ("smart", "Claude Sonnet 5.5", "anthropic", "claude-sonnet-5-5", 2.0, 10.0),
+    ("gpt-fast", "GPT-6 Luna", "openai", "gpt-6-luna", 0.10, 0.50),
+    ("gpt-smart", "GPT-6.1 Sol", "openai", "gpt-6.1-sol", 2.0, 10.0),
+    ("gemini-fast", "Gemini 3.8 Flash", "gemini", "gemini-3.8-flash", 0.75, 3.75),
+    ("gemini-smart", "Gemini 3.1 Pro", "gemini", "gemini-3.1-pro-preview", 2.0, 12.0),
 ]
 # alias -> (provider, real model, $ in, $ out) for ENABLED models; ALL_MODELS also holds disabled ones.
 # Refreshed from the database on every connection, so a change on the models page applies to the next request.
@@ -201,6 +201,9 @@ def migrate(c):
         with c:
             c.execute("update models set price_cached = round(price_in * 0.1, 6) where price_cached is null")
             c.execute("update accounts set key_created = ? where key_hash is not null and key_created is null", (time.time(),))
+            # model names: the generic "Claude מהיר"-style defaults became the real model names (1.0.1)
+            for old, new, alias in (("Claude מהיר", "Claude Haiku 4.5", "fast"), ("Claude חכם", "Claude Sonnet 5.5", "smart"), ("GPT מהיר", "GPT-6 Luna", "gpt-fast"), ("GPT חכם", "GPT-6.1 Sol", "gpt-smart"), ("Gemini מהיר", "Gemini 3.8 Flash", "gemini-fast"), ("Gemini חכם", "Gemini 3.1 Pro", "gemini-smart"), ("Claude הכי חזק", "Claude Opus 5.5", "claude-top"), ("GPT הכי חזק", "GPT-6 Astra", "gpt-top"), ("Gemini חסכוני", "Gemini 3.5 Flash-Lite", "gemini-lite")):
+                c.execute("update models set label = ? where alias = ? and label = ?", (new, alias, old))
         _aead = load_key(c, DB)
         pending = [name for name, needed in (("encrypt", plaintext_left(c)), ("audit-chain", audit_unchained(c))) if needed]
         if pending:

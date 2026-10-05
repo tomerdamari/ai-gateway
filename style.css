@@ -92,6 +92,7 @@
     --sidebar: #0a0a0b;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .25);
     --shadow-elevated: 0 8px 24px rgba(0, 0, 0, .45);
+    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
     --chart: #3987e5;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
   }
@@ -131,9 +132,53 @@ input[type=text], input[type=search], input[type=password], input[type=number], 
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 textarea { min-height: 0; }
-input:focus, select:focus, textarea:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px var(--surface-3); }
-input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; }
+/* focus on a field: the same 2px border turns dark, nothing grows around it */
+input:focus, select:focus, textarea:focus, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: var(--focus); box-shadow: none; }
+/* boxes and round buttons have no border to darken, so they keep a focus ring for the keyboard */
+input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+label:has(> input[type=checkbox]), label:has(> input[type=radio]) { cursor: pointer; }
+
+/* dropdowns: our own arrow on the closed field everywhere; where the browser lets a page design the open list
+   (Chrome and Edge 135+, "appearance: base-select"), the list is a rounded card with rounded rows and a check mark.
+   Other browsers keep their own list. */
+:root { --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2361616a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); }
+select {
+  appearance: none; cursor: pointer; padding-inline-end: 2.5rem;
+  background: var(--surface) var(--chevron) no-repeat; background-size: 14px; background-position: left .9rem center;
+}
+[dir="ltr"] select { background-position: right .9rem center; }
+select:hover { border-color: var(--muted); }
+@supports (appearance: base-select) {
+  select, ::picker(select) { appearance: base-select; }
+  select { background-image: none; display: flex; align-items: center; gap: .5rem; padding-inline-end: .85rem; }
+  select::picker-icon {
+    content: ""; width: 14px; height: 14px; margin-inline-start: auto; background: var(--muted);
+    mask: var(--chevron) center / contain no-repeat; transition: rotate var(--dur) var(--ease);
+  }
+  select:open::picker-icon { rotate: 180deg; }
+  select:open { border-color: var(--focus); }
+  ::picker(select) {
+    border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--body);
+    box-shadow: var(--shadow-elevated); padding: 6px; margin-block: 6px; max-height: min(360px, 60vh);
+    opacity: 0; translate: 0 -4px;
+    transition: opacity var(--dur) var(--ease), translate var(--dur) var(--ease), overlay var(--dur) allow-discrete, display var(--dur) allow-discrete;
+  }
+  ::picker(select):popover-open { opacity: 1; translate: 0 0; }
+  @starting-style { ::picker(select):popover-open { opacity: 0; translate: 0 -4px; } }
+  option {
+    display: flex; align-items: center; gap: .6rem; padding: .55rem .75rem; min-height: 40px;
+    border-radius: 10px; cursor: pointer; color: var(--body); background: transparent;
+  }
+  option:hover, option:focus-visible { background: var(--surface-2); outline: none; }
+  option:checked { background: var(--surface-3); color: var(--ink); font-weight: 600; }
+  option::checkmark { order: 1; margin-inline-start: auto; content: "✓"; font-weight: 700; }
+  option:disabled { color: var(--muted); cursor: default; }
+  optgroup { font-weight: 600; color: var(--muted); }
+}
+@media (prefers-reduced-motion: reduce) {
+  select::picker-icon, ::picker(select) { transition: none; }
+}
 /* buttons: black pill (primary), white with a hairline (ghost), red outline (danger), soft grey (soft), text-only (link) */
 button { min-height: var(--control); border: 1px solid var(--btn); border-radius: var(--radius-pill); padding: 0 1.25rem; cursor: pointer;
   background: var(--btn); color: var(--accent-ink); font-weight: 600; line-height: 1.2;
@@ -151,7 +196,7 @@ button.danger { background: var(--surface); color: var(--danger); border-color: 
 button.danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; box-shadow: none; }
 button.soft { background: var(--surface-2); color: var(--ink); border-color: transparent; }
 button.soft:hover { background: var(--surface-3); color: var(--ink); box-shadow: none; }
-button.sm { min-height: 36px; padding: 0 .9rem; font-size: .8125rem; gap: 6px; }
+button.sm { min-height: var(--control); padding: 0 1rem; font-size: .8125rem; gap: 6px; }  /* one button height across the system */
 button.sm .icon { width: 14px; height: 14px; }
 button.link { min-height: 0; background: none; border: 0; color: var(--accent-text); padding: 0; box-shadow: none; font-weight: 600; border-radius: 4px; }
 button.danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; }
@@ -197,9 +242,6 @@ th { text-align: start; font-size: .75rem; font-weight: 600; letter-spacing: .02
 td { padding: .875rem .75rem; border-top: 1px solid var(--line); vertical-align: middle; }
 tbody tr:first-child td { border-top: 0; }
 tbody tr td { transition: background var(--dur) var(--ease); }
-tbody tr:hover td { background: var(--surface-2); }
-tbody tr:hover td:first-child { border-start-start-radius: var(--radius-sm); border-end-start-radius: var(--radius-sm); }
-tbody tr:hover td:last-child { border-start-end-radius: var(--radius-sm); border-end-end-radius: var(--radius-sm); }
 td.num, th.num { text-align: end; }
 
 /* budget meter (progress bar) */
@@ -334,7 +376,6 @@ legend { padding: 0 .4rem; font-weight: 700; color: var(--ink); font-size: .8125
   table.stack-mobile td::before { content: attr(data-label); color: var(--muted); font-size: .75rem; font-weight: 600; flex: none; }
   table.stack-mobile td:not([data-label])::before, table.stack-mobile td[data-label=""]::before { display: none; }
   table.stack-mobile td .meter { flex: 1; max-width: 220px; }
-  table.stack-mobile tbody tr:hover td { background: none; }
   .table-wrap:has(table.stack-mobile) { margin: 0; padding: 0; overflow: visible; }
 }
 
@@ -352,3 +393,43 @@ legend { padding: 0 .4rem; font-weight: 700; color: var(--ink); font-size: .8125
   *, *::before, *::after { transition-duration: 0s !important; animation: none !important; }
   .stat-card:hover, button:active { transform: none; }
 }
+
+/* language switch: same height as the other top-bar buttons; on phones only the globe shows */
+@media (max-width: 520px) { .lang-switch span { display: none; } .lang-switch { padding-inline: .7rem; } }
+
+/* number of open items next to a menu entry */
+.sidebar-link .count { margin-inline-start: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: #fff; color: #18181b; font-size: .75rem; font-weight: 700; display: inline-grid; place-items: center; }
+
+/* fields that follow the typed language (dir="auto") take the page direction while empty, so the hint sits on the right in Hebrew */
+[dir="auto"]:placeholder-shown { direction: inherit; }
+
+/* date picker (ui.js datePicker): Slate's trigger and month panel, in FireGate's black and neutral greys */
+.date-trigger { width: 100%; justify-content: flex-start; gap: .55rem; background: var(--surface); color: var(--body);
+  border: 2px solid var(--field-border); border-radius: var(--radius-sm); padding: 0 .85rem; font-weight: 400; box-shadow: none; }
+.date-trigger:hover { background: var(--surface); border-color: var(--muted); box-shadow: none; }
+.date-trigger[aria-expanded="true"], .date-trigger:focus-visible { border-color: var(--focus); outline: none; }
+.date-trigger .icon { width: 16px; height: 16px; color: var(--muted); flex: none; }
+.date-trigger .placeholder { color: var(--muted); }
+.date-panel { position: fixed; inset: auto; margin: 0; width: 280px; background: var(--surface); color: var(--body);
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-elevated); padding: 12px; }
+.date-panel:popover-open { display: flex; flex-direction: column; gap: 8px; }
+.date-head { display: flex; align-items: center; justify-content: space-between; }
+.date-panel button { min-height: 0; border: 0; box-shadow: none; background: transparent; color: var(--ink); font-weight: 400; padding: 0; }
+.date-panel button:hover { background: var(--surface-2); box-shadow: none; }
+.date-panel button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.date-panel .date-nav { width: 30px; height: 30px; border-radius: 50%; color: var(--muted); }
+.date-nav svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+[dir="ltr"] .date-nav svg { transform: scaleX(-1); }
+.date-panel .date-title { font-size: .875rem; font-weight: 700; padding: 4px 10px; border-radius: var(--radius-sm); }
+.date-week, .date-days { display: grid; grid-template-columns: repeat(7, 1fr); }
+.date-week span { text-align: center; font-size: .6875rem; font-weight: 700; color: var(--muted); padding-block: 4px; }
+.date-panel .date-day { aspect-ratio: 1; border-radius: 50%; font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.date-panel .date-day.muted { color: var(--muted); opacity: .6; }
+.date-panel .date-day.today { font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--line); }
+.date-panel .date-day.selected, .date-panel .date-year.selected { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.date-panel .date-day.selected:hover, .date-panel .date-year.selected:hover { background: var(--accent-hover); }
+.date-years { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.date-panel .date-year { padding: 10px 0; border-radius: var(--radius-sm); font-size: .8125rem; }
+.date-panel .date-clear { align-self: center; font-size: .8125rem; font-weight: 600; color: var(--muted); padding: 6px 10px; border-radius: var(--radius-sm); }
+.date-panel .date-clear:hover { color: var(--danger); background: transparent; }
+@media (max-width: 767px) { .date-panel { width: min(340px, calc(100vw - 16px)); } }

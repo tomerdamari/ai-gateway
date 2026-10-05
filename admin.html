@@ -30,7 +30,7 @@
   .compact td, .compact th { padding: .5rem .25rem; }
   .empty { color: var(--muted); padding: 24px 0; text-align: center; }
   .actions { display: flex; gap: 6px; flex-wrap: nowrap; }
-  .actions button { min-height: 34px; padding: 0 .85rem; font-size: .8125rem; gap: 5px; }
+  .actions button { min-height: var(--control); padding: 0 1rem; font-size: .8125rem; gap: 6px; }
   .actions button .icon { width: 14px; height: 14px; }
   td .stack { display: grid; gap: 2px; }
   .models { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
@@ -121,7 +121,7 @@
 </style>
 </head>
 <body>
-<svg xmlns="http://www.w3.org/2000/svg" hidden>
+<svg xmlns="http://www.w3.org/2000/svg" hidden><symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></g></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
@@ -160,6 +160,7 @@
     <ul class="sidebar-nav">
       <li class="sidebar-header">ראשי</li>
       <li><button class="sidebar-link" data-tab="overview" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>לוח בקרה</span></button></li>
+      <li><button class="sidebar-link" data-tab="todo"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg><span>לטיפול</span><b class="count" id="todoCount" hidden></b></button></li>
       <li class="sidebar-header">ניהול</li>
       <li><button class="sidebar-link" data-tab="accounts"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>משתמשים ומפתחות</span></button></li>
       <li><button class="sidebar-link" data-tab="models"><svg class="icon" aria-hidden="true"><use href="#i-cpu"/></svg><span>מודלים</span></button></li>
@@ -168,7 +169,7 @@
       <li class="sidebar-header">בקרה</li>
       <li><button class="sidebar-link" data-tab="reports"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span>דוחות</span></button></li>
       <li><button class="sidebar-link" data-tab="security"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span>אבטחה</span></button></li>
-      <li><button class="sidebar-link" data-tab="logs"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>יומן שאלות</span></button></li>
+      <li><button class="sidebar-link" data-tab="logs"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>לוג טוקנים</span></button></li>
       <li><button class="sidebar-link" data-tab="audit"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span>יומן שינויים</span></button></li>
       <li><button class="sidebar-link" data-tab="archive"><svg class="icon" aria-hidden="true"><use href="#i-archive"/></svg><span>ארכיון</span></button></li>
       <li class="sidebar-header">עובדים</li>
@@ -182,7 +183,7 @@
       <button class="toggle" id="toggle" aria-label="הצגה או הסתרה של התפריט"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
       <nav class="crumbs" aria-label="מיקום"><ol id="crumbs"></ol></nav>
       <div class="navbar-end">
-        <button class="ghost sm lang-switch" data-lang-switch lang="en">English</button>
+        <button class="ghost lang-switch" data-lang-switch><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg><span lang="en">English</span></button>
         <button class="ghost" id="refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>רענון</button>
         <span class="avatar" aria-hidden="true">מ</span><span class="who-name">מנהל</span>
       </div>
@@ -206,14 +207,12 @@
         <button id="overviewNewAccount"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>משתמש חדש</button>
       </div>
       <div class="grid">
-        <form class="ask" action="/chat" method="get">
+        <form class="ask" action="/chat" method="get" hidden>  <!-- hidden for now at the owner's request; remove "hidden" to bring it back -->
           <svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>
           <input type="text" name="q" required autocomplete="off" dir="auto" placeholder="שאלו את הבינה המלאכותית… (נפתח במסך הצ'אט)" aria-label="שאלה לבינה המלאכותית, נפתחת במסך הצ'אט">
           <button aria-label="פתיחה במסך הצ'אט"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
         </form>
         <div id="loadState"></div>
-        <div class="card" id="startCard" hidden><header><h2>צעדים ראשונים</h2><span class="muted small" id="startProgress"></span></header><ol class="steps" id="startSteps"></ol></div>
-        <div class="card" id="alertsCard" hidden><header><h2>דורש טיפול</h2><span class="muted small" id="alertsCount"></span></header><div id="alerts"></div></div>
         <div class="grid kpis" id="kpis"></div>
         <div class="grid wide-narrow">
           <div class="card">
@@ -265,6 +264,15 @@
     </section>
 
     <!-- accounts -->
+    <!-- to handle: getting started and everything that needs the admin's attention -->
+    <section data-page="todo" hidden>
+      <div class="page-head"><h1>לטיפול</h1></div>
+      <div class="grid">
+        <div class="card" id="startCard" hidden><header><h2>צעדים ראשונים</h2><span class="muted small" id="startProgress"></span></header><ol class="steps" id="startSteps"></ol></div>
+        <div class="card" id="alertsCard" hidden><header><h2>דורש טיפול</h2><span class="muted small" id="alertsCount"></span></header><div id="alerts"></div></div>
+      </div>
+    </section>
+
     <section data-page="accounts" hidden>
       <div class="page-head">
         <h1>משתמשים ומפתחות</h1>
@@ -418,7 +426,7 @@
     <!-- logs -->
     <section data-page="logs" hidden>
       <div class="page-head">
-        <h1>יומן שאלות</h1>
+        <h1>לוג טוקנים</h1>
         <div class="filters">
           <input type="text" id="logFilter" placeholder="סינון לפי שם, צוות או מודל">
         </div>

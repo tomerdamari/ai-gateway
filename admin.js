@@ -80,7 +80,7 @@ function renderCrumbs(name) {
   if (!btn) return;
   let header = btn.closest("li");
   while (header && !header.classList.contains("sidebar-header")) header = header.previousElementSibling;
-  const page = btn.textContent.trim(), group = header ? header.textContent.trim() : "";
+  const page = btn.querySelector("span").textContent.trim(), group = header ? header.textContent.trim() : "";
   const home = el("a", { href: "#", textContent: "FireGate", onclick: e => { e.preventDefault(); showTab("overview"); } });
   $("crumbs").replaceChildren(
     el("li", {}, home),
@@ -198,9 +198,8 @@ const PROVIDER_NAMES = { anthropic: "Claude", openai: "GPT", gemini: "Gemini" };
 function modelChecks(container, checked) {
   container.replaceChildren(...state.models.map(m => {
     const info = (state.model_info || {})[m] || {};
-    const tier = m.endsWith("smart") ? "חכם" : m.endsWith("fast") ? "מהיר" : "";
     return el("label", { className: "model-option" }, el("input", { type: "checkbox", value: m, checked: checked.includes(m) }),
-      el("span", { textContent: info.label || `${PROVIDER_NAMES[info.provider] || ""} ${tier}`.trim() }),
+      el("span", { textContent: info.label || m }),
       el("small", { className: "ltr", textContent: `${m} · $${info.price_in} / $${info.price_out}` }),
       info.enabled === false ? el("span", { className: "badge", textContent: "כבוי" }) : null);
   }));
@@ -553,6 +552,10 @@ async function load() {
   alerts.sort((a, b) => order[a[0]] - order[b[0]]);
   $("alertsCard").hidden = false;
   $("alertsCount").textContent = alerts.length ? `${alerts.length} פריטים` : "";
+  // the menu shows how many things wait on the "to handle" page
+  const waiting = alerts.length + steps.length - doneCount;
+  $("todoCount").hidden = !waiting;
+  $("todoCount").textContent = waiting;
   $("alerts").replaceChildren(...alerts.map(([lv, text, page]) => el("div", { className: "alert " + lv }, icon("alert"),
     el("span", { className: "grow", textContent: text }),
     page ? el("button", { className: "link small", textContent: "לפרטים", onclick: () => showTab(page) }) : null)));

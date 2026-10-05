@@ -12,7 +12,6 @@
 <script src="/i18n.js"></script>
 <style>
   .doc { padding: .5rem 2.5rem 4rem; }
-  .doc article { max-width: 78ch; }
   .doc h1 { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: .5rem; }
   .doc .lead { font-size: 1.0625rem; color: var(--muted); margin: 0 0 2rem; line-height: 1.7; }
   .doc section { scroll-margin-top: 5rem; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid var(--line); }
@@ -53,7 +52,7 @@
 </style>
 </head>
 <body>
-<svg xmlns="http://www.w3.org/2000/svg" hidden>
+<svg xmlns="http://www.w3.org/2000/svg" hidden><symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></g></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
@@ -90,6 +89,7 @@
     <ul class="sidebar-nav">
       <li class="sidebar-header">ראשי</li>
       <li><a class="sidebar-link" href="/#overview"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>לוח בקרה</span></a></li>
+      <li><a class="sidebar-link" href="/#todo"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg><span>לטיפול</span></a></li>
       <li class="sidebar-header">ניהול</li>
       <li><a class="sidebar-link" href="/#accounts"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>משתמשים ומפתחות</span></a></li>
       <li><a class="sidebar-link" href="/#models"><svg class="icon" aria-hidden="true"><use href="#i-cpu"/></svg><span>מודלים</span></a></li>
@@ -98,7 +98,7 @@
       <li class="sidebar-header">בקרה</li>
       <li><a class="sidebar-link" href="/#reports"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span>דוחות</span></a></li>
       <li><a class="sidebar-link" href="/#security"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span>אבטחה</span></a></li>
-      <li><a class="sidebar-link" href="/#logs"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>יומן שאלות</span></a></li>
+      <li><a class="sidebar-link" href="/#logs"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>לוג טוקנים</span></a></li>
       <li><a class="sidebar-link" href="/#audit"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span>יומן שינויים</span></a></li>
       <li><a class="sidebar-link" href="/#archive"><svg class="icon" aria-hidden="true"><use href="#i-archive"/></svg><span>ארכיון</span></a></li>
       <li class="sidebar-header">עובדים</li>
@@ -110,7 +110,7 @@
     <header class="navbar">
       <button class="toggle" id="toggle" aria-label="הצגה או הסתרה של התפריט"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
       <nav class="crumbs" aria-label="מיקום"><ol><li><a href="/">FireGate</a></li><li><span aria-current="page">תיעוד</span></li></ol></nav>
-      <div class="navbar-end"><button class="ghost sm lang-switch" data-lang-switch lang="en">English</button></div>
+      <div class="navbar-end"><button class="ghost lang-switch" data-lang-switch><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg><span lang="en">English</span></button></div>
     </header>
 
   <main class="doc">
@@ -219,6 +219,7 @@ python gateway.py</pre>
         <h2>לוח בקרה</h2>
         <p>המסך הראשי של השער (<code>/</code>, וגם <code>/admin</code>). מתוך רשת המשרד נפתח בלי סיסמה; מבחוץ רק עם <code>ADMIN_PASSWORD</code>.</p>
         <ul>
+          <li><b>הדף "לטיפול"</b> (בתפריט, מתחת ללוח הבקרה) מרכז את מה שמחכה למנהל, ולידו בתפריט מופיע מספר הפריטים הפתוחים. יש בו שני חלקים:</li>
           <li><b>צעדים ראשונים:</b> מופיע עד שהמערכת מוכנה: חיבור ספק, צוות, משתמש ושאלה ראשונה, עם כפתור לכל צעד.</li>
           <li><b>דורש טיפול:</b> חריגות תקציב (מ-80% ומ-100%), חשבונות נעולים והערות אבטחה פתוחות. כשאין כלום כתוב "הכל תקין".</li>
           <li><b>ארבעה מספרים:</b> הוצאה החודש, צפי לסוף החודש, בקשות, משתמשים פעילים. כל אחד עם שינוי באחוזים לעומת השבוע או החודש הקודם.</li>
@@ -397,7 +398,7 @@ python gateway.py</pre>
             <tr class="group"><th colspan="3">6. דליפת מידע</th></tr>
             <tr><td>דליפת PII ומידע רגיש</td><td>PII = מידע שמזהה אדם. תעודות זהות, כרטיסי אשראי, IBAN, טלפונים, מיילים ומפתחות מוסתרים לפני שהשאלה יוצאת לספק ולפני שהיא נשמרת.</td><td>לבחור <a href="#policy">מדיניות</a>. "לשלוח בלי להסתיר" רק אם יש לכך הצדקה והסכם מתאים עם הספק.</td></tr>
             <tr><td>שמירת שאלות ותשובות</td><td>נשמרות בלי הגבלת זמן, אחרי הסתרה, ומוצפנות. שיחה שעובד מעביר לארכיון יוצאת רק מהרשימה שלו; השיחה עצמה והעותק ביומן נשארים.</td><td>—</td></tr>
-            <tr><td>גישה לא מורשית לנתונים</td><td>יומן השאלות נמצא רק במסך הניהול. עובד רואה רק את השיחות שלו, ומקורות המידע מוגבלים לפי צוות. התוכן במסד מוצפן.</td><td>לשמור על <code>ADMIN_PASSWORD</code>, ולא לפתוח את השער ישירות לרשת (רק דרך Caddy).</td></tr>
+            <tr><td>גישה לא מורשית לנתונים</td><td>לוג הטוקנים נמצא רק במסך הניהול. עובד רואה רק את השיחות שלו, ומקורות המידע מוגבלים לפי צוות. התוכן במסד מוצפן.</td><td>לשמור על <code>ADMIN_PASSWORD</code>, ולא לפתוח את השער ישירות לרשת (רק דרך Caddy).</td></tr>
             <tr><td>חשיפת מידע דרך יומנים</td><td>הקטעים שנשמרים מבקשות שנחסמו ומאירועי אבטחה הם עד 200 תווים, אחרי הסתרה, ומוצפנים. השורות שהשרת מדפיס לא כוללות תוכן.</td><td>—</td></tr>
             <tr><td>העברת מידע לספקי AI</td><td>לספק נשלחים רק השאלה, אחרי הסתרה, וקטעי המסמכים הרלוונטיים (עד 6). הספק לא מקבל את מפתחות השער או פרטים על העובדים מעבר למה שכתוב בשאלה.</td><td>לבדוק את תנאי הספק לגבי שמירת מידע ושימוש בו לאימון, ולבחור ספקים בהתאם.</td></tr>
             <tr><td>מחיקה מלאה של מידע</td><td>לפי החלטת הבעלים, <b>שום מידע לא נמחק</b>. אין אפשרות למחוק שאלות, תשובות, יומנים או את יומן השינויים. גם משתמשים, צוותים, מודלים, מקורות מידע, מסמכים ושיחות לא נמחקים: הם עוברים ל<a href="#archive">ארכיון</a>, יוצאים מהשימוש, ואפשר לשחזר אותם. במקום מחיקה, מידע רגיש מוסתר עוד לפני שהוא נשמר, מה שנשמר מוצפן, והגישה אליו מוגבלת למסך הניהול. מה שכן נמחק: כניסות לצ'אט שפגו או שנסגרו (הן רק אישור כניסה, לא מידע). ומסמך שמעלים שוב באותו שם מקבל את התוכן החדש, והגרסה הקודמת נשמרת מוצפנת במסד.</td><td>אם חוק, לקוח או עובד דורשים מחיקה, לדעת מראש שהמערכת לא תומכת בה.</td></tr>
@@ -407,7 +408,7 @@ python gateway.py</pre>
             <tr><td>מניעת שינוי או מחיקה של יומן השינויים</td><td>כל שורה ביומן השינויים כוללת חותמת שמחושבת גם מהחותמת של השורה שלפניה, כמו חוליות בשרשרת. שינוי או מחיקה של שורה שוברים את השרשרת. הלשונית "אבטחה" מראה אם השרשרת תקינה, לוח הבקרה מתריע אם לא, ואפשר לבדוק גם בכתובת <code>GET /admin/api/audit/verify</code>.</td><td>לטפל מיד בהתראה. החותמת לא סודית: מי שמחזיק את קובץ המסד ויודע מה הוא עושה יכול לחשב את כל השרשרת מחדש. לכן להגביל את הגישה לשרת ולשמור גיבויים במקום אחר, להשוואה.</td></tr>
             <tr><td>מניעת מידע רגיש ביומנים</td><td>הסתרה לפני שמירה, הצפנה של מה שנשמר, ושורות שרת בלי תוכן.</td><td>—</td></tr>
             <tr><td>מעקב אחר פעולות מנהל</td><td>יומן השינויים: יצירה, עדכון, העברה לארכיון ושחזור של חשבונות, צוותים, מודלים, מקורות ומסמכים, ושינויי מדיניות, כולל ערך לפני ואחרי.</td><td>—</td></tr>
-            <tr><td>מעקב אחר בקשה מקצה לקצה</td><td>כל בקשה מקבלת מספר מזהה, שחוזר לאפליקציה בכותרת <code>x-request-id</code> ונשמר ביומן השאלות וביומן הבקשות שנחסמו. אפליקציה יכולה לשלוח מספר משלה; הוא נשמר רק אם הוא עד 64 תווים, מאותיות באנגלית, ספרות, נקודה, קו תחתון ומקף.</td><td>לשמור את המספר גם ביומנים של האפליקציה, כדי למצוא בקשה בשני הצדדים.</td></tr>
+            <tr><td>מעקב אחר בקשה מקצה לקצה</td><td>כל בקשה מקבלת מספר מזהה, שחוזר לאפליקציה בכותרת <code>x-request-id</code> ונשמר בלוג הטוקנים וביומן הבקשות שנחסמו. אפליקציה יכולה לשלוח מספר משלה; הוא נשמר רק אם הוא עד 64 תווים, מאותיות באנגלית, ספרות, נקודה, קו תחתון ומקף.</td><td>לשמור את המספר גם ביומנים של האפליקציה, כדי למצוא בקשה בשני הצדדים.</td></tr>
 
             <tr class="group"><th colspan="3">8. הגבלת קצב ושימוש לרעה</th></tr>
             <tr><td>Brute Force</td><td>ניחוש סיסמאות בכוח. 5 סיסמאות שגויות נועלות את החשבון ל-15 דקות. 10 כניסות כושלות מכתובת אחת ברבע שעה, לכל שם שהוא, חוסמות את הכתובת (קוד 429). זמן התגובה זהה גם לשם משתמש שלא קיים.</td><td>—</td></tr>
@@ -477,7 +478,7 @@ python gateway.py</pre>
       <section id="logs">
         <h2>יומנים</h2>
         <ul>
-          <li><b>יומן שאלות:</b> 200 השאלות האחרונות עם מי, צוות, מודל, טוקנים, עלות, והשאלה והתשובה המלאות. סינון לפי שם, צוות או מודל. כל השאלות נשמרות במסד הנתונים.</li>
+          <li><b>לוג טוקנים:</b> 200 השאלות האחרונות עם מי, צוות, מודל, טוקנים, עלות, והשאלה והתשובה המלאות. סינון לפי שם, צוות או מודל. כל השאלות נשמרות במסד הנתונים.</li>
           <li><b>יומן שינויים:</b> כל פעולה של מנהל: יצירה, עדכון, העברה לארכיון ושחזור של חשבונות, צוותים, מודלים, מקורות ומסמכים, כולל ערך לפני ואחרי בשינויי תקציב ומחיר. גם עובד שמעביר שיחה שלו לארכיון או משחזר אותה נרשם כאן.</li>
         </ul>
       </section>
@@ -487,7 +488,7 @@ python gateway.py</pre>
         <p><b>שום מידע לא נמחק.</b> במקום כפתור מחיקה יש "העברה לארכיון": משתמש, צוות, מודל, מקור מידע או מסמך שהועברו לארכיון לא מופיעים במסכים ולא עובדים, אבל נשמרים במסד עם כל ההיסטוריה שלהם.</p>
         <ul>
           <li>בעמוד "ארכיון" (בתפריט, תחת "בקרה") מופיע כל מה שבארכיון, עם התאריך, וכפתור "שחזור" לכל פריט.</li>
-          <li>ההוצאה של מה שבארכיון נשארת ביומן השאלות ובדוחות של החודשים שבהם היא קרתה.</li>
+          <li>ההוצאה של מה שבארכיון נשארת בלוג הטוקנים ובדוחות של החודשים שבהם היא קרתה.</li>
           <li>שם של פריט שבארכיון תפוס: יצירה של משתמש, צוות, מודל או מקור באותו שם נדחית, עם הודעה לשחזר אותו.</li>
           <li>כל העברה לארכיון וכל שחזור נרשמים ביומן השינויים: מה, איזה פריט ומתי.</li>
           <li>עובדים מעבירים לארכיון רק שיחות שלהם, ומשחזרים אותן מהקישור "ארכיון" בצ'אט.</li>

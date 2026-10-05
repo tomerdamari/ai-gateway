@@ -58,9 +58,11 @@ const I18N = (() => {
     if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);
   }
 
-  const label = () => document.querySelectorAll("[data-lang-switch]").forEach(b => {
-    b.textContent = en ? "עברית" : "English";
-    b.lang = en ? "he" : "en";
+  // the switch shows the other language's name, written in that language (the icon stays)
+  const label = () => document.querySelectorAll("[data-lang-switch] span").forEach(t => {
+    t.textContent = en ? "עברית" : "English";
+    t.lang = en ? "he" : "en";
+    t.parentElement.setAttribute("aria-label", en ? "עברית" : "English");
   });
   if (document.body) label(); else document.addEventListener("DOMContentLoaded", label);
 
