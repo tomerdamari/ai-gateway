@@ -342,7 +342,6 @@ async function load() {
   renderSources();
   $("login").hidden = true;
   showTab(tab);
-  $("monthLabel").textContent = new Date().toLocaleDateString("he-IL", { month: "long", year: "numeric" });
 
   // KPIs: this week against the week before, and the month's projection against last month
   const spent = ov.accounts.reduce((t, a) => t + a.spent, 0);

@@ -1,4 +1,4 @@
-# שער AI
+# FireGate
 
 **הדגמה חיה:** https://tomerdamari.github.io/ai-gateway/ (ניהול) · [צ'אט](https://tomerdamari.github.io/ai-gateway/chat.html) · [תיעוד](https://tomerdamari.github.io/ai-gateway/docs.html)
 ההדגמה היא אתר סטטי: אותם מסכים עם נתוני דוגמה, בלי שרת. שינויים לא נשמרים והצ'אט עונה תשובה קבועה. בונים אותה מחדש עם `python pages/build.py` ומעלים את `pages/site` לענף `gh-pages`.

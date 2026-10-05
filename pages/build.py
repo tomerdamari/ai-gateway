@@ -63,7 +63,7 @@ data = {"admin": admin, "people": people, "me": me, "conversations": conversatio
 shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(OUT)
 shutil.copytree(os.path.join(ROOT, "fonts"), os.path.join(OUT, "fonts"))
-links = [('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="index.html"'), ('href="/docs"', 'href="docs.html"'),
+links = [('href="/logo.svg"', 'href="logo.svg"'), ('src="/logo.svg"', 'src="logo.svg"'), ('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="index.html"'), ('href="/docs"', 'href="docs.html"'),
          ('href="/chat"', 'href="chat.html"'), ('href="/"', 'href="index.html"'), ('src="/ui.js"', 'src="ui.js"'),
          ('src="/admin.js"', 'src="admin.js"'), ('src="/chat.js"', 'src="chat.js"')]
 for src, dst in (("admin.html", "index.html"), ("admin.html", "admin.html"), ("chat.html", "chat.html"), ("docs.html", "docs.html")):
@@ -80,6 +80,7 @@ for name in ("ui.js", "admin.js", "chat.js"):
 css = open(os.path.join(ROOT, "style.css"), encoding="utf-8").read().replace('url("/fonts/', 'url("fonts/')
 open(os.path.join(OUT, "style.css"), "w", encoding="utf-8").write(css)
 shutil.copy(os.path.join(ROOT, "pages", "mock.js"), os.path.join(OUT, "mock.js"))
+shutil.copy(os.path.join(ROOT, "logo.svg"), os.path.join(OUT, "logo.svg"))
 with open(os.path.join(OUT, "data.js"), "w", encoding="utf-8") as f:
     f.write("window.DEMO = " + json.dumps(data, ensure_ascii=False) + ";\n")
 open(os.path.join(OUT, ".nojekyll"), "w").close()  # serve files as they are

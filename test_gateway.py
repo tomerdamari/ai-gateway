@@ -620,7 +620,7 @@ assert b"onclick=" not in r.read() and r.headers["referrer-policy"] == "no-refer
 assert urllib.request.urlopen(base + "/chat.js").headers["content-type"].startswith("text/javascript")
 
 assert urllib.request.urlopen(base + "/health").status == 200
-assert "ניהול שער AI" in urllib.request.urlopen(base + "/").read().decode()  # the admin screen is the main page
-assert b"<html" in urllib.request.urlopen(base + "/admin").read() and "צ'אט AI" in urllib.request.urlopen(base + "/chat").read().decode()
-assert "תיעוד שער AI" in urllib.request.urlopen(base + "/docs").read().decode()
+assert "FireGate · ניהול" in urllib.request.urlopen(base + "/").read().decode()  # the admin screen is the main page
+assert b"<html" in urllib.request.urlopen(base + "/admin").read() and "FireGate · צ'אט" in urllib.request.urlopen(base + "/chat").read().decode()
+assert "תיעוד FireGate" in urllib.request.urlopen(base + "/docs").read().decode()
 print("ok")

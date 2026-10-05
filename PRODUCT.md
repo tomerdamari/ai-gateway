@@ -34,7 +34,7 @@ Self-hosted on the customer's own server, no external dependencies (single Pytho
 - Monthly budgets reset on the 1st; warning at 80%, block at 100%; recommendation = max(month-end projection, last month) + 20%, rounded up to $5.
 - Strict content-security policy: scripts only from the gateway's own files; no external fonts, scripts or CDNs.
 - All prompts and answers are kept indefinitely (deliberate decision).
-- Product name **"שער AI" is temporary**; the real name is undecided.
+- Product name: **FireGate** (decided 2026-10-05).
 - Undecided: pricing and licensing for selling to other companies.
 
 ## Brand Commitments

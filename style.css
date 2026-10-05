@@ -212,7 +212,7 @@ pre { white-space: pre-wrap; word-break: break-word; direction: ltr; text-align:
 .sidebar.collapsed { margin-inline-start: -260px; }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 1.15rem 1.5rem; color: #f8f9fa; font-size: 1.15rem; font-weight: 700; }
 .sidebar-brand:hover { text-decoration: none; color: #fff; }
-.sidebar-brand .logo { width: 28px; height: 28px; border-radius: .3rem; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: .8rem; }
+.sidebar-brand .logo { width: 30px; height: 30px; flex: none; display: block; }
 .sidebar-nav { list-style: none; margin: 0; padding: 0 0 1rem; }
 .sidebar-header { padding: 1.5rem 1.5rem .375rem; font-size: .75rem; font-weight: 700; color: var(--sidebar-header); }
 .sidebar-link { width: 100%; display: flex; align-items: center; gap: .75rem; padding: .625rem 1.625rem; background: transparent; border: 0; border-inline-start: 3px solid transparent; border-radius: 0; color: var(--sidebar-ink); font-weight: 700; text-align: start; justify-content: flex-start; min-height: 0; box-shadow: none; }
