@@ -21,30 +21,30 @@
   .chart .line { fill: none; stroke: var(--chart); stroke-width: 2; stroke-linejoin: round; }
   .chart .cross { stroke: var(--axis); stroke-width: 1; }
   .chart .dot { fill: var(--chart); stroke: var(--surface); stroke-width: 2; }
-  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px; padding: 6px 10px; border-radius: .2rem; white-space: nowrap; transform: translate(-50%, -100%); margin-top: -10px; z-index: 2; }
+  .tip { position: absolute; pointer-events: none; background: #18181b; color: #fafafa; font-size: 12px; padding: 8px 12px; border-radius: 10px; box-shadow: var(--shadow-elevated); white-space: nowrap; transform: translate(-50%, -100%); margin-top: -10px; z-index: 2; }
   .donut { display: grid; place-items: center; position: relative; margin: .5rem 0 1rem; }
   .donut svg { width: 180px; height: 180px; }
   .donut .center { position: absolute; text-align: center; }
-  .donut .center b { display: block; font-size: 1.25rem; font-weight: 500; color: var(--ink); }
+  .donut .center b { display: block; font-size: 1.375rem; font-weight: 700; color: var(--ink); }
   .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-inline-end: 8px; vertical-align: -1px; }
   .compact td, .compact th { padding: .5rem .25rem; }
   .empty { color: var(--muted); padding: 24px 0; text-align: center; }
   .actions { display: flex; gap: 6px; flex-wrap: nowrap; }
-  .actions button { min-height: 30px; padding: .25rem .7rem; font-size: .8125rem; border-radius: .3rem; gap: 5px; }
+  .actions button { min-height: 34px; padding: 0 .85rem; font-size: .8125rem; gap: 5px; }
   .actions button .icon { width: 14px; height: 14px; }
   td .stack { display: grid; gap: 2px; }
   .models { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
   .filters { display: flex; gap: 10px; flex-wrap: wrap; }
   .team-row + .team-row { margin-top: 1rem; }
-  .crumbs ol { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; font-size: .875rem; color: var(--muted); }
+  .crumbs ol { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; font-size: .875rem; color: var(--muted); }
   .crumbs li { display: inline-flex; align-items: center; gap: 6px; }
-  .crumbs li + li::before { content: "›"; color: var(--axis); font-size: 1.05rem; line-height: 1; }
-  .crumbs a { color: var(--body); }
+  .crumbs li + li::before { content: "›"; color: var(--subtle); font-size: 1.05rem; line-height: 1; }
+  .crumbs a { color: var(--muted); }
   .crumbs [aria-current="page"] { color: var(--ink); font-weight: 600; }
   @media (max-width: 520px) { .crumbs .group { display: none; } }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  th button.sort { background: none; border: 0; box-shadow: none; padding: 0; min-height: 0; color: var(--ink); font-weight: 600; gap: 4px; }
-  th button.sort:hover { background: none; color: var(--accent-text); box-shadow: none; }
+  th button.sort { background: none; border: 0; box-shadow: none; padding: 0; min-height: 0; color: inherit; font-weight: 600; gap: 4px; border-radius: 4px; }
+  th button.sort:hover { background: none; color: var(--ink); box-shadow: none; }
   th button.sort[aria-sort]::after { content: ""; border: 4px solid transparent; border-top-color: currentColor; margin-top: 4px; }
   th button.sort[aria-sort="ascending"]::after { border-top-color: transparent; border-bottom-color: currentColor; margin-top: -4px; }
   td.name { white-space: nowrap; }
@@ -56,11 +56,11 @@
   .steps li .grow { flex: 1; }
   .alert .grow { flex: 1; }
   input[type=search] { min-width: 220px; }
-  .switch { position: relative; width: 44px; min-height: 24px; height: 24px; padding: 0; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--field-border); box-shadow: none; }
+  .switch { position: relative; width: 44px; min-height: 24px; height: 24px; padding: 0; border-radius: 999px; background: var(--axis); border: 1px solid var(--field-border); box-shadow: none; }
   .switch::after { content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: inset-inline-start .15s; }
   .switch[aria-checked="true"] { background: var(--success); border-color: var(--success); }
   .switch[aria-checked="true"]::after { inset-inline-start: 22px; }
-  .switch:hover { background: var(--surface-3); box-shadow: none; }
+  .switch:hover { background: var(--axis); box-shadow: none; }
   .switch[aria-checked="true"]:hover { background: var(--success); }
   @media (pointer: coarse) { .switch { min-height: 28px; height: 28px; width: 52px; } .switch::after { width: 22px; height: 22px; } .switch[aria-checked="true"]::after { inset-inline-start: 26px; } }
   tr.off td { color: var(--muted); }
@@ -76,8 +76,8 @@
   .share-row .head b { color: var(--ink); font-weight: 600; }
   .share-bar { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 8px; font-size: .75rem; color: var(--muted); }
   .share-bar + .share-bar { margin-top: 4px; }
-  .share-bar .track { height: 8px; background: var(--surface-2); border-radius: 0; border-start-start-radius: 4px; border-end-start-radius: 4px; overflow: hidden; }
-  .share-bar .fill { height: 100%; border-start-end-radius: 4px; border-end-end-radius: 4px; }
+  .share-bar .track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .share-bar .fill { height: 100%; border-radius: 999px; }
   tr.off td .badge { opacity: .7; }
   @media (pointer: coarse) { .actions button, button.sm { min-height: 44px; } }
   .chart .ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
@@ -87,25 +87,37 @@
   .legend .swatch { display: inline-block; width: 18px; height: 0; border-top: 2px solid; margin-inline-end: 8px; }
   .hist { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; align-items: end; height: 190px; padding-top: 18px; }
   .hist .col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; }
-  .hist .bar { width: 100%; max-width: 44px; border-radius: 4px 4px 0 0; background: var(--chart); min-height: 2px; }
+  .hist .bar { width: 100%; max-width: 44px; border-radius: 8px 8px 2px 2px; background: var(--chart); min-height: 2px; }
   .hist .bar.warn { background: var(--warning); }
   .hist .bar.bad { background: var(--danger); }
   .hist .count { font-size: .8125rem; color: var(--ink); font-weight: 600; }
   .hist-labels { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--axis); padding-top: 6px; font-size: .75rem; color: var(--muted); text-align: center; }
   .heat { display: grid; grid-template-columns: 52px repeat(17, minmax(0, 1fr)); gap: 3px; font-size: .75rem; color: var(--muted); }
-  .heat .cell { aspect-ratio: 1.6; border-radius: 3px; background: var(--surface-2); }
+  .heat .cell { aspect-ratio: 1.6; border-radius: 4px; background: var(--surface-2); }
   .heat .lab { display: flex; align-items: center; }
   .heat .hr { text-align: center; }
   .heat-scale { display: flex; align-items: center; gap: 4px; justify-content: flex-end; margin-top: .75rem; font-size: .75rem; color: var(--muted); }
   .heat-scale i { width: 16px; height: 10px; border-radius: 2px; }
   .month-row + .month-row { margin-top: .9rem; }
   .month-row .head { display: flex; justify-content: space-between; font-size: .875rem; margin-bottom: 5px; color: var(--ink); }
-  .stack-bar { display: flex; height: 14px; border-radius: 0; border-start-start-radius: 4px; border-end-start-radius: 4px; overflow: hidden; background: var(--surface-2); gap: 2px; }
+  .stack-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--surface-2); gap: 2px; }
   @media (max-width: 520px) { .heat { grid-template-columns: 40px repeat(17, minmax(0, 1fr)); gap: 2px; } .heat .hr:nth-child(even) { visibility: hidden; } }
   .team-row .name { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--ink); }
+  .greet { align-items: flex-end; margin-bottom: 1.25rem; }
+  .greet h1 { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; }
+  .greet p { margin: 6px 0 0; font-size: 1rem; }
+  .ask { display: flex; align-items: center; gap: 12px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px; padding-inline-start: 20px; border: 2px solid transparent; transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+  .ask:focus-within { border-color: var(--focus); box-shadow: var(--shadow-elevated); }
+  .ask > .icon { color: var(--muted); width: 20px; height: 20px; }
+  .ask input[type=text] { flex: 1; border: 0; box-shadow: none; padding: 0; min-height: 52px; font-size: 1rem; background: transparent; color: var(--ink); }
+  .ask input[type=text]:focus, .ask input[type=text]:focus-visible { outline: none; box-shadow: none; }
+  .ask input::placeholder { color: var(--muted); }
+  .ask button { width: 48px; height: 48px; min-height: 0; padding: 0; border-radius: 50%; flex: none; }
+  .ask button .icon { width: 18px; height: 18px; }
+  [dir="rtl"] .ask button .icon { transform: scaleX(-1); }
   @media (max-width: 1199px) { .wide-narrow { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 991px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: minmax(0, 1fr); } }
-  @media (max-width: 520px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 520px) { .kpis { grid-template-columns: minmax(0, 1fr); } .greet h1 { font-size: 1.625rem; } .navbar-end .who-name { display: none; } }
 </style>
 </head>
 <body>
@@ -140,6 +152,7 @@
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
   <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></symbol>
 </svg>
 <div class="wrapper">
   <nav class="sidebar" id="sidebar" aria-label="ניווט">
@@ -171,7 +184,7 @@
       <div class="navbar-end">
         <button class="ghost sm lang-switch" data-lang-switch lang="en">English</button>
         <button class="ghost" id="refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>רענון</button>
-        <span class="avatar" aria-hidden="true">מ</span><span>מנהל</span>
+        <span class="avatar" aria-hidden="true">מ</span><span class="who-name">מנהל</span>
       </div>
     </header>
 
@@ -188,11 +201,16 @@
 
     <!-- overview -->
     <section data-page="overview" hidden>
-      <div class="page-head">
-        <h1>לוח בקרה</h1>
+      <div class="page-head greet">
+        <div><h1>שלום, מנהל</h1><p class="muted">הנה מה שקורה בשער היום</p></div>
         <button id="overviewNewAccount"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>משתמש חדש</button>
       </div>
       <div class="grid">
+        <form class="ask" action="/chat" method="get">
+          <svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>
+          <input type="text" name="q" required autocomplete="off" dir="auto" placeholder="שאלו את הבינה המלאכותית… (נפתח במסך הצ'אט)" aria-label="שאלה לבינה המלאכותית, נפתחת במסך הצ'אט">
+          <button aria-label="פתיחה במסך הצ'אט"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
+        </form>
         <div id="loadState"></div>
         <div class="card" id="startCard" hidden><header><h2>צעדים ראשונים</h2><span class="muted small" id="startProgress"></span></header><ol class="steps" id="startSteps"></ol></div>
         <div class="card" id="alertsCard" hidden><header><h2>דורש טיפול</h2><span class="muted small" id="alertsCount"></span></header><div id="alerts"></div></div>

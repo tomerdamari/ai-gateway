@@ -1,6 +1,11 @@
 // English texts for the interface (see i18n.js): the admin screen, the shared side menu, the shared dialogs and toasts,
 // and the Hebrew texts the server sends (health checks, automatic-choice reasons, default model names)
 window.EN = Object.assign(window.EN || {}, {
+  "שלום, מנהל": "Hello, admin",
+  "הנה מה שקורה בשער היום": "Here's what's happening in the gateway today",
+  "שאלו את הבינה המלאכותית… (נפתח במסך הצ'אט)": "Ask the AI… (opens in the chat screen)",
+  "שאלה לבינה המלאכותית, נפתחת במסך הצ'אט": "Question for the AI, opens in the chat screen",
+  "פתיחה במסך הצ'אט": "Open in the chat screen",
   // side menu, shared by every page
   "ניווט": "Navigation",
   "ראשי": "Main",

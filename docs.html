@@ -11,32 +11,32 @@
 <script src="/en-docs.js"></script>
 <script src="/i18n.js"></script>
 <style>
-  .doc { padding: 2.5rem 2.5rem 4rem; }
+  .doc { padding: .5rem 2.5rem 4rem; }
   .doc article { max-width: 78ch; }
-  .doc h1 { font-size: 2rem; font-weight: 600; margin-bottom: .5rem; }
-  .doc .lead { font-size: 1.05rem; color: var(--body); margin: 0 0 2rem; }
-  .doc section { scroll-margin-top: 4.5rem; padding-top: 1.5rem; margin-top: 1.5rem; border-top: 1px solid var(--line); }
-  .doc h2 { font-size: 1.4rem; font-weight: 600; margin: 0 0 .75rem; }
-  .doc h3 { font-size: 1.05rem; font-weight: 600; color: var(--ink); margin: 1.5rem 0 .5rem; scroll-margin-top: 4.5rem; }
-  .doc p, .doc li { line-height: 1.75; color: var(--body); }
+  .doc h1 { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: .5rem; }
+  .doc .lead { font-size: 1.0625rem; color: var(--muted); margin: 0 0 2rem; line-height: 1.7; }
+  .doc section { scroll-margin-top: 5rem; padding-top: 2rem; margin-top: 2rem; border-top: 1px solid var(--line); }
+  .doc h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.01em; margin: 0 0 1rem; }
+  .doc h3 { font-size: 1.0625rem; font-weight: 700; color: var(--ink); margin: 1.75rem 0 .5rem; scroll-margin-top: 5rem; }
+  .doc p, .doc li { line-height: 1.8; color: var(--body); font-size: .9375rem; }
   .doc p { margin: 0 0 .9rem; }
   .doc ul, .doc ol { margin: 0 0 1rem; padding-inline-start: 1.4rem; }
   .doc li + li { margin-top: .3rem; }
   .doc b { color: var(--ink); }
-  .doc code { overflow-wrap: anywhere; font: .85em ui-monospace, Consolas, monospace; background: var(--surface-3); padding: .1em .35em; border-radius: .2rem; direction: ltr; unicode-bidi: isolate; }
+  .doc code { overflow-wrap: anywhere; font: .85em ui-monospace, Consolas, monospace; background: var(--surface-2); padding: .1em .4em; border-radius: 6px; direction: ltr; unicode-bidi: isolate; }
   .doc pre { max-height: none; font-size: .8125rem; }
   .doc table { display: block; overflow-x: auto; margin: .5rem 0 1.25rem; background: var(--surface); box-shadow: var(--shadow); border-radius: var(--radius); }
-  .doc th { background: var(--surface-2); }
+  .doc th { background: var(--surface); }
   .flow { counter-reset: f; list-style: none; padding: 0; display: grid; gap: .5rem; }
   .flow li { counter-increment: f; display: flex; gap: .75rem; align-items: baseline; }
-  .flow li::before { content: counter(f); flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--btn); color: #fff; display: grid; place-items: center; font-size: .8125rem; font-weight: 600; }
-  .crumbs ol { display: flex; align-items: center; gap: 6px; list-style: none; margin: 0; padding: 0; font-size: .875rem; color: var(--muted); }
+  .flow li::before { content: counter(f); flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: .8125rem; font-weight: 600; }
+  .crumbs ol { display: flex; align-items: center; gap: 8px; list-style: none; margin: 0; padding: 0; font-size: .875rem; color: var(--muted); }
   .crumbs li { display: inline-flex; align-items: center; gap: 6px; }
-  .crumbs li + li::before { content: "›"; color: var(--axis); font-size: 1.05rem; line-height: 1; }
-  .crumbs a { color: var(--body); }
+  .crumbs li + li::before { content: "›"; color: var(--subtle); font-size: 1.05rem; line-height: 1; }
+  .crumbs a { color: var(--muted); }
   .crumbs [aria-current="page"] { color: var(--ink); font-weight: 600; }
   .on-page { margin: 0 0 1rem; }
-  .on-page h2 { font-size: .925rem; color: var(--title); margin: 0 0 .75rem; }
+  .on-page h2 { font-size: 1rem; color: var(--ink); margin: 0 0 1rem; }
   .on-page-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem 1.5rem; }
   .on-page h3 { font-size: .8125rem; color: var(--muted); margin: 0 0 .35rem; }
   .on-page ul { list-style: none; margin: 0; padding: 0; }
@@ -44,7 +44,7 @@
   .on-page li + li { margin-top: .15rem; }
   .on-page li.sub { padding-inline-start: .9rem; font-size: .8125rem; }
   .on-page a { color: var(--ink); }
-  .doc .warn-box { background: var(--warning-soft); border-inline-start: 4px solid var(--warning); border-radius: var(--radius); padding: .9rem 1.1rem; margin: .75rem 0 1.25rem; }
+  .doc .warn-box { background: var(--warning-soft); border-inline-start: 4px solid var(--warning); border-radius: var(--radius-sm); padding: .9rem 1.1rem; margin: .75rem 0 1.25rem; }
   .doc .warn-box p { margin: 0 0 .4rem; color: var(--ink); }
   .doc .warn-box ul { margin: 0; }
   .doc .warn-box li { color: var(--ink); }

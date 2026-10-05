@@ -15,7 +15,7 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 // money: whole dollars from $100, cents from 1 cent, and 4 decimals only for sub-cent amounts (single requests)
-const money = v => "$" + (v >= 100 ? v.toFixed(0) : v >= 0.01 || v === 0 ? v.toFixed(2) : v.toFixed(4));
+const money = v => "$" + (v >= 100 ? Math.round(v).toLocaleString("en-US") : v >= 0.01 || v === 0 ? v.toFixed(2) : v.toFixed(4));
 // date then time, isolated left-to-right so Hebrew text around it can't reorder the parts
 const when = ts => {
   const d = new Date(ts * 1000), p = n => String(n).padStart(2, "0");
@@ -105,12 +105,35 @@ function icon(name) {
   svg.append(use);
   return svg;
 }
-// AdminKit-style stat card: title + round icon, big value, then a coloured change and what it's compared with
-function statCard(title, iconName, value, change, sub) {
+// stat card: title and big value beside a soft icon tile, then a coloured change and what it's compared with,
+// and optionally a sparkline of the last 14 days ("cost" or "requests") along the bottom
+function statCard(title, iconName, value, change, sub, sparkKey) {
   return el("div", { className: "card stat-card" },
-    el("div", { className: "top" }, el("h2", { className: "card-title", textContent: title }), el("div", { className: "stat" }, icon(iconName))),
-    el("div", { className: "stat-value" }, num(value)),
-    el("div", { className: "stat-delta" }, change || null, el("span", { className: "muted", textContent: sub })));
+    el("div", { className: "top" },
+      el("div", {}, el("h2", { className: "card-title", textContent: title }), el("div", { className: "stat-value" }, num(value))),
+      el("div", { className: "stat" }, icon(iconName))),
+    el("div", { className: "stat-delta" }, change || null, el("span", { className: "muted", textContent: sub })),
+    sparkKey ? sparkline(lastDays(14).map(d => d[sparkKey]), sparkKey === "cost" ? "var(--chart)" : "var(--s3)") : null);
+}
+// decoration only: the numbers are in the card as text, so screen readers skip it
+function sparkline(values, color) {
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  const max = Math.max(...values, 0) || 1, W = 100, H = 40;
+  const pts = values.map((v, i) => [(i / Math.max(values.length - 1, 1)) * W, H - 3 - (v / max) * (H - 8)]);
+  const line = pts.map(([x, y], i) => (i ? "L" : "M") + x.toFixed(2) + "," + y.toFixed(2)).join(" ");
+  svg.setAttribute("class", "spark");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("direction", "ltr");
+  for (const [cls, d] of [["area", `${line} L${W},${H} L0,${H} Z`], ["ln", line]]) {
+    const p = document.createElementNS(ns, "path");
+    p.setAttribute("class", cls);
+    p.setAttribute("d", d);
+    p.style[cls === "area" ? "fill" : "stroke"] = color;
+    svg.append(p);
+  }
+  return svg;
 }
 // percent change; for spending, going up is bad
 function change(now, before, upIsGood) {
@@ -118,7 +141,7 @@ function change(now, before, upIsGood) {
   const pct = (now - before) / before * 100;
   const good = Math.abs(pct) < 0.5 ? null : (pct > 0) === upIsGood;
   return el("span", { className: "delta " + (good === null ? "flat" : good ? "good" : "bad"), dir: "ltr",
-    textContent: (pct > 0 ? "+" : "") + pct.toFixed(1) + "%" });
+    textContent: (Math.abs(pct) < 0.5 ? "" : pct > 0 ? "↑ +" : "↓ ") + pct.toFixed(1) + "%" });
 }
 function level(spent, budget) {
   if (!budget) return "";
@@ -481,12 +504,12 @@ async function load() {
   const lastMonth = ov.accounts.reduce((t, a) => t + a.last_month, 0);
   const days14 = lastDays(14), thisWeek = days14.slice(7), prevWeek = days14.slice(0, 7);
   const sum = (arr, k) => arr.reduce((t, d) => t + d[k], 0);
-  const active = new Set(usage.map(u => u.name)).size;
+  const names = new Set(ov.accounts.map(a => a.name)), active = new Set(usage.map(u => u.name).filter(n => names.has(n))).size;  // archived accounts are not in ov.accounts
   $("kpis").replaceChildren(
-    statCard("הוצאה החודש", "dollar", money(spent), change(sum(thisWeek, "cost"), sum(prevWeek, "cost"), false), "השבוע לעומת השבוע הקודם"),
-    statCard("צפי לסוף החודש", "trend", money(projected), change(projected, lastMonth, false), `לעומת חודש קודם (${money(lastMonth)})`),
+    statCard("הוצאה החודש", "dollar", money(spent), change(sum(thisWeek, "cost"), sum(prevWeek, "cost"), false), "השבוע לעומת השבוע הקודם", "cost"),
+    statCard("צפי לסוף החודש", "trend", money(projected), change(projected, lastMonth, false), `לעומת חודש קודם (${money(lastMonth)})`, "cost"),
     statCard("בקשות החודש", "activity", usage.reduce((t, u) => t + u.requests, 0).toLocaleString(I18N.locale),
-      change(sum(thisWeek, "requests"), sum(prevWeek, "requests"), true), "השבוע לעומת השבוע הקודם"),
+      change(sum(thisWeek, "requests"), sum(prevWeek, "requests"), true), "השבוע לעומת השבוע הקודם", "requests"),
     statCard("משתמשים פעילים", "user-check", String(active), el("span", { className: "delta flat", textContent: `${Math.round(active / Math.max(ov.accounts.length, 1) * 100)}%` }),
       `מתוך ${ov.accounts.length} חשבונות`));
 

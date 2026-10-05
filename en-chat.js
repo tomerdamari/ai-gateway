@@ -112,6 +112,7 @@ const enRoute = "(?:שאלה ארוכה|קוד, ניתוח או השוואה|ש�
 
 // placed before the other pages' patterns so a general one (e.g. "מחיקת …") does not catch the chat's texts first
 window.EN_PATTERNS = [
+  [/^שלום (.+), במה אפשר לעזור\?$/, "Hi $1, how can I help?"],
   [/^שגיאה (\d+)$/, "Error $1"],
   [/^נשאר לך החודש (.+?)( · התקציב עומד להיגמר)?$/, (m, v, low) => `${v} left this month` + (low ? " · budget almost used up" : "")],
   [/^(.+) · צוות (.+)$/, "$1 · Team $2"],

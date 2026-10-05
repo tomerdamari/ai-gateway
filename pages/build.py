@@ -66,7 +66,7 @@ shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(OUT)
 shutil.copytree(os.path.join(ROOT, "fonts"), os.path.join(OUT, "fonts"))
 links = [('href="/#', 'href="index.html#'), ('src="/en-admin.js"', 'src="en-admin.js"'), ('src="/en-chat.js"', 'src="en-chat.js"'), ('src="/en-docs.js"', 'src="en-docs.js"'), ('src="/i18n.js"', 'src="i18n.js"'), ('src="/docs.js"', 'src="docs.js"'), ('href="/logo.svg"', 'href="logo.svg"'), ('src="/logo.svg"', 'src="logo.svg"'), ('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="index.html"'), ('href="/docs"', 'href="docs.html"'),
-         ('href="/chat"', 'href="chat.html"'), ('href="/"', 'href="index.html"'), ('src="/ui.js"', 'src="ui.js"'),
+         ('href="/chat"', 'href="chat.html"'), ('action="/chat"', 'action="chat.html"'), ('href="/"', 'href="index.html"'), ('src="/ui.js"', 'src="ui.js"'),
          ('src="/admin.js"', 'src="admin.js"'), ('src="/chat.js"', 'src="chat.js"')]
 for src, dst in (("admin.html", "index.html"), ("admin.html", "admin.html"), ("chat.html", "chat.html"), ("docs.html", "docs.html")):
     html = open(os.path.join(ROOT, src), encoding="utf-8").read()

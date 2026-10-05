@@ -94,7 +94,7 @@ async function start() {
   $("sideFoot").hidden = false;
   $("welcomePick").hidden = true;
   $("input").disabled = $("send").disabled = false;
-  $("welcomeTitle").textContent = "במה אפשר לעזור?";
+  $("welcomeTitle").textContent = `שלום ${me.name.split(" ")[0]}, במה אפשר לעזור?`;
   $("welcomeText").textContent = "השאלות נשמרות ומתועדות. מספרי תעודת זהות, כרטיסי אשראי ומפתחות גישה מוסתרים אוטומטית לפני שהם נשלחים.";
   if (openMode) $("who").value = me.name;
   $("topWho").textContent = me.team ? `${me.name} · צוות ${me.team}` : me.name;
@@ -118,6 +118,7 @@ async function start() {
   }
   loadConvs();
   $("input").focus();
+  autosize();  // a question passed in ?q= was measured while the screen was still hidden
 }
 
 function meter(label, spent, budget) {
@@ -171,6 +172,7 @@ function newChat() {
   renderThread();
   loadConvs();
   $("input").focus();
+  autosize();  // a question passed in ?q= was measured while the screen was still hidden
 }
 
 // light formatting: ``` code blocks, **bold**, `code`; everything inserted as text, never as HTML
@@ -295,6 +297,9 @@ async function send() {
 
 function autosize() { const t = $("input"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 220) + "px"; }
 $("input").addEventListener("input", autosize);
+// "ask" bar on the admin dashboard opens /chat?q=…: put the question in the box (not sent), then drop it from the address
+const asked = new URLSearchParams(location.search).get("q");
+if (asked) { $("input").value = asked; autosize(); history.replaceState(null, "", location.pathname + location.hash); }
 if (matchMedia("(pointer: coarse)").matches) $("input").placeholder = "כתבו הודעה…";  // phones: no keyboard-shortcut hints
 $("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
 $("composer").onsubmit = e => { e.preventDefault(); controller ? controller.abort() : send(); };
