@@ -6,8 +6,9 @@
 <title>צ'אט AI</title>
 <link rel="stylesheet" href="/style.css">
 <style>
-  body { height: 100vh; overflow: hidden; }
-  .wrapper { height: 100vh; }
+  body { height: 100vh; height: 100dvh; overflow: hidden; }
+  .wrapper { height: 100vh; height: 100dvh; }
+  .welcome-pick { min-width: min(280px, 100%); text-align: start; margin-top: .5rem; }
   .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
   .login { width: min(400px, 100%); display: grid; gap: 14px; padding: 2rem; }
   .login .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.15rem; color: var(--ink); }
@@ -104,7 +105,7 @@
 
 <div class="wrapper" id="appView" hidden>
   <nav class="sidebar" id="sidebar" aria-label="שיחות">
-    <a class="sidebar-brand" href="/"><span class="logo">AI</span>צ'אט AI</a>
+    <a class="sidebar-brand" href="/chat"><span class="logo">AI</span>צ'אט AI</a>
     <div class="side-actions">
       <label class="who-pick" id="whoPick" hidden>אני
         <select id="who" aria-label="בחירת השם שלי"></select>
@@ -113,7 +114,7 @@
     </div>
     <div class="sidebar-header" style="padding-top:.5rem">שיחות</div>
     <div class="convs" id="convs"></div>
-    <a class="sidebar-link" href="/admin" style="border-top:1px solid rgba(255,255,255,.08)"><svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><span>ניהול המערכת</span></a>
+    <a class="sidebar-link" href="/" style="border-top:1px solid rgba(255,255,255,.08)"><svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><span>ניהול המערכת</span></a>
     <a class="sidebar-link" href="/docs"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span>עזרה ותיעוד</span></a>
     <div class="side-foot" id="sideFoot">
       <div class="who"><b id="meName"></b><span class="muted small" id="meTeam"></span></div>
@@ -136,6 +137,7 @@
         <div class="stat"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg></div>
         <h2 id="welcomeTitle">במה אפשר לעזור?</h2>
         <p class="muted" id="welcomeText">השאלות נשמרות ומתועדות. מספרי תעודת זהות, כרטיסי אשראי ומפתחות גישה מוסתרים אוטומטית לפני שהם נשלחים.</p>
+        <label class="field welcome-pick" id="welcomePick" hidden>השם שלי<select id="who2"></select></label>
       </div>
       <div class="thread" id="thread"></div>
     </div>

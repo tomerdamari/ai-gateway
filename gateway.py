@@ -5,8 +5,8 @@ when either runs out. Employees log in to the chat page (/) with a password; app
 us with a gateway key. Provider keys never leave this server; gateway keys and passwords are stored only as hashes.
 
 Run:      ANTHROPIC_API_KEY=... OPENAI_API_KEY=... GEMINI_API_KEY=... python gateway.py
-Pages:    /        chat for employees
-          /admin   management (open from the office network; from outside only with ADMIN_PASSWORD)
+Pages:    /        management (open from the office network; from outside only with ADMIN_PASSWORD); also /admin
+          /chat    chat for employees
 Apps:     Anthropic SDK -> base_url http://HOST:8080        (POST /v1/messages)
           OpenAI SDK    -> base_url http://HOST:8080/v1     (POST /v1/chat/completions, also for Gemini models)
 """
@@ -57,7 +57,7 @@ ALLOWED_HOSTS = {h.strip().lower() for h in [os.environ.get("SITE_ADDRESS", ""),
                                              *os.environ.get("ALLOWED_HOSTS", "").split(",")]
                  if h.strip() and not h.strip().startswith(":")}
 HERE = os.path.dirname(os.path.abspath(__file__))
-PAGES = {"/": ("chat.html", "text/html"), "/admin": ("admin.html", "text/html"), "/docs": ("docs.html", "text/html"), "/style.css": ("style.css", "text/css"),
+PAGES = {"/": ("admin.html", "text/html"), "/admin": ("admin.html", "text/html"), "/chat": ("chat.html", "text/html"), "/docs": ("docs.html", "text/html"), "/style.css": ("style.css", "text/css"),
          "/ui.js": ("ui.js", "text/javascript"),
          "/fonts/heebo-hebrew.woff2": ("fonts/heebo-hebrew.woff2", "font/woff2"), "/fonts/heebo-latin.woff2": ("fonts/heebo-latin.woff2", "font/woff2"),
          "/chat.js": ("chat.js", "text/javascript"), "/admin.js": ("admin.js", "text/javascript")}
@@ -1087,7 +1087,7 @@ class Handler(BaseHTTPRequestHandler):
                  ("מפתח API אחד" if open_keys == 1 else f"{open_keys} מפתחות API") + " בלי הגבלת קצב. מפתח שדלף יכול לרוקן תקציב מהר."},
                 {"ok": not OPEN_ACCESS, "text": "כניסה לצ'אט עם סיסמה" if not OPEN_ACCESS else
                  "הצ'אט פתוח בלי סיסמה ברשת המשרד (OPEN_ACCESS): כל אחד יכול לבחור כל שם, להשתמש בתקציב שלו ולראות את השיחות שלו."},
-                {"ok": bool(providers), "text": "ספקים מחוברים: " + ", ".join(providers) if providers else "אין מפתחות ספקים בקובץ .env"},
+                {"ok": bool(providers), "text": "ספקים מחוברים: " + ", ".join(providers) if providers else "אין מפתחות ספקים בקובץ ⁦.env⁩"},
             ]
             return self.reply(200, {"events": events, "counts": counts, "checks": checks, "providers": providers})
         if path == "/admin/api/report":

@@ -63,10 +63,10 @@ data = {"admin": admin, "people": people, "me": me, "conversations": conversatio
 shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(OUT)
 shutil.copytree(os.path.join(ROOT, "fonts"), os.path.join(OUT, "fonts"))
-links = [('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="admin.html"'), ('href="/docs"', 'href="docs.html"'),
-         ('href="/"', 'href="index.html"'), ('src="/ui.js"', 'src="ui.js"'), ('src="/admin.js"', 'src="admin.js"'),
-         ('src="/chat.js"', 'src="chat.js"')]
-for src, dst in (("chat.html", "index.html"), ("admin.html", "admin.html"), ("docs.html", "docs.html")):
+links = [('href="/style.css"', 'href="style.css"'), ('href="/admin"', 'href="index.html"'), ('href="/docs"', 'href="docs.html"'),
+         ('href="/chat"', 'href="chat.html"'), ('href="/"', 'href="index.html"'), ('src="/ui.js"', 'src="ui.js"'),
+         ('src="/admin.js"', 'src="admin.js"'), ('src="/chat.js"', 'src="chat.js"')]
+for src, dst in (("admin.html", "index.html"), ("admin.html", "admin.html"), ("chat.html", "chat.html"), ("docs.html", "docs.html")):
     html = open(os.path.join(ROOT, src), encoding="utf-8").read()
     for a, b in links:
         html = html.replace(a, b)
@@ -75,17 +75,9 @@ for src, dst in (("chat.html", "index.html"), ("admin.html", "admin.html"), ("do
         html = html.replace("</body>", '<script src="mock.js" defer></script>\n</body>').replace('<script src="mock.js" defer>', '<script>window.DEMO={admin:{},people:[],me:{},conversations:{},conversation_items:{}}</script>\n<script src="mock.js" defer>')
     open(os.path.join(OUT, dst), "w", encoding="utf-8").write(html)
 for name in ("ui.js", "admin.js", "chat.js"):
-    js = open(os.path.join(ROOT, name), encoding="utf-8").read().replace('location.href = "/"', 'location.href = "index.html"')
+    js = open(os.path.join(ROOT, name), encoding="utf-8").read().replace('location.href = "/chat"', 'location.href = "chat.html"')
     open(os.path.join(OUT, name), "w", encoding="utf-8").write(js)
 css = open(os.path.join(ROOT, "style.css"), encoding="utf-8").read().replace('url("/fonts/', 'url("fonts/')
-css += """
-/* demo note (static build only) */
-.demo-bar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 60; max-width: calc(100vw - 120px);
-  background: #fff4d6; color: #3d2e00; border: 1px solid #f0d98a; border-radius: 999px; padding: .35rem 1rem; font-size: .78rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, .12); text-align: center; }
-.demo-bar a { color: #1d4d93; font-weight: 600; }
-@media (max-width: 767px) { .demo-bar { top: auto; bottom: 8px; max-width: calc(100vw - 24px); } }
-"""
 open(os.path.join(OUT, "style.css"), "w", encoding="utf-8").write(css)
 shutil.copy(os.path.join(ROOT, "pages", "mock.js"), os.path.join(OUT, "mock.js"))
 with open(os.path.join(OUT, "data.js"), "w", encoding="utf-8") as f:

@@ -170,7 +170,7 @@ const MODEL_ERRORS = {
   "this is the default model; choose another default before turning it off": "זה מודל ברירת המחדל. קודם קובעים ברירת מחדל אחרת, ואז אפשר לכבות אותו",
   "this is the default model; choose another default first": "זה מודל ברירת המחדל. קודם קובעים ברירת מחדל אחרת",
   "backup model must be another existing model": "מודל הגיבוי צריך להיות מודל אחר מהרשימה",
-  "meaning search needs an OpenAI or Google key in .env": "חיפוש לפי משמעות צריך מפתח של OpenAI או Google בקובץ ‎.env",
+  "meaning search needs an OpenAI or Google key in ⁦.env⁩": "חיפוש לפי משמעות צריך מפתח של OpenAI או Google בקובץ ⁦.env⁩",
   "reading PDF needs the pypdf package on the server": "קריאת PDF צריכה את הספרייה pypdf בשרת",
   "MCP server address must start with http:// or https://": "כתובת שרת ה-MCP צריכה להתחיל ב-http:// או https://",
   "choose the MCP tool to call": "צריך לבדוק חיבור ולבחור את כלי החיפוש",
@@ -361,10 +361,10 @@ async function load() {
 
   // getting started: shown until the basics exist
   const steps = [
-    [security.providers.length > 0, "לחבר ספק: להכניס מפתח של Anthropic, ‏OpenAI או Google לקובץ ‎.env ולהפעיל את השער מחדש", null],
+    [security.providers.length > 0, "לחבר ספק: להכניס מפתח של Anthropic, ‏OpenAI או Google לקובץ ⁦.env⁩ ולהפעיל את השער מחדש", null],
     [ov.teams.length > 0, "ליצור צוות עם תקציב חודשי", () => { showTab("teams"); openTeam(null); }],
     [ov.accounts.length > 0, "ליצור משתמש ראשון", () => openAccount(null)],
-    [usage.length > 0, "לשאול שאלה ראשונה במסך הצ'אט", () => { location.href = "/"; }],
+    [usage.length > 0, "לשאול שאלה ראשונה במסך הצ'אט", () => { location.href = "/chat"; }],
   ];
   const doneCount = steps.filter(([ok]) => ok).length;
   $("startCard").hidden = doneCount === steps.length;
@@ -631,7 +631,7 @@ async function testModel(m, btn) {
   try {
     const r = await api("models/test", { name: m.alias });
     UI.toast(r.ok ? `${m.label || m.alias} עונה: החיבור תקין (${r.ms} מילישניות).`
-      : `${m.label || m.alias} לא עונה: ${r.error === "no API key for this provider in .env" ? `אין מפתח של ${PROVIDER_FULL[m.provider]} בקובץ ‎.env` : r.error}`,
+      : `${m.label || m.alias} לא עונה: ${r.error === "no API key for this provider in ⁦.env⁩" ? `אין מפתח של ${PROVIDER_FULL[m.provider]} בקובץ ⁦.env⁩` : r.error}`,
       { kind: r.ok ? "good" : "bad", timeout: r.ok ? 6000 : 12000 });
   } catch (e) { fail(e); }
   finally { btn.classList.remove("busy"); btn.removeAttribute("aria-busy"); }
@@ -835,7 +835,7 @@ function renderModels() {
       textContent: `חיסכון מהמטמון החודש: ${money(modelsData.cache_saved)}` }) : null,
     el("span", { className: "muted small", textContent: "מפתחות ספקים:" }),
     ...Object.entries(providers).map(([p, ok]) => el("span", { className: "badge " + (ok ? "good" : "warn"),
-      title: ok ? "יש מפתח בקובץ ‎.env" : "אין מפתח בקובץ ‎.env: המודלים של הספק הזה לא יעבדו",
+      title: ok ? "יש מפתח בקובץ ⁦.env⁩" : "אין מפתח בקובץ ⁦.env⁩: המודלים של הספק הזה לא יעבדו",
       textContent: `${PROVIDER_FULL[p]}: ${ok ? "מחובר" : "חסר מפתח"}` })));
   $("modelsTable").replaceChildren(...models.map(m => {
     const sw = el("button", { type: "button", className: "switch", role: "switch", ariaChecked: String(m.enabled),

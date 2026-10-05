@@ -84,17 +84,12 @@
     return /\/(admin\/api|api)\//.test(s) ? Promise.resolve(route(s, init)) : realFetch(url, init);
   };
 
-  // a visible note on every page: this is a demo
+  // success notices after a change say that nothing was stored
   addEventListener("DOMContentLoaded", () => {
     if (window.UI) {
       const toast = UI.toast;
       UI.toast = (text, opts = {}) => toast(Date.now() - lastWrite < 5000 && opts.kind !== "bad"
         ? `${text} (בהדגמה: לא נשמר באמת)` : text, { ...opts, action: undefined });
     }
-    const bar = document.createElement("div");
-    bar.className = "demo-bar";
-    bar.innerHTML = 'תצוגת הדגמה: נתוני דוגמה, שינויים לא נשמרים, והצ\'אט עונה תשובה קבועה. ' +
-      '<a href="https://github.com/tomerdamari/ai-gateway">להתקנה אמיתית ב-GitHub</a>';
-    document.body.prepend(bar);
   });
 })();

@@ -202,7 +202,13 @@ pre { white-space: pre-wrap; word-break: break-word; direction: ltr; text-align:
 /* ---------- AdminKit-style frame: side menu + top bar ---------- */
 .wrapper { display: flex; min-height: 100vh; }
 .sidebar { width: 260px; flex: none; background: var(--sidebar); display: flex; flex-direction: column; transition: margin .25s ease-in-out;
-  position: sticky; top: 0; height: 100vh; overflow-y: auto; }  /* stays put while the page scrolls */
+  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; }  /* stays put while the page scrolls */
+/* phone menu: a dimmed backdrop and a close button, so the open menu never traps the screen */
+.side-backdrop { display: none; }
+.side-close { display: none; position: absolute; top: 12px; inset-inline-end: 10px; background: none; border: 0; box-shadow: none;
+  color: #fff; min-height: 0; padding: 8px; }
+.side-close:hover { background: rgba(255, 255, 255, .08); box-shadow: none; }
+.side-close .icon { width: 22px; height: 22px; }
 .sidebar.collapsed { margin-inline-start: -260px; }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 1.15rem 1.5rem; color: #f8f9fa; font-size: 1.15rem; font-weight: 700; }
 .sidebar-brand:hover { text-decoration: none; color: #fff; }
@@ -233,6 +239,8 @@ pre { white-space: pre-wrap; word-break: break-word; direction: ltr; text-align:
 @media (max-width: 991px) {
   .sidebar { position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 10; margin-inline-start: -260px; overflow-y: auto; }
   .sidebar.open { margin-inline-start: 0; box-shadow: 0 0 2rem rgba(0, 0, 0, .3); }
+  .sidebar.open .side-close { display: inline-flex; }
+  .side-backdrop.show { display: block; position: fixed; inset: 0; z-index: 9; background: rgba(0, 0, 0, .45); }
   .sidebar.collapsed { margin-inline-start: -260px; }
   .content { padding: 1.5rem 1rem 1rem; }
   .footer { padding: 1rem; }

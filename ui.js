@@ -61,9 +61,19 @@ const UI = (() => {
   // the side menu on small screens: off-canvas parts must leave the keyboard order while hidden
   function sideMenu(sidebar, toggle) {
     const small = matchMedia("(max-width: 991px)");
+    // on phones the open menu covers the toggle: give it a backdrop and its own close button
+    const backdrop = make("div", { className: "side-backdrop" });
+    const close = make("button", { type: "button", className: "side-close", ariaLabel: "סגירת התפריט" }, xIcon());
+    const shut = () => sidebar.classList.remove("open");
+    backdrop.onclick = shut;
+    close.onclick = shut;
+    sidebar.prepend(close);
+    document.body.append(backdrop);
+    addEventListener("keydown", e => { if (e.key === "Escape" && small.matches) shut(); });
     const sync = () => {
       const open = small.matches ? sidebar.classList.contains("open") : !sidebar.classList.contains("collapsed");
       sidebar.inert = !open;
+      backdrop.classList.toggle("show", small.matches && open);
       toggle.setAttribute("aria-expanded", String(open));
     };
     toggle.addEventListener("click", () => { sidebar.classList.toggle(small.matches ? "open" : "collapsed"); sync(); });

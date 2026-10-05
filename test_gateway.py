@@ -613,13 +613,14 @@ assert json.loads(http_call("/api/config")[1]) == {"open": False}
 gateway.PUBLIC, gateway.OPEN_ACCESS = False, False
 
 # pages: only our own script files may run
-r = urllib.request.urlopen(base + "/")
+r = urllib.request.urlopen(base + "/chat")
 csp = r.headers["content-security-policy"]
 assert "script-src 'self';" in csp and "unsafe-inline" not in csp.split("script-src")[1].split(";")[0]
 assert b"onclick=" not in r.read() and r.headers["referrer-policy"] == "no-referrer"
 assert urllib.request.urlopen(base + "/chat.js").headers["content-type"].startswith("text/javascript")
 
 assert urllib.request.urlopen(base + "/health").status == 200
-assert b"<html" in urllib.request.urlopen(base + "/").read() and b"<html" in urllib.request.urlopen(base + "/admin").read()
+assert "ניהול שער AI" in urllib.request.urlopen(base + "/").read().decode()  # the admin screen is the main page
+assert b"<html" in urllib.request.urlopen(base + "/admin").read() and "צ'אט AI" in urllib.request.urlopen(base + "/chat").read().decode()
 assert "תיעוד שער AI" in urllib.request.urlopen(base + "/docs").read().decode()
 print("ok")

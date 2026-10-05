@@ -42,8 +42,10 @@ async function boot() {
   $("whoPick").hidden = !openMode;
   if (openMode) {
     const people = await call("/api/people");
-    $("who").replaceChildren(el("option", { value: "", textContent: "בחרו את השם שלכם" }),
-      ...people.map(p => el("option", { value: p.name, textContent: p.team ? `${p.name} · ${p.team}` : p.name })));
+    const options = () => [el("option", { value: "", textContent: "בחרו את השם שלכם" }),
+      ...people.map(p => el("option", { value: p.name, textContent: p.team ? `${p.name} · ${p.team}` : p.name }))];
+    $("who").replaceChildren(...options());
+    $("who2").replaceChildren(...options());
     let saved = "";
     try { saved = localStorage.getItem("who") || ""; } catch {}
     const meNow = await fetch("/api/me").then(r => r.ok ? r.json() : null).catch(() => null);
@@ -63,14 +65,16 @@ function showPicker() {
   $("who").value = "";
   $("sideFoot").hidden = true;
   $("welcomeTitle").textContent = "ברוכים הבאים";
-  $("welcomeText").textContent = "בחרו את השם שלכם בתפריט כדי להתחיל. ההוצאה נרשמת על השם והצוות שבחרתם.";
+  $("welcomeText").textContent = "בחרו את השם שלכם כדי להתחיל. ההוצאה נרשמת על השם והצוות שבחרתם.";
+  $("welcomePick").hidden = false;
+  $("who2").value = "";
   $("welcome").hidden = false;
   $("thread").replaceChildren();
   $("input").disabled = $("send").disabled = true;
   $("convs").replaceChildren();
   $("topWho").textContent = "";
-  if (matchMedia("(max-width: 991px)").matches) $("sidebar").classList.add("open");  // the name list lives in the menu
 }
+$("who2").onchange = () => { $("who").value = $("who2").value; $("who").onchange(); };
 $("who").onchange = async () => {
   if (!$("who").value) return;
   await becomeUser($("who").value);
@@ -82,6 +86,7 @@ async function start() {
   try { me = await call("/api/me"); } catch { return; }
   $("loginView").hidden = true; $("appView").hidden = false;
   $("sideFoot").hidden = false;
+  $("welcomePick").hidden = true;
   $("input").disabled = $("send").disabled = false;
   $("welcomeTitle").textContent = "במה אפשר לעזור?";
   $("welcomeText").textContent = "השאלות נשמרות ומתועדות. מספרי תעודת זהות, כרטיסי אשראי ומפתחות גישה מוסתרים אוטומטית לפני שהם נשלחים.";
@@ -274,6 +279,7 @@ async function send() {
 
 function autosize() { const t = $("input"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 220) + "px"; }
 $("input").addEventListener("input", autosize);
+if (matchMedia("(pointer: coarse)").matches) $("input").placeholder = "כתבו הודעה…";  // phones: no keyboard-shortcut hints
 $("input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
 $("composer").onsubmit = e => { e.preventDefault(); controller ? controller.abort() : send(); };
 $("newChat").onclick = newChat;
