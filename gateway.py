@@ -1,7 +1,7 @@
 """AI gateway: every model call in the company goes through here.
 
 Accounts (employees or apps) belong to teams. Each account and each team has a monthly budget; a call is blocked
-when either runs out. Employees log in to the chat page (/) with a password; apps call the provider APIs through
+when either runs out (a budget of 0 means no cap). Employees use the chat page (/chat); apps call the provider APIs through
 us with a gateway key. Provider keys never leave this server; gateway keys and passwords are stored only as hashes.
 
 Run:      ANTHROPIC_API_KEY=... OPENAI_API_KEY=... GEMINI_API_KEY=... python gateway.py
@@ -53,7 +53,7 @@ if os.path.exists(_env):
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip())
 
-VERSION = "1.0.5"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
+VERSION = "1.1.0"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
 DB =os.environ.get("GATEWAY_DB", "gateway.db")
 # Admin from a private-network address (office LAN, this machine) needs no password.
 # From anywhere else: this password, or no access at all when it's empty.
@@ -738,7 +738,7 @@ def authorize(c, acct, alias):
     if alias not in effective_models(c, acct):
         return 403, f"model '{alias}' not allowed for team", "model-not-allowed-team"
     # ponytail: check-then-charge, concurrent requests can overshoot a budget by one request each
-    if acct["spent"] >= acct["budget"]:
+    if acct["budget"] and acct["spent"] >= acct["budget"]:  # 0 = no personal cap, like teams
         return 402, "personal monthly budget exhausted", "budget"
     team = c.execute("select budget, spent from teams where name = ?", (acct["team"],)).fetchone()
     if team and team["budget"] and team["spent"] >= team["budget"]:
@@ -817,7 +817,7 @@ def charge(c, acct, alias, u, request, response, note="", request_id=None):
         c.execute("update teams set spent = spent + ? where name = ?", (cost, acct["team"]))
         log_call(c, acct["name"], acct["team"], real, u, cost, request, response, note, request_id)
         check_spike(c, acct["name"])
-    if acct["spent"] < acct["budget"] * SOFT_LIMIT <= acct["spent"] + cost:
+    if acct["budget"] and acct["spent"] < acct["budget"] * SOFT_LIMIT <= acct["spent"] + cost:
         print(f"WARNING: {acct['name']} passed {SOFT_LIMIT:.0%} of budget (${acct['budget']})", flush=True)
     return cost
 
@@ -1882,11 +1882,19 @@ class Handler(BaseHTTPRequestHandler):
     def admin_ok(self):
         inside = self.inside()
         given = self.headers.get("x-admin-password", "").encode()
-        if inside or (ADMIN_PASSWORD and secrets.compare_digest(given, ADMIN_PASSWORD.encode())):
+        if inside:
+            return True
+        ip = self.client_ip()
+        if given and login_fails(ip) >= LOGIN_IP_LIMIT:  # guessing the admin password counts with wrong chat passwords
+            self.reply(429, {"error": f"too many wrong passwords from this address, try again in {LOGIN_IP_MINUTES} minutes"})
+            return False
+        if ADMIN_PASSWORD and secrets.compare_digest(given, ADMIN_PASSWORD.encode()):
             return True
         if given:  # a wrong password from outside is worth knowing about; a page load without one is not
             with db() as c:
-                self.event(c, "admin-denied", "", {"ip": self.client_ip(), "path": self.path.split("?")[0]})
+                self.event(c, "admin-denied", "", {"ip": ip, "path": self.path.split("?")[0]})
+                if login_fails(ip, add=True) == LOGIN_IP_LIMIT:
+                    self.event(c, "login-throttled", "", {"ip": ip, "minutes": LOGIN_IP_MINUTES})
         self.reply(401, {"error": "admin is open only from the office network" if not ADMIN_PASSWORD else "wrong admin password"})
         return False
 

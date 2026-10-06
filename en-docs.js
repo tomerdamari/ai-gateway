@@ -12,40 +12,48 @@ window.EN_PATTERNS = (window.EN_PATTERNS || []).concat([
 window.EN_HTML = Object.assign(window.EN_HTML || {}, {
   "main.doc h1": `FireGate documentation`,
 
-  "main.doc .lead": `Everything the system can do, organized by screen. Employees will find the chat screen here, managers the whole admin screen, and IT the installation and connecting apps.`,
+  "main.doc .lead": `Everything the system can do, laid out like the admin screen's menu: screen by screen, under the same names. Employees will find the chat screen here, managers the whole admin screen, and IT staff installation, settings and connecting apps.`,
 
   "main.doc .on-page": `
         <h2>On this page</h2>
         <div class="on-page-grid">
-          <div><h3>Getting started</h3><ul>
+          <div><h3>Start here</h3><ul>
             <li><a href="#about">What the gateway is</a></li>
             <li><a href="#install">Install and run</a></li>
           </ul></div>
-          <div><h3>Employees</h3><ul>
-            <li><a href="#chat">Chat screen</a></li>
-          </ul></div>
-          <div><h3>Admin screen</h3><ul>
+          <div><h3>Main</h3><ul>
             <li><a href="#overview">Dashboard</a></li>
+            <li><a href="#todo">To handle</a></li>
             <li class="sub"><a href="#savings">Savings recommendations</a></li>
+          </ul></div>
+          <div><h3>Manage</h3><ul>
             <li><a href="#accounts">Users and keys</a></li>
-            <li><a href="#teams">Teams and budgets</a></li>
-            <li class="sub"><a href="#team-models">Models a team may use</a></li>
+            <li class="sub"><a href="#user-page">User screen</a></li>
             <li><a href="#models">Models</a></li>
-            <li class="sub"><a href="#backup">Backup model</a></li>
-            <li class="sub"><a href="#auto">Automatic selection</a></li>
-            <li class="sub"><a href="#cache">Provider-side cache</a></li>
-            <li class="sub"><a href="#local">Models on the company's own server</a></li>
+            <li class="sub"><a href="#local">Models on the company server</a></li>
             <li class="sub"><a href="#speed">Speed monitoring</a></li>
+            <li class="sub"><a href="#backup">Backup model</a></li>
+            <li class="sub"><a href="#auto">Automatic choice</a></li>
+            <li class="sub"><a href="#cache">Provider-side cache</a></li>
+            <li><a href="#teams">Teams</a></li>
+            <li class="sub"><a href="#team-models">Models a team may use</a></li>
+            <li class="sub"><a href="#cost-center">Cost center</a></li>
             <li><a href="#sources">Knowledge sources</a></li>
             <li class="sub"><a href="#mcp">MCP connections</a></li>
+          </ul></div>
+          <div><h3>Monitor</h3><ul>
             <li><a href="#reports">Reports</a></li>
-            <li class="sub"><a href="#chargeback">Chargeback</a></li>
             <li class="sub"><a href="#summary">Monthly summary by email</a></li>
+            <li class="sub"><a href="#chargeback">Chargeback</a></li>
             <li><a href="#security">Security</a></li>
             <li class="sub"><a href="#policy">Blocking policy</a></li>
             <li class="sub"><a href="#encryption">Encryption and the encryption key</a></li>
-            <li><a href="#logs">Logs</a></li>
+            <li><a href="#logs">Token log</a></li>
+            <li><a href="#audit">Change log</a></li>
             <li><a href="#archive">Archive</a></li>
+          </ul></div>
+          <div><h3>Employees</h3><ul>
+            <li><a href="#chat">Chat screen</a></li>
           </ul></div>
           <div><h3>Technical</h3><ul>
             <li><a href="#hardening">Security checklist</a></li>
@@ -64,11 +72,11 @@ window.EN_HTML = Object.assign(window.EN_HTML || {}, {
         <ol class="flow">
           <li><span><b>Identification:</b> who is asking. An employee is identified when signing in to the chat, an app by the key it was given.</span></li>
           <li><span><b>Permission:</b> whether they are allowed to use this model, and whether the model is turned on.</span></li>
-          <li><span><b>Budget and rate:</b> whether they and their team still have budget left this month, and whether they haven't gone over their requests per minute.</span></li>
-          <li><span><b>Protection:</b> ID numbers, credit cards and keys are hidden. A question that tries to override the model's instructions is blocked. That is the default, and the admin can change it to "log only" in the Security tab.</span></li>
+          <li><span><b>Budget and rate:</b> whether they and their team still have budget left this month, and whether they haven't gone over their requests per minute or their daily token quota.</span></li>
+          <li><span><b>Protection:</b> ID numbers, credit cards and keys are hidden, and a question that tries to override the model's instructions is blocked. That is the default; the admin can choose otherwise in the "Policy" card on the "Security" page (see <a href="#policy">Blocking policy</a>).</span></li>
           <li><span><b>Documents:</b> if the employee asked for it, the gateway searches the company's documents and attaches the relevant passages.</span></li>
           <li><span><b>Sending to the provider:</b> to the chosen model, or to its backup if the provider is unavailable.</span></li>
-          <li><span><b>Logging:</b> who, when, which model, how many tokens, what it cost, and the question and answer themselves.</span></li>
+          <li><span><b>Logging:</b> who, when, which model, how many tokens (the units in which the provider counts text and charges for it; a token is roughly a piece of a word), what it cost, and the question and answer themselves.</span></li>
         </ol>`,
 
   "#install": `
@@ -84,7 +92,7 @@ python gateway.py</pre>
         <p>The gateway reads the <code>.env</code> next to its files and comes up at <code>http://localhost:8080</code>.</p>
         <h3>Sample data and backup</h3>
         <ul>
-          <li><code>python seed_demo.py</code> fills an empty system with sample teams, users, 45 days of usage and knowledge sources.</li>
+          <li><code>python seed_demo.py</code> adds sample data: 10 teams, more than 60 users and apps, 9 models plus one on the company server, 90 days of usage, more than 60 documents, security events, a change log and saved chats. It only adds and never changes anything that exists. The sample users' chat password is the <code>DEMO_PASSWORD</code> setting, or, when that is empty, the password written in the file.</li>
           <li>All data lives in a single file, <code>gateway.db</code>. To copy it while it's running: <code>docker compose exec gateway python -c "import sqlite3; sqlite3.connect('/data/gateway.db').backup(sqlite3.connect('/data/backup.db'))"</code></li>
           <li><code>python test_gateway.py</code> runs all the tests against simulated providers, with no real money spent.</li>
         </ul>`,
@@ -94,111 +102,105 @@ python gateway.py</pre>
         <p>At <code>/chat</code>. The employee asks, and the gateway answers word by word.</p>
         <h3>Signing in</h3>
         <ul>
-          <li><b>Standard:</b> a username and password given by the admin. After 5 wrong passwords the account is locked for 15 minutes. A sign-in lasts 12 hours, and the password can be changed from the menu.</li>
+          <li><b>Standard:</b> a username and password given by the admin. Anyone without an account asks the admin. After 5 wrong passwords the account is locked for 15 minutes. A sign-in lasts 12 hours. At the bottom of the menu are "Change password" (at least 8 characters) and "Sign out".</li>
           <li><b>Open mode</b> (<code>OPEN_ACCESS=1</code>): on the office network there is no sign-in screen. The employee picks their name from the menu, and the browser remembers it. This mode does not work from outside.</li>
         </ul>
         <h3>Choosing a model</h3>
         <ul>
-          <li>The list shows only the models the employee is allowed to use and that are turned on.</li>
+          <li>The list shows only the models allowed to the employee (and their team) that are turned on, under their names, for example Claude Sonnet 5.5. At first "Automatic" is selected, or the default model if automatic choice is off. The browser remembers the last choice.</li>
           <li><b>"Automatic"</b> chooses by itself: a cheap model for short questions, a strong model for code, analysis, comparisons or long text. Next to each answer it says which model answered and why.</li>
           <li>If the chosen model is unavailable and a backup was set for it, the answer notes that the backup model answered.</li>
         </ul>
         <h3>Company documents</h3>
-        <p>Below the message box are the sources the employee's team is allowed to search. Tick the ones to use. When an answer relies on documents, it shows "Based on" with the document names underneath.</p>
+        <p>Below the message box, next to "Search documents:", are the sources the employee's team is allowed to search. Tick the ones to use. When an answer relies on documents, it shows "Based on" with the document names underneath.</p>
         <h3>More</h3>
         <ul>
-          <li>Conversations are saved in a list on the side, and the employee can go back to them or move them to the archive. An archived conversation leaves the list but is not deleted: the "Archive" link at the top of the list shows it, with a restore button. Writing again in an archived conversation brings it back to the list. The copy in the admin log stays either way.</li>
-          <li>At the bottom of the menu: how much of the budget the employee and their team have spent this month, and how much is left.</li>
+          <li>Conversations are saved in a list on the side, and the employee can go back to them or move them to the archive. An archived conversation leaves the list but is not deleted: the "Archive" link at the top of the list shows it, with a restore button. Writing again in an archived conversation brings it back to the list. The copy in the token log stays either way.</li>
+          <li>At the bottom of the menu: "My budget this month" and "Team budget", showing how much of each has been spent. Below the message box it says how much is left, and "budget almost used up" when less than 20% remains.</li>
           <li>An answer that includes a command that could delete data or run code from the internet gets a warning at its end.</li>
           <li>An answer can be stopped midway with the "Stop" button.</li>
+          <li>When the policy sends sensitive data to the model on the company server, the answer says "sensitive data: answered by the local model" (see <a href="#policy">Blocking policy</a>).</li>
+          <li>The chat menu links to "Admin" and "Help &amp; docs", and the "Archive" link turns into "Back to chats" while the archive is open.</li>
         </ul>`,
 
   "#overview": `
         <h2>Dashboard</h2>
-        <p>The gateway's main screen (<code>/</code>, and also <code>/admin</code>). From the office network it opens without a password; from outside only with <code>ADMIN_PASSWORD</code>.</p>
+        <p>The first page of the admin screen, at <code>/</code> (and also <code>/admin</code>). A computer on the office network (that is, with an internal address such as 10.x.x.x or 192.168.x.x) gets in without a password. From outside, the "Sign in from outside" screen asks for the admin password, which is the <code>ADMIN_PASSWORD</code> setting; if it is empty, there is no way in from outside at all. The browser remembers the password only until the tab is closed. With <code>PUBLIC_DEPLOY=1</code> the password is always required, even from the office.</p>
         <ul>
-          <li><b>The "To handle" page</b> (in the menu, under the dashboard) gathers what waits for the admin, and the menu shows the number of open items next to it (savings recommendations included). It has three parts:</li>
-          <li><b>First steps:</b> shown until the system is ready: connecting a provider, a team, a user and a first question, with a button for each step.</li>
-          <li><b>Needs attention:</b> budget overruns (from 80% and from 100%), locked accounts, open security notes, and a provider answering slower than usual (see <a href="#speed">Speed monitoring</a>). When there is nothing, it says "All good".</li>
-          <li><b>Savings recommendations:</b> all of them, each with an action button. See <a href="#savings">Savings recommendations</a>.</li>
-          <li><b>Four numbers:</b> spend this month, forecast for the end of the month, requests, and active users. Each with the percentage change from the previous week or month.</li>
-          <li><b>Charts:</b> daily spend over the last 30 days (hover to see the day), spend split by model, the users who spent the most, and teams against their budget.</li>
+          <li><b>At the top:</b> "Hello, admin" and a "New user" button. The top bar of every screen has "Refresh", which reloads the data, and a button to switch between Hebrew and English.</li>
+          <li><b>Four numbers:</b> "Spent this month" and "Requests this month", each with the percentage change from last week to this week; "Projected for the month" against last month; and "Active users", meaning how many of the accounts asked something this month.</li>
+          <li><b>Savings recommendations:</b> the three biggest recommendations, and how much could be saved per month in total. "See all recommendations" goes to the <a href="#todo">To handle</a> page.</li>
+          <li><b>Daily spend</b> over the last 30 days (hover over a bar to see the day), and <b>spend by model</b> this month.</li>
           <li><b>Cumulative spend this month:</b> a line that rises day by day, against the previous month and against the total of the team budgets, with a dashed line that continues the current pace to the end of the month.</li>
-          <li><b>Budget usage forecast:</b> how many users will finish the month under half of their budget, close to it, or over it. Bars above 100% are colored as a warning.</li>
+          <li><b>Projected budget use:</b> how many users will finish the month, at the current pace, in each range: up to 50% of their budget, 50–75%, 75–100%, 100–125%, 125–150% and over 150%. The normal bars are grey, and only those who will go over budget carry a warning colour. Accounts without a budget aren't counted.</li>
           <li><b>When people ask:</b> a heat map of requests by day of the week and hour over the last four weeks. Helps you see peak hours and plan rate limits.</li>
           <li><b>Monthly spend by team:</b> the last four months, each month split into the five largest teams and "Other".</li>
-        </ul>
-        <h3 id="savings">Savings recommendations</h3>
-        <p>The gateway looks at the last 30 days for places where the same work could cost less. The dashboard shows the three biggest recommendations and the total that could be saved per month; the "To handle" page shows all of them. Three kinds:</p>
-        <ul>
-          <li><b>Short questions to a strong model:</b> a team (or an account without a team) sending short questions, up to 2,000 tokens in and 600 out, to a strong, expensive model. The gateway works out what the same questions would have cost on the same provider's cheap model (automatic choice's cheap model if it's from that provider, otherwise the provider's cheapest model that is on), with the same tokens and the same cache prices, and shows the difference per month. It appears only when the saving is at least $5 a month, and only when the team may use the cheap model. The button opens <a href="#auto">automatic choice</a>, which does exactly this in the chat.</li>
-          <li><b>A team spending almost everything on the expensive model:</b> more than 80% of the team's spend goes to the provider's most expensive model. The recommendation suggests checking the model one step below; this saving can't be worked out in advance, since not all work suits a simpler model.</li>
-          <li><b>A model that is on but unused:</b> on for more than 30 days with no question in the last 30. The button turns it off, after a confirmation. The default model is never listed.</li>
-        </ul>
-        <p>With less than 30 days of usage, the numbers are scaled up to a full month (under a week counts as a week, so one busy day doesn't look like a month).</p>`,
+          <li><b>Top spenders</b> this month (up to 8), with each one's budget status, and <b>teams vs. budget</b>. Clicking a name opens the <a href="#user-page">user screen</a>.</li>
+          <li>The bottom of the admin screen shows the gateway's version number (for example <bdi>v1.0.5</bdi>), so you know which version is installed.</li>
+        </ul>`,
 
   "#accounts": `
         <h2>Users and keys</h2>
-        <p>Every employee, app or customer is an account. Each account has:</p>
+        <p>Every employee, app or customer is an account. "New user" (or "Edit" on an existing row) opens a window with three parts:</p>
         <ul>
-          <li>A <b>team</b>, a <b>monthly budget</b>, <b>allowed models</b> and a <b>requests-per-minute limit</b>.</li>
-          <li>A <b>chat password</b> (optional) and/or an <b>API key</b> for apps. The key is shown only once, when it's created. The gateway keeps only a fingerprint of it (SHA-256): a one-way calculation that can't be turned back into the key. A new key can be issued, or a key revoked, in the edit window.</li>
-          <li><b>Forecast</b>: how much the account will spend by the end of the month at the current pace. <b>Recommended budget</b>: the higher of the forecast and last month, plus 20%.</li>
-          <li>The <b>"Apply"</b> button appears only when the budget needs to go up so the account won't be blocked. Before the change there is a confirmation showing the old and new amounts, and afterwards it can be undone.</li>
+          <li><b>Who:</b> name and team.</li>
+          <li><b>Limits:</b> a monthly budget in dollars, "Requests per minute" and "Tokens per day" (in both, 0 = no limit), and the allowed models, with each one's price. A personal budget of 0 means no personal cap, as for a team. The team's budget still applies.</li>
+          <li><b>Access:</b> a chat password (at least 8 characters; empty = no chat), and an API key for apps (the API is how software talks to the gateway). The key is shown only once, in the "The new key" window. The gateway keeps only a fingerprint of it (<bdi>SHA-256</bdi>): a one-way calculation that can't be turned back into the key. When editing there are "New key" (the old one stops working at once) and "Revoke key". A new password in the edit window also releases a locked account.</li>
+          <li><b>"Key valid until (empty = no expiry date)":</b> an expiry date for the key. Clicking the field opens a month calendar, with a year view and a "Clear" button. The key works until the end of that day. Empty = no expiry date.</li>
+        </ul>
+        <p>In the users table, for each account:</p>
+        <ul>
+          <li><b>Forecast:</b> how much the account will spend by the end of the month at the current pace. <b>Suggested budget:</b> the higher of the forecast and last month's spend, plus 20%, rounded up to $5.</li>
+          <li>The <b>"Apply"</b> button appears when the forecast passes 90% of the budget and the suggested budget is higher, meaning the account is about to be blocked. Before the change there is a confirmation showing the old and new amounts, and afterwards it can be undone. When the budget is 4 or more times the suggestion, it says "Could go down to" and the amount.</li>
           <li><b>Moving to the archive:</b> the account disappears from the lists, its password and key stop working right away, and it is signed out on every device. Its history stays in the log and the reports. Restore it from the <a href="#archive">archive</a>, and the previous password and key work again. A new account can't be created with the name of an archived one: restore it instead.</li>
         </ul>
         <p>You can search by name or team, and sort by name, team, spend or forecast. On a phone each row is shown as a card.</p>
-        <h3 id="user-page">A user's page</h3>
-        <p>Clicking a user's name (in the users list, in the dashboard's top spenders table, in the token log, or "Details" on an alert about them) opens a page with everything they did:</p>
+        <h3 id="user-page">User screen</h3>
+        <p>Clicking a user's name (in the users table, in the dashboard's top spenders table, in the token log, or "Details" on an alert about them) opens a screen with everything they did:</p>
         <ul>
           <li><b>Numbers:</b> spend this month against the budget, the forecast to the end of the month, and requests and tokens this month.</li>
-          <li><b>Charts:</b> daily spend over the last 30 days, and spend by model this month.</li>
-          <li><b>Recent activity:</b> the last 100 requests. Clicking a question opens the question and the answer.</li>
-          <li><b>Security:</b> their security events and their blocked requests. <b>Change history:</b> what was changed on their account and when. <b>Chats:</b> how many saved chats they have, and the titles of the latest ones.</li>
+          <li><b>Charts:</b> "Daily spend" over the last 30 days, and "Spend by model" this month.</li>
+          <li><b>"Recent activity":</b> the last 100 requests. Clicking a question opens the question and the answer.</li>
+          <li><b>"Security":</b> their security events and their blocked requests. <b>"Change history":</b> what was changed on their account and when. <b>"Chats":</b> how many saved chats they have, and the titles of the latest ones.</li>
         </ul>
-        <p>An archived user's page opens too, marked as archived. Each user has their own address (<bdi>#user=</bdi> followed by the name), so refresh and the Back button work. Keys and passwords are never shown on this page in any form.</p>`,
+        <p>An archived user's screen opens too, marked as archived. Each user has their own address (<bdi>#user=</bdi> followed by the name), so refresh and the Back button work, and "Back to users" returns to the table. Keys and passwords are never shown on this screen in any form.</p>`,
 
   "#teams": `
-        <h2>Teams and budgets</h2>
+        <h2>Teams</h2>
         <ul>
-          <li>Each team has a monthly budget. <b>0 = no cap</b> for the team.</li>
-          <li>A question is blocked when the personal budget <b>or</b> the team budget runs out.</li>
+          <li>"New team" opens a window with a name, a monthly team budget (<b>0 = no cap</b>), a <a href="#cost-center">cost center</a> and the <a href="#team-models">models the team may use</a>.</li>
+          <li>A question is blocked when the personal budget <b>or</b> the team budget runs out. When the team budget runs out, every team member is blocked, even those with personal budget left.</li>
           <li>On the 1st of each month spending resets to zero; the history stays in the log.</li>
-          <li>The teams screen shows the forecast, the recommended budget, and the total of the team members' budgets, so you can see whether the team cap fits them.</li>
-          <li><b>Cost center</b> and <b>GL account</b> (optional): they go into the <a href="#chargeback">chargeback</a> file, so accounting knows where to book each team's cost.</li>
+          <li>The teams table shows, for each team, the number of members, spend this month, forecast, suggested budget (with "Apply", as for users), and the total of the members' budgets, so you can see whether the team cap fits them.</li>
           <li><b>Moving to the archive:</b> only for a team with no people in it, so nobody is suddenly left without a team. The team leaves the lists and the choices, and its budget and history are kept. An archived user whose team is archived comes back only after the team does.</li>
         </ul>
         <h3 id="team-models">Models a team may use</h3>
-        <p>When editing a team you can check the models the team may use, for example "the legal team works only with Claude". Nothing checked means the team sets no limit. With models checked:</p>
+        <p>When editing a team, under "Models the team may use", you can check the models the team may use, for example "the legal team works only with Claude". Nothing checked means the team sets no limit. With models checked:</p>
         <ul>
-          <li>Everyone in the team can use only models allowed <b>both</b> to them personally <b>and</b> to the team. A model allowed personally but not by the team is blocked (error 403), and the request is recorded on the "Security" tab with the reason "Model not allowed for the team".</li>
+          <li>Everyone in the team can use only models allowed <b>both</b> to them personally <b>and</b> to the team. A model allowed personally but not by the team is blocked (error 403), and the request is recorded on the "Security" page with the reason "Model not allowed for the team".</li>
           <li>The chat's model list shows only what is really allowed. Automatic choice picks only from those, and a backup model the team may not use is never called: if the provider is down, the question fails instead of moving to another model.</li>
-          <li>In a user's edit window, a checked model the team blocks gets a "Blocked by team policy" label.</li>
-        </ul>`,
+          <li>In a user's edit window, a checked model the team blocks gets a "Blocked by team policy" label. The teams table shows under the team's name how many models it may use.</li>
+        </ul>
+        <h3 id="cost-center">Cost center</h3>
+        <p>When editing a team, under "Chargeback", there are two optional fields of up to 64 characters each: "Cost center" (the department's code in accounting) and "GL account (bookkeeping)" (the expense line the amount is booked to). They show under the team's name in the teams table, and go into the <a href="#chargeback">chargeback</a> table and file, so accounting knows where to book each team's cost.</p>`,
 
   "#models": `
         <h2>Models</h2>
-        <p>All the models the gateway offers are managed from the screen, with no code editing and no restart.</p>
+        <p>All the models the gateway offers are managed from the screen, with no code editing and no restart. A new installation has six models, under their real names: Claude Haiku 4.5 and Claude Sonnet 5.5, GPT-6 Luna and GPT-6.1 Sol, Gemini 3.8 Flash and Gemini 3.1 Pro. The page runs top to bottom: provider status, "Automatic model choice", two charts, "Response speed", the models table and "Local model server".</p>
         <ul>
-          <li><b>Turning on and off:</b> a model that is turned off is blocked for everyone immediately. Before turning it off you see how many accounts are allowed to use it, and afterwards it can be undone.</li>
-          <li><b>Adding and editing:</b> an alias (what apps send), a display name, the provider, the exact name at the provider, and prices per million tokens: input, output, and from the cache.</li>
-          <li><b>Default:</b> the model that is ticked for a new user. It can't be turned off or moved to the archive until another one is set.</li>
-          <li><b>Connection test:</b> sends the provider a short question and shows whether the key and name work, and how long it took.</li>
+          <li><b>Provider status:</b> for each provider, whether it has a key in the <code>.env</code> file (and for the company server: whether an address is saved for it).</li>
+          <li><b>Turning on and off</b> (the "On" column): a model that is turned off is blocked for everyone immediately. Before turning it off you see how many accounts are allowed to use it, and afterwards it can be undone.</li>
+          <li><b>Adding and editing</b> ("New model" or "Edit"): an alias (what apps send in the <code>model</code> field), a display name (what employees see in the chat), the provider, the exact name at the provider, and prices per million tokens: input, output, and from the cache (empty = a tenth of the input price). A display name the admin set is kept across version updates.</li>
+          <li><b>Default:</b> the model ticked for a new user, and the model preselected in the chat when automatic choice is off. It can't be turned off or moved to the archive until another one is set.</li>
+          <li><b>Connection test</b> ("Test"): sends the provider a short question and shows whether the key and name work, and how long it took. The tiny cost is logged under the name "(בדיקת מודל)" (model test) and isn't counted in reports.</li>
           <li><b>Moving to the archive:</b> only when no account is allowed to use the model. An archived model works for no one, not even an app that sends its alias, and it can be restored.</li>
-          <li><b>Charts:</b> daily spend by model, and share of requests against share of spend, to spot a model that is expensive per request.</li>
-          <li>At the top, each provider shows whether it has a key in the <code>.env</code> file (and the company server: whether an address is saved for it).</li>
+          <li><b>Usage and charts:</b> for each model, requests and money this month, and how many users may use it. "Daily spend by model" and "Requests vs. spend" (share of requests against share of spend) help spot a model that is expensive per request.</li>
+          <li>Every change, including the price before and after, is recorded in the change log.</li>
         </ul>
-        <h3 id="backup">Backup model</h3>
-        <p>For each model you can choose a backup model. If the provider is overloaded or not responding (errors 429, 5xx, 529), the question moves to the backup on its own and is charged at the backup's price. The log records that the backup answered, and the models screen shows how many times that happened this month. For apps, the backup only works between models with the same format: Claude with Claude, or GPT with Gemini.</p>
-        <h3 id="auto">Automatic selection</h3>
-        <p>Set a cheap model and a strong model, and turn it on. A long question (over 1,200 characters), code, analysis, comparison, planning, or a long conversation goes to the strong one; everything else to the cheap one. If the matching model isn't allowed for the employee, the other one is chosen. The screen shows how many questions were routed this month.</p>
-        <p><b>"Prefer the fastest suitable model"</b> (off at first): once the cheap or the strong model is picked, the gateway also looks at the models the employee may use whose price (input plus output) is close: at most 2 times more expensive or 2 times cheaper, at any provider. Of those, it picks the one with the lowest median answer time over the last 24 hours. Only models that answered at least 20 times in those 24 hours count; if there are none, the usual choice stays. When a different model is picked for this reason, the employee sees "(the fastest suitable one)" next to the reason.</p>
-        <h3 id="cache">Provider-side cache</h3>
-        <p>In conversations with Claude, the gateway asks the provider to keep the start of the conversation, and on the next turn it is read at about a tenth of the price. OpenAI and Gemini do this on their own. The cost is calculated using each model's cache price, and the monthly savings are shown on the screen.</p>
-        <h3 id="local">Models on the company's own server</h3>
+        <h3 id="local">Models on the company server</h3>
         <p>A model running on the company's own server, with Ollama or vLLM (two programs that run open models such as Llama and Qwen and speak the same language as OpenAI). Questions never leave the company network, and there is no per-token charge.</p>
         <ul>
-          <li><b>Connecting:</b> in the "Local model server" card on the Models page, type the server's address, for example <code>http://ollama:11434/v1</code> or <code>http://10.0.0.5:8000/v1</code>, and save. "Check connection" asks the server which models it has and lists them.</li>
+          <li><b>Connecting:</b> in the "Local model server" card at the bottom of the Models page, type the server's address, for example <code>http://ollama:11434/v1</code> or <code>http://10.0.0.5:8000/v1</code>, and click "Save". "Test connection" asks the server which models it has and lists them.</li>
           <li><b>Adding:</b> every model in the list has "Add model". It joins the model list with the provider "Company server", at price 0 (you can set an internal price under Edit), and from there you allow it for users and teams like any model. You can also create it by hand with "New model" and the provider "Company server".</li>
           <li><b>Use:</b> in the chat, and for apps through <code>/v1/chat/completions</code> (the OpenAI format), streaming included. Token counts come from the server's answer; a server that doesn't return them gets an estimate, about one token for every four characters, and the log says "estimated".</li>
           <li><b>Access key:</b> if the server needs a key, it goes only into the <code>LOCAL_API_KEY</code> server setting. It isn't stored in the database and isn't shown on screen.</li>
@@ -208,11 +210,18 @@ python gateway.py</pre>
         <h3 id="speed">Speed monitoring</h3>
         <p>For every question the gateway records how long the whole answer took, and how soon the first word arrived (in a streamed answer; in a regular answer the two times are the same). The time is measured at the gateway, from sending to the provider until the end of the answer, so it includes the trip over the network. Failed questions are recorded with their error code, including a provider that didn't answer at all (502) or stopped answering midway (504).</p>
         <ul>
-          <li><b>The "Response speed" card</b> on the Models page: a table per model over the last 24 hours or 7 days: median (half the answers are faster), 95% (only 5 in 100 answers are slower), time to first word, number of requests, and error rate. Next to it, a chart of the median by provider for each hour of the last 48.</li>
-          <li><b>Alert:</b> when a model answered at least 10 times in the last hour, and 95% of its answers took more than 2 times the usual (its 95% over the 7 days before that hour), the "To handle" page shows "Provider X is slower than usual", with a link to the Models page, and the model is marked "Slower than usual now" in the table.</li>
+          <li><b>The "Response speed" card</b> on the Models page: a table per model over the last 24 hours or 7 days: "Median" (half the answers are faster), "95%" (only 5 in 100 answers are slower), "Time to first word", "Requests" and "Errors". Next to it, a chart of the median by provider for each hour of the last 48.</li>
+          <li><b>Alert:</b> when a model answered at least 10 times in the last hour, and 95% of its answers took more than 2 times the usual (its 95% over the 7 days before that hour), the "To handle" page shows "Provider X is slower than usual", with "Details" leading to the Models page, and the model is marked "Slower than usual now" in the table.</li>
           <li>Connection tests from the Models page and document indexing aren't counted.</li>
           <li>For scripts: <code>GET /admin/api/latency</code>, with the same admin access as the screen.</li>
-        </ul>`,
+        </ul>
+        <h3 id="backup">Backup model</h3>
+        <p>When editing a model, under "When the provider is down", choose a "Backup model". If the provider is overloaded or not responding (errors 429, 5xx, 529), the question moves to the backup on its own and is charged at the backup's price. The chat notes next to the answer that the backup answered, the log records it, and the models table shows "Backup:" with the model's name and how many times it answered this month. For apps, the backup only works between models with the same format: Claude with Claude, or GPT with Gemini.</p>
+        <h3 id="auto">Automatic choice</h3>
+        <p>In the "Automatic model choice" card, pick a "Cheap model" and a "Strong model", turn on the "On" switch and save. From then on the chat offers "Automatic". A long question (over 1,200 characters), code, analysis, comparison, planning, a contract, a legal matter, "why" or "step by step", and also a long conversation (more than 12 messages or more than 8,000 characters) go to the strong one; everything else to the cheap one. The employee sees next to the answer which model answered and why. If the matching model isn't allowed for the employee, the other one is chosen, and the reason says "(the right model isn't available to you)". The card shows how many questions were routed this month.</p>
+        <p><b>"Prefer the fastest suitable model"</b> (off at first): once the cheap or the strong model is picked, the gateway also looks at the models the employee may use whose price (input plus output) is close: at most 2 times more expensive or 2 times cheaper, at any provider. Of those, it picks the one with the lowest median answer time over the last 24 hours. Only models that answered at least 20 times in those 24 hours count; if there are none, the usual choice stays. When a different model is picked for this reason, the employee sees "(the fastest suitable one)" next to the reason.</p>
+        <h3 id="cache">Provider-side cache</h3>
+        <p>A cache is a copy the provider keeps for a short while. In conversations with Claude, the gateway asks the provider to keep the start of the conversation, and on the next turn it is read at about a tenth of the price. OpenAI and Gemini do this on their own. The cost is calculated using each model's cache price. The top of the Models page shows "Cache savings this month", and the table shows how much each model saved.</p>`,
 
   "#sources": `
         <h2>Knowledge sources</h2>
@@ -234,7 +243,7 @@ python gateway.py</pre>
           <li>The two search methods are merged, and up to 6 passages are sent to the model, marked as "information, not instructions".</li>
         </ul>
         <h3>Protecting the documents</h3>
-        <p>A document with browser code, an attempt to override instructions, or a dangerous command is blocked on upload; an admin can approve it anyway, and the decision is logged. When syncing, such a file is not taken in and shows up in the "Security" tab.</p>
+        <p>A document with browser code, an attempt to override instructions, or a dangerous command is blocked on upload; an admin can approve it anyway, and the decision is logged. When syncing, such a file is not taken in and shows up on the "Security" page.</p>
         <h3 id="mcp">MCP connections</h3>
         <p>MCP is a standard way for systems (a CRM, a wiki, a ticketing system) to expose information to AI. Enter an address and an access key, and "Test connection" shows the server's name, its tools and its documents. Two modes:</p>
         <ul>
@@ -245,27 +254,27 @@ python gateway.py</pre>
 
   "#reports": `
         <h2>Reports</h2>
-        <p>Pick a month and see spend, requests, tokens and number of people, by team (including budget usage), by user, and by model (including tokens from the cache). "Download for Excel" saves a CSV file that opens in Excel with Hebrew displayed correctly.</p>
+        <p>Pick a month in the list at the top of the screen to see summary numbers (spend, requests, tokens, and how many people and apps used it), followed by "By team" (including budget and usage), "By user" and "By model" (including tokens from the cache). "Download for Excel" saves a CSV file (a table in a text file that Excel opens) that opens in Excel with Hebrew displayed correctly. Connection tests from the Models page aren't counted.</p>
+        <h3 id="summary">Monthly summary by email</h3>
+        <p>An email to management on the 1st of every month, after 08:00 (server time), about the month before: total spend against the previous month, the five teams and five users who spent the most, spend by model, the savings total and the three biggest recommendations, security events by kind, how many requests were blocked, and who went over budget. The recommendations are worked out from the 30 days before sending, and the overruns against the budgets set at that moment. The email is in Hebrew, right to left, with a plain-text version for mail readers without HTML.</p>
+        <ul>
+          <li>On the "Monthly summary by email" card on the reports screen: "Recipients" (email addresses separated by commas, up to 50), the "Send automatically on the 1st of every month" switch, "Save", "Preview" and "Send now" (both for the month chosen at the top of the screen), and a line saying whether a mail server is set up.</li>
+          <li>The mail server is set only in the server settings (see <a href="#settings">Server settings</a>). It needs both <code>SMTP_HOST</code> and a sender address (<code>SMTP_FROM</code>, or <code>SMTP_USER</code> when that is empty); without either, nothing is sent. The mail server's password is never stored in the database or sent to the browser; the screen only shows whether one is set up.</li>
+          <li>Each month is sent once. Every sending (manual too) is recorded in the change log, and a month already sent isn't sent again automatically. If sending fails, an event is recorded on the "Security" page and the gateway tries again the next hour, up to 3 times.</li>
+          <li>The preview is shown inside a closed frame without scripts, and people's and teams' names appear as plain text only.</li>
+        </ul>
         <h3 id="chargeback">Chargeback</h3>
-        <p>A table of each team's cost in the chosen month, with its cost center and GL account, for charging each department for its own use. One row per team that used the gateway, a "No team" row for accounts without a team (and the document index cost), and a total row. The amounts match the monthly report.</p>
+        <p>The "Chargeback by team" card: each team's cost in the chosen month, with its <a href="#cost-center">cost center and GL account</a>, for charging each department for its own use. One row per team that used the gateway, a "No team" row for accounts without a team (and the document index cost), and a total row. The amounts match the monthly report.</p>
         <ul>
           <li><b>"Download CSV"</b>: a file for the accounting system. Column names are in English and fixed, so an import only has to be set up once: <code>month, team, cost_center, gl_account, requests, tokens_in, tokens_out, cost_usd</code>. Cost is in dollars with two decimals; the total row is <code>TOTAL</code> and is the sum of the rows. The file is UTF-8 with a mark that makes Excel read Hebrew team names correctly. A cell starting with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> gets a leading apostrophe, so Excel doesn't run it as a formula.</li>
-          <li><b>"Download JSON"</b>: the same data for processing in a program.</li>
+          <li><b>"Download JSON"</b>: the same data in a format programs read, for processing in a program.</li>
           <li>For scripts: <code>GET /admin/api/chargeback?month=2026-09&amp;format=csv</code> (or <code>format=json</code>), with the same admin access as the screen.</li>
-          <li>The earlier "Download for Excel" report stays as it is: a file with headings in the interface language, easy to read.</li>
-        </ul>
-        <h3 id="summary">Monthly summary by email</h3>
-        <p>An email to management on the 1st of every month, after 08:00 (server time), about the month before: total spend against the previous month, the five teams and five users who spent the most, spend by model, the savings total and the three biggest recommendations, security events by kind, how many requests were blocked, and who went over budget. The email is in Hebrew, right to left, with a plain-text version for mail readers without HTML.</p>
-        <ul>
-          <li>On the "Monthly summary by email" card on the reports screen: the recipients' addresses (separated by commas), a switch for automatic sending, "Preview" and "Send now" (for the month chosen at the top of the screen), and a line saying whether a mail server is set up.</li>
-          <li>The mail server is set only in the server settings (see <a href="#settings">Server settings</a>). Its password is never stored in the database or sent to the browser; the screen only shows whether one is set up.</li>
-          <li>Each month is sent once. Every sending (manual too) is recorded in the change log, and a month already sent isn't sent again automatically. If sending fails, an event is recorded on the "Security" tab and the gateway tries again the next hour, up to 3 times.</li>
-          <li>The preview is shown inside a closed frame without scripts, and people's and teams' names appear as plain text only.</li>
+          <li>"Download for Excel" at the top of the screen stays as it is: a file with headings in the interface language, easy to read.</li>
         </ul>`,
 
   "#security": `
         <h2>Security</h2>
-        <p>Every question from an employee or an app goes through the gateway before it reaches the provider, so this is where every question is checked and every record is kept. Below: what the gateway does on its own, what you set in the "Security" tab, and what you must know about encryption. The full list, topic by topic, is in the <a href="#hardening">security checklist</a>.</p>
+        <p>Every question from an employee or an app goes through the gateway before it reaches the provider, so this is where every question is checked and every record is kept. Below: what the gateway does on its own, what you set in the "Security" page, and what you must know about encryption. The full list, topic by topic, is in the <a href="#hardening">security checklist</a>.</p>
         <h3>What the gateway does on its own</h3>
         <ul>
           <li><b>Hiding sensitive data in questions</b>, before they go out to the provider and before they are stored: keys and passwords, Israeli international bank account numbers (IBAN), credit cards (only numbers that pass the check-digit test of a real card), ID numbers (only with a correct check digit), phone numbers (mobile, landline, +972) and email addresses. Bank account and passport numbers are hidden only when a label next to them says what they are, because a bare number is usually something else.</li>
@@ -279,11 +288,11 @@ python gateway.py</pre>
           <li><b>Lockout:</b> 5 wrong passwords lock the account for 15 minutes, and 10 failed sign-ins from one address within 15 minutes block that address.</li>
           <li><b>A change log that can't be altered quietly:</b> each row is "signed" together with the row before it, so changing or deleting a row is detected.</li>
         </ul>
-        <h3>The "Security" tab</h3>
-        <p>Counts for the last 7 days, a "Status check" (encryption, admin password, keys with no rate limit, open mode, connected providers), "Policy", a check that the change log hasn't been altered, "Blocked requests" (the last 200, with the reason and a masked excerpt of the question), and "Security events" (the last 200) that can be filtered by type.</p>
+        <h3>The "Security" page</h3>
+        <p>Counts for the last 7 days, a "Health check" (an encrypted connection with a domain, an outside admin password of at least 16 characters, keys with no rate limit, open mode, connected providers, and where the encryption key is kept), "Policy", "Change log is intact", "Blocked requests" (the last 200, with the reason and a masked excerpt of the question), and "Security events" (the last 200) that can be filtered by type.</p>
 
         <h3 id="policy">Blocking policy</h3>
-        <p>In the "Policy" card of the "Security" tab you choose what happens to a question that was caught. The setting applies to all accounts at once, and every change to it is recorded in the change log.</p>
+        <p>In the "Policy" card of the "Security" page you choose what happens to a question that was caught. The setting applies to all accounts at once, and every change to it is recorded in the change log.</p>
         <table>
           <thead><tr><th>What was caught</th><th>The options</th></tr></thead>
           <tbody>
@@ -291,7 +300,7 @@ python gateway.py</pre>
             <tr><td><b>Sensitive data</b> (ID number, credit card, phone, email, keys and more)</td><td><b>Mask</b> ("Hide the data and send", the default), <b>block</b> ("Block the question"), <b>log only</b> ("Send without hiding and record in the log"), or <b>local model</b> ("Send to the local model").</td></tr>
           </tbody>
         </table>
-        <p><b>"Send to the local model"</b> works only when there is a <a href="#local">model on the company's server</a> that is turned on. A question with sensitive data goes to it unmasked, instead of to the model the employee picked, but only if the employee may use it (the models their team may use included). The employee sees "sensitive data: answered by the local model" in the chat, and the "Security" tab records the event "Sensitive data answered by the local model". If the employee has no local model, the data is masked as usual. The unmasked question never reaches an outside provider: if the local model doesn't answer, its backup is used only if it is on the company server too. The log keeps the masked version of the question. Apps on the Claude format (<code>/v1/messages</code>) can't move to the local model, so for them the data is masked.</p>
+        <p><b>"Send to the local model"</b> works only when there is a <a href="#local">model on the company server</a> that is turned on. A question with sensitive data goes to it unmasked, instead of to the model the employee picked, but only if the employee may use it (the models their team may use included). The employee sees "sensitive data: answered by the local model" in the chat, and the "Security" page records the event "Sensitive data answered by the local model". If the employee has no local model, the data is masked as usual. The unmasked question never reaches an outside provider: if the local model doesn't answer, its backup is used only if it is on the company server too. The log keeps the masked version of the question. Apps on the Claude format (<code>/v1/messages</code>) can't move to the local model, so for them the data is masked.</p>
         <p>A blocked question gets a refusal (code 403), and appears in the "Blocked requests" card with the reason. Questions about code and commands are never blocked, only logged, because employees legitimately ask about them.</p>
 
         <h3 id="encryption">Encryption and the encryption key</h3>
@@ -324,7 +333,7 @@ python gateway.py</pre>
             <tr><td>Encryption at rest</td><td>"At rest" means data while it is stored on disk. Questions, answers, chats, source settings and the excerpts in the security logs are encrypted in the database. The search index is not. See <a href="#encryption">Encryption and the encryption key</a>.</td><td>Back up the encryption key separately from the database. Encrypting the server's whole disk (BitLocker, LUKS, or the cloud provider's disk encryption) adds a layer.</td></tr>
             <tr><td>Keeping secrets out of logs</td><td>Keys, passwords and sensitive numbers are hidden before the question is stored. The lines the server prints contain only the address, time, kind of request, the path without its parameters, the result code and the request number: never content, keys or sign-in cookies.</td><td>—</td></tr>
             <tr><td>Keeping secrets off the screens</td><td>The screens never receive keys, fingerprints of keys or passwords, provider keys or MCP access keys. The automated tests check this on every address a screen reads from.</td><td>—</td></tr>
-            <tr><td>Rotating and revoking keys</td><td>A new key can be issued, or a key revoked, in the edit window, and given an expiry date: the key works until the end of that day and is refused after it (code 401). A new key starts with no expiry date. The dashboard warns when fewer than 14 days are left, or when a key has been in use for more than 90 days.</td><td>Replace a key when the alert appears. Rotate the provider keys from time to time, and immediately if <code>.env</code> may have leaked.</td></tr>
+            <tr><td>Rotating and revoking keys</td><td>A new key can be issued, or a key revoked, in the edit window, and given an expiry date: the key works until the end of that day and is refused after it (code 401). A new key starts with no expiry date. The "To handle" page warns when fewer than 14 days are left, when the key has expired, or when a key has been in use for more than 90 days.</td><td>Replace a key when the alert appears. Rotate the provider keys from time to time, and immediately if <code>.env</code> may have leaked.</td></tr>
 
             <tr class="group"><th colspan="3">4. Gateway and API security</th></tr>
             <tr><td>SQL/NoSQL Injection</td><td>Slipping database commands into text a user sends. The gateway sends the database only fixed queries, with the values passed separately, so text never becomes a command. There is no NoSQL database.</td><td>—</td></tr>
@@ -336,7 +345,7 @@ python gateway.py</pre>
             <tr><td>CORS/CSRF</td><td>Another website making the employee's browser send commands to the gateway. The gateway never allows any other site to read from it (it sends no CORS headers), accepts commands only as JSON, and checks that they came from its own pages (by the Origin and Sec-Fetch-Site headers). It only answers to server names it knows.</td><td>Add every extra name that points at the gateway to <code>ALLOWED_HOSTS</code>.</td></tr>
             <tr><td>Broken Access Control</td><td>Reaching something without permission. An employee sees only their own chats, gets passages only from sources their team may use, and uses only the models allowed to them. An app key doesn't work in the chat. The admin screen from outside requires <code>ADMIN_PASSWORD</code>.</td><td>Set a strong <code>ADMIN_PASSWORD</code>, and turn off <code>OPEN_ACCESS</code> once there are real users.</td></tr>
             <tr><td>Mass Assignment</td><td>Sending extra fields in a request to change something forbidden, such as the spend or the key. Updating an account accepts only a fixed list of fields, and everything else is dropped.</td><td>—</td></tr>
-            <tr><td>API Abuse</td><td>Excessive or unusual use of the gateway. Request size is limited, up to 500 messages per request, answers up to 8,192 tokens, up to 4 questions at once per account, a requests-per-minute limit, a budget and a daily quota. See <a href="#security-settings">Server security settings</a>.</td><td>Give every account a requests-per-minute limit and a budget. "Status check" shows keys with no rate limit.</td></tr>
+            <tr><td>API Abuse</td><td>Excessive or unusual use of the gateway. Request size is limited, up to 500 messages per request, answers up to 8,192 tokens, up to 4 questions at once per account, a requests-per-minute limit, a budget and a daily quota. See <a href="#security-settings">Server security settings</a>.</td><td>Give every account a requests-per-minute limit and a budget. "Health check" shows keys with no rate limit.</td></tr>
 
             <tr class="group"><th colspan="3">5. AI-specific security</th></tr>
             <tr><td>Prompt Injection</td><td>Text that tries to make the model ignore its instructions. The gateway detects such attempts in Hebrew and English, and blocks or logs them according to the policy.</td><td>Choose a <a href="#policy">policy</a>. The default is block.</td></tr>
@@ -358,18 +367,18 @@ python gateway.py</pre>
 
             <tr class="group"><th colspan="3">7. Logging and monitoring</th></tr>
             <tr><td>Who did what, when, and with which model</td><td>Every question is recorded: who, team, when, which model answered, tokens, cost and the request number. Every admin action is recorded in the change log.</td><td>—</td></tr>
-            <tr><td>Preventing changes to or deletion of the change log</td><td>Each row in the change log has a seal calculated partly from the seal of the row before it, like links in a chain. Changing or deleting a row breaks the chain. The "Security" tab shows whether the chain is intact, the dashboard warns if it isn't, and it can also be checked at <code>GET /admin/api/audit/verify</code>.</td><td>Act on the alert at once. The seal isn't secret: someone who holds the database file and knows what they're doing can recalculate the whole chain. So limit access to the server and keep backups elsewhere, for comparison.</td></tr>
+            <tr><td>Preventing changes to or deletion of the change log</td><td>Each row in the change log has a seal calculated partly from the seal of the row before it, like links in a chain. Changing or deleting a row breaks the chain. The "Security" page shows whether the chain is intact, the "To handle" page warns if it isn't, and it can also be checked at <code>GET /admin/api/audit/verify</code>.</td><td>Act on the alert at once. The seal isn't secret: someone who holds the database file and knows what they're doing can recalculate the whole chain. So limit access to the server and keep backups elsewhere, for comparison.</td></tr>
             <tr><td>Keeping sensitive data out of logs</td><td>Hiding before storing, encrypting what is stored, and server lines without content.</td><td>—</td></tr>
             <tr><td>Tracking admin actions</td><td>The change log: creating, updating, archiving and restoring accounts, teams, models, sources and documents, and policy changes, including the before and after values.</td><td>—</td></tr>
             <tr><td>End-to-end request tracing</td><td>Every request gets an ID number, returned to the app in the <code>x-request-id</code> header and stored in the token log and the blocked-requests log. An app can send its own number; it is kept only if it is up to 64 characters of English letters, digits, dot, underscore and hyphen.</td><td>Store the number in the app's own logs too, to find a request on both sides.</td></tr>
 
             <tr class="group"><th colspan="3">8. Rate limiting and abuse</th></tr>
-            <tr><td>Brute Force</td><td>Guessing passwords by force. 5 wrong passwords lock the account for 15 minutes. 10 failed sign-ins from one address within 15 minutes, for any names, block that address (code 429). The response time is the same even for a username that doesn't exist.</td><td>—</td></tr>
+            <tr><td>Brute Force</td><td>Guessing passwords by force. 5 wrong passwords lock the account for 15 minutes. 10 failed sign-ins from one address within 15 minutes, for any names, block that address (code 429). The response time is the same even for a username that doesn't exist. Wrong guesses of the admin password from outside count toward this limit too, and every wrong attempt is recorded as a security event.</td><td>Give the admin password at least 16 characters ("Health check" warns about a shorter one).</td></tr>
             <tr><td>Token Abuse</td><td>Using a stolen key, or using a key excessively. A key can be revoked at once and given an expiry date, and an account can be given a daily token quota (0 = no quota).</td><td>Give apps an expiry date and a daily quota.</td></tr>
             <tr><td>Account Takeover</td><td>Taking over someone else's account. Lockout after wrong passwords; a sign-in lasts 12 hours, in a cookie that code on the page can't read; changing the password signs out every device.</td><td>Give each employee their own password, and turn off <code>OPEN_ACCESS</code> once there are real users.</td></tr>
             <tr><td>Request Flooding</td><td>Flooding with requests. A requests-per-minute limit per account, up to 4 questions at once (beyond that, code 429), and limited request size.</td><td>Give every account a requests-per-minute limit.</td></tr>
             <tr><td>Token/Quota Exhaustion</td><td>One or more questions that use up the quota. Answers are limited to 8,192 tokens, up to 500 messages per request, and a daily quota and budget per account.</td><td>—</td></tr>
-            <tr><td>Cost Abuse</td><td>A personal monthly budget and a team budget: an alert at 80%, blocking at 100%. Cost spike: if an account spent more than $5 in the last hour and also more than 5 times its average hour over the week before, an event is recorded and an alert appears on the dashboard, once a day per account.</td><td>Also set a spending limit with each provider.</td></tr>
+            <tr><td>Cost Abuse</td><td>A personal monthly budget and a team budget: an alert at 80%, blocking at 100%. Cost spike: if an account spent more than $5 in the last hour and also more than 5 times its average hour over the week before, an event is recorded and an alert appears on the "To handle" page, with a link to that user's screen, once a day per account.</td><td>Also set a spending limit with each provider.</td></tr>
 
             <tr class="group"><th colspan="3">9. Infrastructure security</th></tr>
             <tr><td>TLS 1.2/1.3</td><td>Encrypting the connection between the browser and the server. Caddy, the front door installed together with the gateway, gets a certificate automatically and accepts only TLS 1.2 and 1.3. It adds a header telling the browser to use only an encrypted connection for a year (HSTS), plus other protective headers, and hides the server type.</td><td>Set <code>SITE_ADDRESS</code> to a domain. Without a domain there is no encryption.</td></tr>
@@ -420,7 +429,7 @@ python gateway.py</pre>
           <li><code>SITE_ADDRESS</code> holds a domain, so the connection is encrypted. <code>:80</code> (no encryption) is only for a closed office network.</li>
           <li>If a load balancer or CDN sits in front of Caddy: <code>PUBLIC_DEPLOY=1</code>.</li>
           <li>Everything the gateway writes is in <code>/data</code>: the database, the key file and the backups. Back it up encrypted, and keep the key separately.</li>
-          <li>The server goes out to the internet only to the AI providers (<code>api.anthropic.com</code>, <code>api.openai.com</code>, <code>generativelanguage.googleapis.com</code>) and the company's MCP servers. Everything else is blocked.</li>
+          <li>The server goes out to the internet only to the AI providers (<code>api.anthropic.com</code>, <code>api.openai.com</code>, <code>generativelanguage.googleapis.com</code>), the company's MCP servers and model server, and the monthly summary's mail server if one is set. Everything else is blocked.</li>
           <li>Rotate the provider keys from time to time, and give each one a spending limit at the provider.</li>
           <li>Updating: <code>docker compose build --pull &amp;&amp; docker compose up -d</code></li>
           <li>On every code change, automated checks run on GitHub: the gateway's tests, a search for known vulnerabilities in the packages (pip-audit), a search for leaked keys across the whole code history (gitleaks), a container scan (Trivy), and a list of everything in the container (SBOM).</li>
@@ -429,11 +438,8 @@ python gateway.py</pre>
         </ul>`,
 
   "#logs": `
-        <h2>Logs</h2>
-        <ul>
-          <li><b>Token log:</b> the last 200 questions with who, team, model, tokens, cost, and the full question and answer. Filter by name, team or model. All questions are kept in the database.</li>
-          <li><b>Change log:</b> every admin action: creating, updating, archiving and restoring accounts, teams, models, sources and documents, including the before and after values for budget and price changes. An employee moving one of their chats to the archive, or restoring it, is recorded here too.</li>
-        </ul>`,
+        <h2>Token log</h2>
+        <p>The last 200 questions: "When", "Who", "Team", "Model", "Tokens in", "Tokens out" and "Cost". "Question and answer" opens the full question and answer. You can filter by name, team or model, and clicking a name opens the <a href="#user-page">user screen</a>. All questions are kept in the database, including those not shown here, and they count in the reports and on the user screen.</p>`,
 
   "#archive": `
         <h2>Archive</h2>
@@ -456,35 +462,45 @@ client.messages.create(model="smart", max_tokens=1000, messages=[...])
 client = openai.OpenAI(base_url="http://&lt;your-server&gt;/v1", api_key="gw-...")
 client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
         <ul>
-          <li>Claude through <code>/v1/messages</code>; GPT, Gemini and <a href="#local">models on the company's server</a> through <code>/v1/chat/completions</code>.</li>
-          <li>Streamed answers (<code>stream</code>) are supported, and tokens are counted for them too.</li>
-          <li>The <code>x-gateway-model</code> header in the response says which model actually answered (different from the one requested if the backup answered).</li>
-          <li>Errors: 401 invalid key, 402 budget used up, 403 model not allowed or turned off, 429 too many requests, 502 provider unavailable.</li>
+          <li>In the <code>model</code> field, send the model's alias. In a new installation: <code>fast</code> (Claude Haiku 4.5), <code>smart</code> (Claude Sonnet 5.5), <code>gpt-fast</code> (GPT-6 Luna), <code>gpt-smart</code> (GPT-6.1 Sol), <code>gemini-fast</code> (Gemini 3.8 Flash) and <code>gemini-smart</code> (Gemini 3.1 Pro). The current list is on the <a href="#models">Models page</a>.</li>
+          <li>Claude through <code>/v1/messages</code>; GPT, Gemini and <a href="#local">models on the company server</a> through <code>/v1/chat/completions</code>.</li>
+          <li>Streamed answers (<code>stream</code>, meaning the answer arrives in pieces as it is written) are supported, and tokens are counted for them too.</li>
+          <li>The <code>x-gateway-model</code> header in the response says which model actually answered (different from the one requested if the backup answered). The <code>x-request-id</code> header returns the request number, which is also stored in the token log.</li>
+          <li>Errors: 400 invalid request (for example a Claude model through <code>/v1/chat/completions</code>, or more than 500 messages); 401 invalid or expired key; 402 the personal or team budget is used up; 403 model not allowed, turned off or not allowed for the team, or a question blocked by the policy; 413 request too large; 429 too many requests per minute, the daily token quota is used up, or more than 4 questions at once; 502 provider unavailable or didn't answer in time. An error the provider itself returned is passed on to the app as it is, if the backup didn't help either.</li>
           <li>When the policy is "Send to the local model", a question with sensitive data is answered by the local model even if the app asked for another one; <code>x-gateway-model</code> shows it.</li>
+          <li><b>Admin addresses for scripts</b> (everything starting with <code>/admin/api/</code>, such as the chargeback report or the archive list): open from the office network. From outside, send the admin password in the <code>x-admin-password</code> header. An app key doesn't open them.</li>
         </ul>`,
 
   "#settings": `
         <h2>Server settings</h2>
-        <p>In the <code>.env</code> file:</p>
+        <p>In the <code>.env</code> file next to the gateway's files (or as the server's environment variables, which win over the file). Restart the gateway after a change. For on/off settings, <code>1</code>, <code>true</code>, <code>yes</code> or <code>on</code> turn it on; anything else turns it off.</p>
         <table>
-          <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+          <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
           <tbody>
-            <tr><td><code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code></td><td>The provider keys. A provider without a key simply won't work.</td></tr>
-            <tr><td><code>LOCAL_API_KEY</code></td><td>A key for the company's model server (Ollama or vLLM), if it needs one. Optional. The server's address is set on the Models page. See <a href="#local">Models on the company's own server</a>.</td></tr>
-            <tr><td><code>ALLOW_LOCAL_LOOPBACK</code></td><td><code>1</code> = the company's model server may be the gateway's own machine.</td></tr>
-            <tr><td><code>ADMIN_PASSWORD</code></td><td>Password for the admin screen from outside. Empty = completely closed from outside.</td></tr>
-            <tr><td><code>SITE_ADDRESS</code></td><td>Domain for an automatically encrypted connection.</td></tr>
-            <tr><td><code>ALLOWED_HOSTS</code></td><td>Extra server names the gateway will answer to, separated by commas.</td></tr>
-            <tr><td><code>OPEN_ACCESS</code></td><td><code>1</code> = chat without signing in on the office network.</td></tr>
-            <tr><td><code>EMBEDDINGS</code></td><td>Provider for search by meaning: <code>openai</code>, <code>gemini</code> or <code>off</code>. Default: the first one that has a key.</td></tr>
-            <tr><td><code>PORT</code>, <code>GATEWAY_DB</code></td><td>The server port (8080) and the location of the data file.</td></tr>
-            <tr><td><code>SMTP_HOST</code>, <code>SMTP_PORT</code></td><td>The mail server that sends the <a href="#summary">monthly summary</a>, and its port (default 587). Without <code>SMTP_HOST</code> no summary is sent.</td></tr>
-            <tr><td><code>SMTP_USER</code>, <code>SMTP_PASSWORD</code></td><td>User name and password for the mail server, if it needs them. The password stays in the server settings only.</td></tr>
-            <tr><td><code>SMTP_FROM</code></td><td>The address the email is sent from. Empty = <code>SMTP_USER</code>.</td></tr>
-            <tr><td><code>SMTP_TLS</code></td><td><code>1</code> (default) = encryption after connecting (STARTTLS, port 587); <code>ssl</code> = encrypted from the start (port 465); <code>0</code> = no encryption, only for a mail server inside the network.</td></tr>
+            <tr><td><code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code></td><td>Empty</td><td>The provider keys. A provider without a key simply won't work.</td></tr>
+            <tr><td><code>LOCAL_API_KEY</code></td><td>Empty</td><td>A key for the company's model server (Ollama or vLLM), if it needs one. The server's address is set on the Models page. See <a href="#local">Models on the company server</a>.</td></tr>
+            <tr><td><code>ALLOW_LOCAL_LOOPBACK</code></td><td>Off</td><td><code>1</code> = the company's model server may be the gateway's own machine.</td></tr>
+            <tr><td><code>ADMIN_PASSWORD</code></td><td>Empty</td><td>Password for the admin screen from outside. Empty = completely closed from outside. At least 16 characters is recommended.</td></tr>
+            <tr><td><code>SITE_ADDRESS</code></td><td>Empty (with Docker: <code>:80</code>, unencrypted)</td><td>Domain for an automatically encrypted connection. The gateway answers to this name.</td></tr>
+            <tr><td><code>ALLOWED_HOSTS</code></td><td>Empty</td><td>Extra server names the gateway will answer to, separated by commas.</td></tr>
+            <tr><td><code>OPEN_ACCESS</code></td><td>Off</td><td><code>1</code> = chat without signing in on the office network.</td></tr>
+            <tr><td><code>PUBLIC_DEPLOY</code></td><td>Off</td><td><code>1</code> = the admin screen always asks for the password, and open mode is off. See <a href="#security-settings">Server security settings</a>.</td></tr>
+            <tr><td><code>EMBEDDINGS</code></td><td>The first one with a key: OpenAI, then Google</td><td>The provider for search by meaning: <code>openai</code>, <code>gemini</code> or <code>off</code>.</td></tr>
+            <tr><td><code>OPENAI_EMBED_MODEL</code>, <code>GEMINI_EMBED_MODEL</code></td><td><code>text-embedding-3-small</code>, <code>gemini-embedding-001</code></td><td>The model that works out the documents' "meaning fingerprints", at each provider.</td></tr>
+            <tr><td><code>PORT</code></td><td><code>8080</code></td><td>The port the gateway listens on.</td></tr>
+            <tr><td><code>GATEWAY_DB</code></td><td><code>gateway.db</code> in the folder it is started from (with Docker: <code>/data/gateway.db</code>)</td><td>Where the data file lives. The encryption key file and the backups are kept next to it.</td></tr>
+            <tr><td><code>SMTP_HOST</code></td><td>Empty</td><td>The mail server that sends the <a href="#summary">monthly summary</a>. Empty = no summary is sent.</td></tr>
+            <tr><td><code>SMTP_PORT</code></td><td><code>587</code></td><td>The mail server's port.</td></tr>
+            <tr><td><code>SMTP_USER</code>, <code>SMTP_PASSWORD</code></td><td>Empty</td><td>User name and password for the mail server, if it needs them. The password stays in the server settings only.</td></tr>
+            <tr><td><code>SMTP_FROM</code></td><td>Empty = <code>SMTP_USER</code></td><td>The address the email is sent from. If both it and <code>SMTP_USER</code> are empty, no email is sent.</td></tr>
+            <tr><td><code>SMTP_TLS</code></td><td><code>1</code></td><td><code>1</code> = encryption after connecting (STARTTLS, port 587); <code>ssl</code> = encrypted from the start (port 465); <code>0</code> = no encryption, only for a mail server inside the network.</td></tr>
+            <tr><td><code>ANTHROPIC_URL</code>, <code>OPENAI_URL</code>, <code>GEMINI_URL</code></td><td>The providers' official addresses</td><td>Where the gateway sends questions. Change them only for testing, or when the company routes traffic through its own intermediate server.</td></tr>
+            <tr><td><code>SEED_DEMO</code></td><td>Off</td><td><code>1</code> = on every start, fill an empty system with sample data. Meant for a demo on a server whose disk resets (such as Render's free plan).</td></tr>
+            <tr><td><code>DEMO_PASSWORD</code>, <code>SEED_SOURCES_DIR</code></td><td>The password written in <code>seed_demo.py</code>; the <code>sources/it</code> folder next to the project</td><td>For sample data only: the chat password of the sample users, and the folder the sample documents are read from.</td></tr>
+            <tr><td><code>RENDER_EXTERNAL_HOSTNAME</code></td><td>Set by Render on its own</td><td>The server's name on Render. The gateway adds it to the names it answers to. No need to set it.</td></tr>
           </tbody>
         </table>
-        <p>The security settings (the encryption key, size and rate limits, <code>PUBLIC_DEPLOY</code> and more) are listed in <a href="#security-settings">Server security settings</a>.</p>`,
+        <p>The security settings (the encryption key, size and rate limits, <code>TRUSTED_PROXIES</code>, <code>SOURCE_ROOTS</code>, <code>ALLOW_PRIVATE_MCP</code> and more) are listed in <a href="#security-settings">Server security settings</a>.</p>`,
 
   "#limits": `
         <h2>Known limitations</h2>
@@ -495,9 +511,43 @@ client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
           <li>Nothing is ever deleted: whatever leaves use moves to the <a href="#archive">archive</a> and stays in the database. If something truly has to be deleted (for example by law), there is no button for it.</li>
           <li>A scanned PDF (an image with no text) can't be read.</li>
           <li>The requests-per-minute limit is kept in memory and resets when the gateway restarts.</li>
+          <li>The admin password from outside is shared by all admins. Wrong guesses count together with chat passwords: 10 failures from one address within 15 minutes block that address. A long password, at least 16 characters, is still advised.</li>
           <li>Alerts appear only on the admin screen; there are no alerts by email, Teams or Slack yet. Only the <a href="#summary">monthly summary</a> goes out by email.</li>
+          <li>The monthly summary assumes a single gateway is running. If several copies of the gateway run on the same database, the same month may be sent twice.</li>
           <li>Savings recommendations are an estimate: they assume the same short questions would work well on the cheap model, and don't check answer quality.</li>
-          <li>Speed monitoring starts with this version: questions from before it have no times. Answer time includes the network trip to the provider, and a long answer naturally takes longer, so comparing models is fair only when they answer similar work.</li>
-          <li>A local model server that returns no token counts gets an estimate (about one token for every four characters), so the daily token limit is approximate for it.</li>
+          <li>Questions from before speed monitoring was added have no times. Answer time includes the network trip to the provider, and a long answer naturally takes longer, so comparing models is fair only when they answer similar work.</li>
+          <li>A local model server that returns no token counts gets an estimate (about one token for every four characters), so the daily token quota is approximate for it.</li>
         </ul>`,
+
+  "#todo": `
+        <h2>To handle</h2>
+        <p>The page that gathers everything waiting for the admin. Next to "To handle" in the menu is the number of open items: steps not yet done, alerts and savings recommendations. It has three parts:</p>
+        <ul>
+          <li><b>Getting started:</b> shown until the system is ready, with four steps: connect a provider (put a key in the <code>.env</code> file and restart the gateway), create a team, create a first user, and ask a first question in the chat. A step not yet done has a "Do it" button.</li>
+          <li><b>Needs attention:</b> everything that needs a look, most serious first. Each item has "Details", which leads to the user's screen or the relevant page. When there is nothing, it says "All good". What shows up here:
+            <ul>
+              <li>A user or team past 80% of their budget, or whose budget has run out. They are then blocked until the 1st of the month or until the budget is raised.</li>
+              <li>An account locked after 5 wrong passwords. A new password in the edit window releases it.</li>
+              <li>An app key that has expired, will expire within 14 days, or has been in use for more than 90 days.</li>
+              <li>Unusual spend by an account in the last hour: more than $5 and also more than 5 times its usual hour.</li>
+              <li>Change-log rows that were altered or deleted outside the system.</li>
+              <li>A provider answering slower than usual (see <a href="#speed">Speed monitoring</a>).</li>
+              <li>Any check that failed in "Health check" on the <a href="#security">Security</a> page, for example an unencrypted connection or keys without a rate limit.</li>
+            </ul>
+          </li>
+          <li><b>Savings recommendations:</b> all of them, each with an action button. This part appears only when there are recommendations.</li>
+        </ul>
+        <h3 id="savings">Savings recommendations</h3>
+        <p>The gateway looks at the last 30 days for places where the same work could cost less. The dashboard shows the three biggest recommendations and the total that could be saved per month; the "To handle" page shows all of them. Three kinds:</p>
+        <ul>
+          <li><b>Short questions to a strong model:</b> a team (or an account without a team) sending short questions, up to 2,000 tokens in and 600 out, to a strong, expensive model. A model counts as strong if it is automatic choice's strong model, or costs at least 2 times the cheap model. The gateway works out what the same questions would have cost on the same provider's cheap model (automatic choice's cheap model if it's from that provider, otherwise the provider's cheapest model that is on), with the same tokens and the same cache prices, and shows the difference per month. It appears only when the saving is at least $5 a month, and only when the team may use the cheap model. The button ("Turn on automatic choice", or "Automatic choice settings" if it is already on) opens <a href="#auto">automatic choice</a>, which does exactly this in the chat.</li>
+          <li><b>A team spending almost everything on the expensive model:</b> more than 80% of the team's spend goes to the provider's most expensive model, and the total is at least $5 a month. The recommendation suggests checking the model one step below (one the team may use); this saving can't be worked out in advance, since not all work suits a simpler model.</li>
+          <li><b>A model that is on but unused:</b> on for more than 30 days with no question in the last 30. The "Turn the model off" button turns it off, after a confirmation. The default model is never listed.</li>
+        </ul>
+        <p>With less than 30 days of usage, the numbers are scaled up to a full month (under a week counts as a week, so one busy day doesn't look like a month). Connection tests, document indexing, and archived users and teams aren't counted.</p>`,
+
+  "#audit": `
+        <h2>Change log</h2>
+        <p>Every admin action, with "When", "Action" and "Details": creating, updating, archiving and restoring accounts, teams, models, sources and documents; issuing and revoking keys; uploading documents and syncing a folder; the default model, automatic choice and the local model server's address; security policy changes; and the monthly summary's settings and sending. Budget and price changes show the value before and after. An employee moving one of their chats to the archive, or restoring it, is recorded here too.</p>
+        <p>There is no way to delete a row from the log. Each row is "signed" together with the row before it, so changing or deleting a row outside the system is detected: the "Change log is intact" card on the <a href="#security">Security</a> page shows whether everything is intact, and the "To handle" page warns if it isn't.</p>`,
 });

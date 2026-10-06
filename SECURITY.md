@@ -24,6 +24,9 @@ to the current `main` (and rebuild the image) to get security fixes.
 - **Behind another load balancer** (cloud load balancer, CDN, a second proxy): every visitor then
   arrives from that balancer's private address. Set `PUBLIC_DEPLOY=1`, so "private address" no
   longer means "inside the office" and the admin page always asks for `ADMIN_PASSWORD`.
+- **Admin password.** `ADMIN_PASSWORD` opens the admin page from outside the office network (empty =
+  closed from outside). Use at least 16 characters: wrong attempts are recorded as security events but
+  do not lock it, and the admin page's health check warns about a shorter one.
 - **Open access** (`OPEN_ACCESS=1`) lets anyone inside pick any name. Turn it off once real users
   exist.
 - **Backups.** Everything the gateway writes is in the data volume (`/data`: database, its
@@ -37,8 +40,9 @@ to the current `main` (and rebuild the image) to get security fixes.
 - **Cloud permissions.** The server's cloud identity needs no rights beyond running itself: no
   storage-wide, IAM or billing permissions.
 - **Network segmentation.** The gateway needs outbound access only to the AI providers
-  (`api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`) and to the company MCP
-  servers it is configured to use. Block everything else outbound at the firewall, and keep it off
+  (`api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`), the company MCP
+  servers and local model server (Ollama / vLLM) it is configured to use, and the mail server for the
+  monthly summary (`SMTP_HOST`), if set. Block everything else outbound at the firewall, and keep it off
   networks it has no reason to reach.
 - **Updates.** Rebuild the image regularly (`docker compose build --pull && docker compose up -d`):
   base image and Python packages are pinned by digest and hash, and Dependabot proposes updates.

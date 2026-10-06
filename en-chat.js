@@ -17,8 +17,8 @@ window.EN = Object.assign(window.EN || {}, {
   "יציאה": "Sign out",
   "הצגה או הסתרה של התפריט": "Show or hide the menu",
   "במה אפשר לעזור?": "How can I help?",
-  "השאלות נשמרות ומתועדות. מספרי תעודת זהות, כרטיסי אשראי ומפתחות גישה מוסתרים אוטומטית לפני שהם נשלחים.":
-    "Questions are saved and logged. ID numbers, credit cards and access keys are hidden automatically before they are sent.",
+  "השאלות נשמרות ומתועדות. מידע רגיש, כמו מספרי תעודת זהות, כרטיסי אשראי ומפתחות גישה, מטופל לפי מדיניות האבטחה של החברה.":
+    "Questions are saved and logged. Sensitive data, such as ID numbers, credit cards and access keys, is handled according to the company's security policy.",
   "השם שלי": "My name",
   "ההודעה שלך": "Your message",
   "כתבו הודעה… (Enter לשליחה, Shift+Enter לשורה חדשה)": "Write a message… (Enter to send, Shift+Enter for a new line)",

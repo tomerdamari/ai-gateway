@@ -94,7 +94,7 @@ async function start() {
   $("welcomePick").hidden = true;
   $("input").disabled = $("send").disabled = false;
   $("welcomeTitle").textContent = `שלום ${me.name.split(" ")[0]}, במה אפשר לעזור?`;
-  $("welcomeText").textContent = "השאלות נשמרות ומתועדות. מספרי תעודת זהות, כרטיסי אשראי ומפתחות גישה מוסתרים אוטומטית לפני שהם נשלחים.";
+  $("welcomeText").textContent = "השאלות נשמרות ומתועדות. מידע רגיש, כמו מספרי תעודת זהות, כרטיסי אשראי ומפתחות גישה, מטופל לפי מדיניות האבטחה של החברה.";
   if (openMode) $("who").value = me.name;
   $("topWho").textContent = me.team ? `${me.name} · צוות ${me.team}` : me.name;
   renderThread();

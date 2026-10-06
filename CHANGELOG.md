@@ -1,5 +1,37 @@
 # שינויים / Changelog
 
+## 1.1.0 — 2026-10-06
+
+**חדש**
+- המלצות לחיסכון: שאלות קצרות שנשלחות למודל יקר, צוות שמוציא כמעט הכל על המודל היקר ביותר, ומודל פעיל שאף אחד לא משתמש בו. בלוח הבקרה ובדף "לטיפול", עם כפתור פעולה לכל המלצה.
+- סיכום חודשי במייל להנהלה: הוצאה מול החודש הקודם, צוותים ומשתמשים מובילים, הוצאה לפי מודל, חיסכון אפשרי ואירועי אבטחה. נשלח ב-1 לחודש, עם תצוגה מקדימה ושליחה ידנית בדף הדוחות. צריך להגדיר שרת דואר (SMTP_*).
+- חיוב פנימי: מרכז עלות וחשבון הנהלת חשבונות לכל צוות, וקובץ חודשי (CSV או JSON) לייבוא להנהלת החשבונות.
+- מודלים מותרים לצוות: עובד יכול להשתמש רק במודל שמותר גם לו וגם לצוות שלו, בכל מקום במערכת.
+- מודלים בשרת החברה (Ollama או vLLM): חיבור, בדיקה והוספה של מודלים בדף המודלים, ומדיניות חדשה שבה שאלה עם מידע רגיש נענית במודל המקומי ולא יוצאת מהחברה.
+- מעקב מהירות: זמן עד המילה הראשונה וזמן תשובה מלא לכל מודל, גרף לפי ספק, התראה כשספק איטי מהרגיל, ואפשרות להעדיף את המודל המהיר בבחירה האוטומטית.
+
+**תיקונים**
+- תקציב אישי 0 פירושו בלי תקרה אישית, כמו בצוות (קודם הוא חסם את החשבון).
+- ניחושים של סיסמת המנהל מבחוץ נספרים במגבלת הסיסמאות השגויות לכל כתובת.
+- הודעת הפתיחה בצ'אט מתאימה לכל מדיניות של מידע רגיש.
+- התיעוד עבר בדיקה מלאה ומסודר לפי התפריט של מסך הניהול.
+
+---
+
+**New**
+- Savings recommendations: short questions sent to an expensive model, a team spending nearly everything on the priciest model, and an enabled model nobody uses. On the dashboard and the "To handle" page, each with an action button.
+- Monthly email summary for management: spend vs last month, top teams and users, spend by model, possible savings and security events. Sent on the 1st, with preview and send-now on the Reports page. Needs a mail server (SMTP_*).
+- Chargeback: a cost center and an accounting account per team, and a monthly file (CSV or JSON) for import into accounting.
+- Models allowed per team: an employee can use only a model allowed both to them and to their team, everywhere in the system.
+- Models on the company's own server (Ollama or vLLM): connect, test and add models on the Models page, and a new policy where a question with sensitive data is answered by the local model and never leaves the company.
+- Speed monitoring: time to first word and full answer time for each model, a chart per provider, an alert when a provider is slower than usual, and an option to prefer the faster model in automatic choice.
+
+**Fixes**
+- A personal budget of 0 means no personal cap, as for teams (it used to block the account).
+- Wrong guesses of the admin password from outside count toward the per-address wrong-password limit.
+- The chat's welcome message fits every sensitive-data policy.
+- The documentation was fully reviewed and follows the admin menu.
+
 ## 1.0.5 — 2026-10-05
 
 - מסך משתמש: לחיצה על שם של משתמש (בטבלת המשתמשים, במובילים בהוצאה, בלוג הטוקנים ובהתראות) פותחת את כל הפעילות שלו: הוצאה מול תקציב, צפי, בקשות וטוקנים, הוצאה יומית ב-30 הימים האחרונים, הוצאה לפי מודל, הבקשות האחרונות עם השאלה והתשובה, אירועי אבטחה ובקשות שנחסמו, היסטוריית שינויים ושיחות שמורות.

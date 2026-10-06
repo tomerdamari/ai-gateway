@@ -1472,4 +1472,12 @@ gateway._migrated = False
 c = gateway.db()
 labels = dict(c.execute("select alias, label from models").fetchall())
 assert labels["fast"] == "Claude Haiku 4.5" and labels["smart"] == "my own name", labels
+
+# a personal budget of 0 means no cap (like teams), so the account is not blocked
+with gateway.db() as c:
+    zero = c.execute("select * from accounts where archived is null limit 1").fetchone()
+    c.execute("update accounts set budget = 0, spent = 5 where name = ?", (zero["name"],))
+    acct = c.execute("select * from accounts where name = ?", (zero["name"],)).fetchone()
+    r = gateway.authorize(c, acct, acct["models"].split(",")[0])
+    assert not r or r[2] != "budget", r
 print("ok")
