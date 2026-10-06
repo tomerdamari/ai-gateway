@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FireGate · ניהול</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="en-admin.js"></script>
+<script src="en-chat.js"></script>
+<script src="i18n.js"></script>
+<style>
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wide-narrow { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart .grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart .base-line { stroke: var(--axis); stroke-width: 1; }
+  .chart .tick { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+  .chart .line { fill: none; stroke: var(--chart); stroke-width: 2; stroke-linejoin: round; }
+  .chart .cross { stroke: var(--axis); stroke-width: 1; }
+  .chart .dot { fill: var(--chart); stroke: var(--surface); stroke-width: 2; }
+  .tip { position: absolute; pointer-events: none; background: #18181b; color: #fafafa; font-size: 12px; padding: 8px 12px; border-radius: 10px; box-shadow: var(--shadow-elevated); white-space: nowrap; transform: translate(-50%, -100%); margin-top: -10px; z-index: 2; }
+  .donut { display: grid; place-items: center; position: relative; margin: .5rem 0 1rem; }
+  .donut svg { width: 180px; height: 180px; }
+  .donut .center { position: absolute; text-align: center; }
+  .donut .center b { display: block; font-size: 1.375rem; font-weight: 700; color: var(--ink); }
+  .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-inline-end: 8px; vertical-align: -1px; }
+  .compact td, .compact th { padding: .5rem .25rem; }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+  .actions { display: flex; gap: 6px; flex-wrap: nowrap; }
+  .actions button { min-height: var(--control); padding: 0 1rem; font-size: .8125rem; gap: 6px; }
+  .actions button .icon { width: 14px; height: 14px; }
+  td .stack { display: grid; gap: 2px; }
+  .models { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; }
+  .team-row + .team-row { margin-top: 1rem; }
+  .crumbs ol { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; font-size: .875rem; color: var(--muted); }
+  .crumbs li { display: inline-flex; align-items: center; gap: 6px; }
+  .crumbs li + li::before { content: "›"; color: var(--subtle); font-size: 1.05rem; line-height: 1; }
+  .crumbs a { color: var(--muted); }
+  .crumbs [aria-current="page"] { color: var(--ink); font-weight: 600; }
+  @media (max-width: 520px) { .crumbs .group { display: none; } }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  th button.sort { background: none; border: 0; box-shadow: none; padding: 0; min-height: 0; color: inherit; font-weight: 600; gap: 4px; border-radius: 4px; }
+  th button.sort:hover { background: none; color: var(--ink); box-shadow: none; }
+  th button.sort[aria-sort]::after { content: ""; border: 4px solid transparent; border-top-color: currentColor; margin-top: 4px; }
+  th button.sort[aria-sort="ascending"]::after { border-top-color: transparent; border-bottom-color: currentColor; margin-top: -4px; }
+  td.name { white-space: nowrap; }
+  .steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; counter-reset: step; }
+  .steps li { display: flex; align-items: center; gap: 12px; counter-increment: step; }
+  .steps li::before { content: counter(step); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface-3); color: var(--ink); font-weight: 600; font-size: .8125rem; }
+  .steps li.done::before { content: ""; background: var(--success-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230b5c44' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 14px no-repeat; }
+  .steps li.done span { color: var(--muted); text-decoration: line-through; }
+  .steps li .grow { flex: 1; }
+  .alert .grow { flex: 1; }
+  input[type=search] { min-width: 220px; }
+  .switch { position: relative; width: 44px; min-height: 24px; height: 24px; padding: 0; border-radius: 999px; background: var(--axis); border: 1px solid var(--field-border); box-shadow: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: inset-inline-start .15s; }
+  .switch[aria-checked="true"] { background: var(--success); border-color: var(--success); }
+  .switch[aria-checked="true"]::after { inset-inline-start: 22px; }
+  .switch:hover { background: var(--axis); box-shadow: none; }
+  .switch[aria-checked="true"]:hover { background: var(--success); }
+  @media (pointer: coarse) { .switch { min-height: 28px; height: 28px; width: 52px; } .switch::after { width: 22px; height: 22px; } .switch[aria-checked="true"]::after { inset-inline-start: 26px; } }
+  tr.off td { color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8125rem; color: var(--body); margin-bottom: .75rem; }
+  .legend span { display: inline-flex; align-items: center; }
+  .chart .seg { stroke: var(--surface); stroke-width: 1.5; }
+  .chart .day-hit:hover ~ .x { opacity: 1; }
+  .tip.multi { transform: translate(-50%, -100%); white-space: normal; min-width: 170px; }
+  .tip.multi div { display: flex; justify-content: space-between; gap: 12px; }
+  .tip.multi .total { border-top: 1px solid rgba(255, 255, 255, .25); margin-top: 4px; padding-top: 4px; font-weight: 600; }
+  .share-row + .share-row { margin-top: 1rem; }
+  .share-row .head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: .875rem; }
+  .share-row .head b { color: var(--ink); font-weight: 600; }
+  .share-bar { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 8px; font-size: .75rem; color: var(--muted); }
+  .share-bar + .share-bar { margin-top: 4px; }
+  .share-bar .track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .share-bar .fill { height: 100%; border-radius: 999px; }
+  tr.off td .badge { opacity: .7; }
+  @media (pointer: coarse) { .actions button, button.sm { min-height: 44px; } }
+  .chart .ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+  .chart .prev { stroke: var(--axis); stroke-width: 2; fill: none; }
+  .chart .proj { stroke: var(--chart); stroke-width: 2; stroke-dasharray: 2 4; fill: none; stroke-linecap: round; }
+  .chart .ref-label { fill: var(--muted); font-size: 11px; font-family: var(--font); }
+  .legend .swatch { display: inline-block; width: 18px; height: 0; border-top: 2px solid; margin-inline-end: 8px; }
+  .hist { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; align-items: end; height: 190px; padding-top: 18px; }
+  .hist .col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; }
+  .hist .bar { width: 100%; max-width: 44px; border-radius: 8px 8px 2px 2px; background: var(--axis); min-height: 2px; }  /* neutral; only the over-budget bands carry status colour */
+  .hist .bar.warn { background: var(--warning); }
+  .hist .bar.bad { background: var(--danger); }
+  .hist .count { font-size: .8125rem; color: var(--ink); font-weight: 600; }
+  .hist-labels { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--axis); padding-top: 6px; font-size: .75rem; color: var(--muted); text-align: center; }
+  .heat { display: grid; grid-template-columns: 52px repeat(17, minmax(0, 1fr)); gap: 3px; font-size: .75rem; color: var(--muted); }
+  .heat .cell { aspect-ratio: 1.6; border-radius: 4px; background: var(--surface-2); }
+  .heat .lab { display: flex; align-items: center; }
+  .heat .hr { text-align: center; }
+  .heat-scale { display: flex; align-items: center; gap: 4px; justify-content: flex-end; margin-top: .75rem; font-size: .75rem; color: var(--muted); }
+  .heat-scale i { width: 16px; height: 10px; border-radius: 2px; }
+  .month-row + .month-row { margin-top: .9rem; }
+  .month-row .head { display: flex; justify-content: space-between; font-size: .875rem; margin-bottom: 5px; color: var(--ink); }
+  .stack-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--surface-2); gap: 2px; }
+  @media (max-width: 520px) { .heat { grid-template-columns: 40px repeat(17, minmax(0, 1fr)); gap: 2px; } .heat .hr:nth-child(even) { visibility: hidden; } }
+  .team-row .name { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--ink); }
+  .greet { align-items: flex-end; margin-bottom: 1.25rem; }
+  .greet h1 { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; }
+  .greet p { margin: 6px 0 0; font-size: 1rem; }
+  .ask { display: flex; align-items: center; gap: 12px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px; padding-inline-start: 20px; border: 2px solid transparent; transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+  .ask:focus-within { border-color: var(--focus); box-shadow: var(--shadow-elevated); }
+  .ask > .icon { color: var(--muted); width: 20px; height: 20px; }
+  .ask input[type=text] { flex: 1; border: 0; box-shadow: none; padding: 0; min-height: 52px; font-size: 1rem; background: transparent; color: var(--ink); }
+  .ask input[type=text]:focus, .ask input[type=text]:focus-visible { outline: none; box-shadow: none; }
+  .ask input::placeholder { color: var(--muted); }
+  .ask button { width: 48px; height: 48px; min-height: 0; padding: 0; border-radius: 50%; flex: none; }
+  .ask button .icon { width: 18px; height: 18px; }
+  [dir="rtl"] .ask button .icon { transform: scaleX(-1); }
+  /* one person's page: name links, tabs, the expandable question and answer */
+  a.user-link { color: inherit; font-weight: 700; }
+  a.user-link:hover { color: var(--accent-text); }
+  .user-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .user-kpis .meter { margin-top: 4px; }
+  .tabs { display: flex; gap: 1.25rem; border-bottom: 1px solid var(--line); margin: -.25rem 0 1.25rem; overflow-x: auto; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none; color: var(--muted); padding: 0 0 .25rem; min-height: 44px; font-weight: 600; gap: 6px; white-space: nowrap; }
+  .tabs button:hover { background: none; color: var(--ink); box-shadow: none; }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .tabs .badge { padding: .2em .6em; }
+  .user-panel h3 { font-size: .9375rem; font-weight: 700; color: var(--ink); margin: 1.5rem 0 .5rem; }
+  .user-panel h3:first-child { margin-top: 0; }
+  .qa summary { cursor: pointer; max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qa pre { direction: inherit; text-align: start; unicode-bidi: plaintext; font-family: var(--font); font-size: .8125rem; }
+  .qa .label { display: block; margin-top: 10px; font-size: .75rem; font-weight: 600; color: var(--muted); }
+  .chat-list { list-style: none; margin: 0; padding: 0; }
+  .chat-list li { display: flex; justify-content: space-between; gap: 12px; padding: .7rem 0; border-top: 1px solid var(--line); }
+  .chat-list li:first-child { border-top: 0; }
+  @media (max-width: 767px) { table.stack-mobile td:has(> details.qa) { display: block; } .qa summary { max-width: none; } .tabs { flex-wrap: wrap; row-gap: 0; } }
+  .model-option { flex-wrap: wrap; }
+  .rec-list .alert .icon { color: var(--muted); }
+  .rec-list .alert .actions { flex: none; }
+  #summaryDialog { width: min(760px, calc(100vw - 32px)); }
+  #summaryFrame { display: block; width: 100%; height: min(70vh, 680px); border: 1px solid var(--line); border-radius: 8px; background: #f4f4f5; }
+  tfoot td { font-weight: 700; color: var(--ink); border-top: 2px solid var(--line); }
+  @media (max-width: 767px) { table.stack-mobile tfoot { display: block; width: 100%; } .rec-list .alert { flex-wrap: wrap; } .rec-list .alert .actions { flex-basis: 100%; } }
+  /* settings: sections on the side, cards of rows, a bar for unsaved changes */
+  .set-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+  .set-nav { position: sticky; top: 84px; }
+  .set-nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .set-nav button { width: 100%; justify-content: flex-start; background: none; border: 0; box-shadow: none; color: var(--body); font-weight: 500; border-radius: var(--radius-sm); min-height: 40px; padding: 0 12px; }
+  .set-nav button:hover { background: var(--surface-2); color: var(--ink); }
+  .set-nav button[aria-current="page"] { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: var(--shadow); }
+  .set-nav button .badge { margin-inline-start: auto; }
+  .set-nav select { display: none; width: 100%; }
+  .set-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 .25rem; }
+  .set-head h2 { font-size: 1.25rem; font-weight: 700; color: var(--ink); margin: 0; }
+  .set-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 320px); gap: 8px 24px; padding: 14px 0; border-top: 1px solid var(--line); align-items: start; }
+  .set-row:first-of-type { border-top: 0; padding-top: 0; }
+  .set-row.flash { animation: setflash 2.4s var(--ease); border-radius: var(--radius-sm); }
+  @keyframes setflash { 0%, 40% { background: var(--accent-soft); box-shadow: 0 0 0 8px var(--accent-soft); } 100% { background: transparent; box-shadow: none; } }
+  .set-label { font-weight: 600; color: var(--ink); display: block; }
+  .set-help { margin: 4px 0 0; font-size: .8125rem; color: var(--muted); max-width: 62ch; }
+  .set-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 8px; font-size: .75rem; color: var(--muted); }
+  .set-meta .badge { font-weight: 500; }
+  .set-row.pending .set-label::after { content: "•"; margin-inline-start: 6px; color: var(--warning); }
+  .set-control { display: grid; gap: 8px; justify-items: stretch; }
+  .set-control .unit { display: flex; align-items: center; gap: 8px; }
+  .set-control .unit input { flex: 1; min-width: 0; }
+  .set-control textarea { min-height: 84px; resize: vertical; font: inherit; }
+  .set-control .checks { display: grid; gap: 6px; }
+  .set-control .checks label { margin: 0; }
+  .set-control .switch { justify-self: start; }
+  .switch:disabled { opacity: .55; cursor: not-allowed; }
+  .set-row .error { margin: 6px 0 0; font-size: .8125rem; }
+  .set-row.soon { opacity: .62; }
+  .set-row mark { background: var(--warning-soft); color: inherit; border-radius: 3px; padding: 0 1px; }
+  .set-secret { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .set-bar { position: sticky; bottom: 16px; z-index: 20; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--accent); color: var(--accent-ink); border-radius: var(--radius); padding: 12px 16px 12px 20px; margin-top: 1.5rem; box-shadow: var(--shadow-elevated); }
+  .set-bar .grow { flex: 1; font-weight: 600; }
+  .set-bar button { background: var(--accent-ink); color: var(--accent); border-color: var(--accent-ink); }
+  .set-bar button.ghost { background: transparent; color: var(--accent-ink); border-color: currentColor; }
+  .set-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 20px; margin: 0; font-size: .875rem; }
+  .set-info dt { color: var(--muted); }
+  .set-info dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+  .set-line { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: .875rem; }
+  .set-line b { color: var(--ink); }
+  .team-set .set-row { grid-template-columns: minmax(0, 1fr); }
+  #importDiff td, #importDiff th { padding: .4rem .25rem; font-size: .8125rem; }
+  @media (max-width: 991px) {
+    .set-layout { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+    .set-nav { position: static; }
+    .set-nav ul { display: none; }
+    .set-nav select { display: block; }
+    .set-row { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 1199px) { .wide-narrow { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 991px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 520px) { .kpis { grid-template-columns: minmax(0, 1fr); } .greet h1 { font-size: 1.625rem; } .navbar-end .who-name { display: none; } }
+</style>
+</head>
+<body class="scroll-main">
+<svg xmlns="http://www.w3.org/2000/svg" hidden><symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></g></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-dollar" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+  <symbol id="i-user-check" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></symbol>
+  <symbol id="i-restore" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+</svg>
+<div class="wrapper">
+  <nav class="sidebar" id="sidebar" aria-label="ניווט">
+    <a class="sidebar-brand" href="index.html"><img class="logo" src="logo.svg" alt="">FireGate</a>
+    <ul class="sidebar-nav">
+      <li class="sidebar-header">ראשי</li>
+      <li><button class="sidebar-link" data-tab="overview" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg><span>לוח בקרה</span></button></li>
+      <li><button class="sidebar-link" data-tab="todo"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg><span>לטיפול</span><b class="count" id="todoCount" hidden></b></button></li>
+      <li class="sidebar-header">ניהול</li>
+      <li><button class="sidebar-link" data-tab="accounts"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>משתמשים ומפתחות</span></button></li>
+      <li><button class="sidebar-link" data-tab="models"><svg class="icon" aria-hidden="true"><use href="#i-cpu"/></svg><span>מודלים</span></button></li>
+      <li><button class="sidebar-link" data-tab="teams"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>צוותים</span></button></li>
+      <li><button class="sidebar-link" data-tab="sources"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg><span>מקורות מידע</span></button></li>
+      <li class="sidebar-header">בקרה</li>
+      <li><button class="sidebar-link" data-tab="reports"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span>דוחות</span></button></li>
+      <li><button class="sidebar-link" data-tab="security"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span>אבטחה</span></button></li>
+      <li><button class="sidebar-link" data-tab="logs"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>לוג טוקנים</span></button></li>
+      <li><button class="sidebar-link" data-tab="audit"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span>יומן שינויים</span></button></li>
+      <li><button class="sidebar-link" data-tab="archive"><svg class="icon" aria-hidden="true"><use href="#i-archive"/></svg><span>ארכיון</span></button></li>
+      <li class="sidebar-header">עובדים</li>
+      <li><a class="sidebar-link" href="chat.html"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg><span>מסך הצ'אט</span></a></li>
+      <li><a class="sidebar-link" href="docs.html"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span>תיעוד</span></a></li>
+      <li class="sidebar-header">מערכת</li>
+      <li><button class="sidebar-link" data-tab="settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg><span>הגדרות</span></button></li>
+    </ul>
+  </nav>
+
+  <div class="main">
+    <header class="navbar">
+      <button class="toggle" id="toggle" aria-label="הצגה או הסתרה של התפריט"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <nav class="crumbs" aria-label="מיקום"><ol id="crumbs"></ol></nav>
+      <div class="navbar-end">
+        <button class="ghost lang-switch" data-lang-switch><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg><span lang="en">English</span></button>
+        <button class="ghost" id="refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>רענון</button>
+        <span class="avatar" aria-hidden="true">מ</span><span class="who-name">מנהל</span>
+      </div>
+    </header>
+
+    <main class="content">
+    <section id="login" class="card" hidden style="max-width:420px">
+      <h2 style="margin-bottom:12px">כניסה מבחוץ</h2>
+      <p class="muted small">מתוך רשת המשרד אין צורך בסיסמה. מבחוץ צריך את סיסמת המנהל.</p>
+      <form class="row" id="loginForm">
+        <input type="password" id="pw" placeholder="סיסמת מנהל" autocomplete="current-password" required>
+        <button>כניסה</button>
+      </form>
+      <p class="error" id="loginError"></p>
+    </section>
+
+    <!-- overview -->
+    <section data-page="overview" hidden>
+      <div class="page-head greet">
+        <div><h1>שלום, מנהל</h1><p class="muted">הנה מה שקורה בשער היום</p></div>
+        <button id="overviewNewAccount"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>משתמש חדש</button>
+      </div>
+      <div class="grid">
+        <form class="ask" action="chat.html" method="get" hidden>  <!-- hidden for now at the owner's request; remove "hidden" to bring it back -->
+          <svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>
+          <input type="text" name="q" required autocomplete="off" dir="auto" placeholder="שאלו את הבינה המלאכותית… (נפתח במסך הצ'אט)" aria-label="שאלה לבינה המלאכותית, נפתחת במסך הצ'אט">
+          <button aria-label="פתיחה במסך הצ'אט"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
+        </form>
+        <div id="loadState"></div>
+        <div class="grid kpis" id="kpis"></div>
+        <div class="card" id="savingsCard" hidden>
+          <header><h2>המלצות לחיסכון</h2><span class="muted small" id="savingsTotal"></span></header>
+          <div class="rec-list" id="savingsTop"></div>
+          <button class="link small" id="savingsAll" style="margin-top:8px">לכל ההמלצות</button>
+        </div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>הוצאה יומית</h2><span class="muted small">30 הימים האחרונים</span></header>
+            <div class="chart" id="dailyChart"></div>
+          </div>
+          <div class="card">
+            <header><h2>הוצאה לפי מודל</h2><span class="muted small">החודש</span></header>
+            <div class="donut" id="modelDonut"></div>
+            <table class="compact"><tbody id="modelLegend"></tbody></table>
+          </div>
+        </div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>הוצאה מצטברת החודש</h2><span class="muted small">מול החודש הקודם ומול תקציבי הצוותים</span></header>
+            <div class="legend" id="burnLegend"></div>
+            <div class="chart" id="burnChart"></div>
+          </div>
+          <div class="card">
+            <header><h2>צפי ניצול התקציב</h2><span class="muted small">כמה משתמשים יסיימו את החודש בכל טווח</span></header>
+            <div id="budgetHist"></div>
+          </div>
+        </div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>מתי שואלים</h2><span class="muted small">בקשות לפי יום ושעה, 4 השבועות האחרונים</span></header>
+            <div id="heatmap"></div>
+          </div>
+          <div class="card">
+            <header><h2>הוצאה חודשית לפי צוות</h2><span class="muted small">ארבעת החודשים האחרונים</span></header>
+            <div class="legend" id="teamMonthsLegend"></div>
+            <div id="teamMonths"></div>
+          </div>
+        </div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>המשתמשים שהוציאו הכי הרבה</h2><span class="muted small">החודש</span></header>
+            <div class="table-wrap"><table class="stack-mobile">
+              <thead><tr><th>שם</th><th>צוות</th><th class="num">בקשות</th><th class="num">הוצאה</th><th>מצב תקציב</th></tr></thead>
+              <tbody id="topAccounts"></tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <header><h2>צוותים מול תקציב</h2><span class="muted small">החודש</span></header>
+            <div id="teamSummary"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- accounts -->
+    <!-- to handle: getting started and everything that needs the admin's attention -->
+    <section data-page="todo" hidden>
+      <div class="page-head"><h1>לטיפול</h1></div>
+      <div class="grid">
+        <div class="card" id="startCard" hidden><header><h2>צעדים ראשונים</h2><span class="muted small" id="startProgress"></span></header><ol class="steps" id="startSteps"></ol></div>
+        <div class="card" id="alertsCard" hidden><header><h2>דורש טיפול</h2><span class="muted small" id="alertsCount"></span></header><div id="alerts"></div></div>
+        <div class="card" id="savingsTodo" hidden>
+          <header><h2>המלצות לחיסכון</h2><span class="muted small" id="savingsTodoTotal"></span></header>
+          <p class="muted small" id="savingsNote" style="margin:-.5rem 0 .5rem"></p>
+          <div class="rec-list" id="savingsList"></div>
+        </div>
+      </div>
+    </section>
+
+    <section data-page="accounts" hidden>
+      <div class="page-head">
+        <h1>משתמשים ומפתחות</h1>
+        <div class="filters">
+          <input type="search" id="accountFilter" placeholder="חיפוש לפי שם או צוות" aria-label="חיפוש משתמשים">
+          <button id="newAccount"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>משתמש חדש</button>
+        </div>
+      </div>
+      <div class="card">
+        <p class="muted small" style="margin:0 0 12px">"צפי" הוא כמה המשתמש יוציא עד סוף החודש בקצב הנוכחי. "מומלץ" הוא הגבוה מבין הצפי לבין החודש הקודם, ועוד 20% מרווח.</p>
+        <div class="table-wrap"><table class="stack-mobile">
+          <caption class="sr-only">משתמשים ומפתחות</caption>
+          <thead><tr><th><button class="sort" data-sort="name">שם</button></th><th><button class="sort" data-sort="team">צוות</button></th><th>מודלים</th><th><button class="sort" data-sort="spent">הוצאה החודש</button></th><th class="num"><button class="sort" data-sort="projected">צפי</button></th><th class="num">תקציב מומלץ</th><th>גישה</th><th><span class="sr-only">פעולות</span></th></tr></thead>
+          <tbody id="accounts"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- one person: reached by clicking a name (users, top spenders, token log, alerts); #user=<name> -->
+    <section data-page="user" hidden>
+      <div class="page-head" id="userHead"></div>
+      <div class="grid" id="userBody">
+        <div class="grid kpis user-kpis" id="userKpis"></div>
+        <div class="grid wide-narrow">
+          <div class="card">
+            <header><h2>הוצאה יומית</h2><span class="muted small">30 הימים האחרונים</span></header>
+            <div class="chart" id="userChart"></div>
+          </div>
+          <div class="card">
+            <header><h2>הוצאה לפי מודל</h2><span class="muted small">החודש</span></header>
+            <div id="userModels"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="tabs" role="tablist" aria-label="הפעילות של המשתמש" id="userTabs">
+            <button role="tab" data-utab="requests">פעילות אחרונה</button>
+            <button role="tab" data-utab="security">אבטחה</button>
+            <button role="tab" data-utab="audit">היסטוריית שינויים</button>
+            <button role="tab" data-utab="chats">שיחות</button>
+          </div>
+          <div class="user-panel" role="tabpanel" id="userPanel"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- teams -->
+    <section data-page="teams" hidden>
+      <div class="page-head">
+        <h1>צוותים</h1>
+        <button id="newTeam"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>צוות חדש</button>
+      </div>
+      <div class="card">
+        <p class="muted small" style="margin:0 0 12px">כשתקציב הצוות נגמר, כל חברי הצוות נחסמים, גם אם נשאר להם תקציב אישי. תקציב צוות 0 = בלי תקרה לצוות.</p>
+        <div class="table-wrap"><table class="stack-mobile">
+          <thead><tr><th>צוות</th><th class="num">חברים</th><th>הוצאה החודש</th><th class="num">צפי</th><th class="num">תקציב מומלץ</th><th class="num">סכום תקציבי החברים</th><th><span class="sr-only">פעולות</span></th></tr></thead>
+          <tbody id="teams"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- models -->
+    <section data-page="models" hidden>
+      <div class="page-head">
+        <h1>מודלים</h1>
+        <button id="newModel"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>מודל חדש</button>
+      </div>
+      <p class="muted" style="margin:0 0 1rem;max-width:75ch">כל מודל שעובדים ואפליקציות יכולים להשתמש בו. מודל כבוי נחסם אצל כולם מיד, גם אם הותר להם. המחיר קובע איך מחושבת העלות של כל שאלה, אז כדאי לעדכן אותו כשהספק משנה מחיר.</p>
+      <div class="row" id="providerStatus" style="margin-bottom:1.5rem"></div>
+      <div class="card" style="margin-bottom:1.5rem" id="autoCard">
+        <header><h2>בחירה אוטומטית של מודל</h2><span class="muted small" id="autoCount"></span></header>
+        <p class="muted small" style="margin:-.5rem 0 .75rem;max-width:80ch">כשעובד בוחר "אוטומטי" בצ'אט, השער שולח שאלות קצרות ופשוטות למודל הזול, וקוד, ניתוח, השוואה, טקסט ארוך או שיחה ארוכה למודל החזק. הסיבה לבחירה מוצגת לעובד ונרשמת ביומן.</p>
+        <div class="set-line" id="autoLine"></div>
+      </div>
+      <div class="grid wide-narrow" style="margin-bottom:1.5rem">
+        <div class="card">
+          <header><h2>הוצאה יומית לפי מודל</h2><span class="muted small">30 הימים האחרונים</span></header>
+          <div class="legend" id="modelDailyLegend"></div>
+          <div class="chart" id="modelDailyChart"></div>
+        </div>
+        <div class="card">
+          <header><h2>בקשות מול הוצאה</h2><span class="muted small">החודש</span></header>
+          <p class="muted small" style="margin:-.5rem 0 1rem">כמה מהבקשות עוברות בכל מודל, וכמה מהכסף. פער גדול = מודל יקר לבקשה.</p>
+          <div class="legend"><span><i class="legend-dot" style="background:var(--axis)"></i>חלק מהבקשות</span><span><i class="legend-dot" style="background:var(--ink)"></i>חלק מההוצאה (בצבע המודל)</span></div>
+          <div id="shareChart"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:1.5rem" id="speedCard">
+        <header><h2>מהירות תגובה</h2>
+          <select id="speedWindow" aria-label="תקופה"><option value="day">24 השעות האחרונות</option><option value="week">7 הימים האחרונים</option></select></header>
+        <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">כמה זמן לוקח לכל מודל לענות. "חציון" הוא הזמן שחצי מהתשובות מהירות ממנו, "95%" הוא הזמן ש-95 מכל 100 תשובות מהירות ממנו (המקרים האיטיים). "זמן עד מילה ראשונה" הוא כמה זמן העובד מחכה עד שהתשובה מתחילה להופיע.</p>
+        <div class="grid wide-narrow">
+          <div>
+            <div class="table-wrap"><table class="stack-mobile">
+              <caption class="sr-only">מהירות תגובה לפי מודל</caption>
+              <thead><tr><th>מודל</th><th class="num">חציון</th><th class="num">95%</th><th class="num">זמן עד מילה ראשונה</th><th class="num">בקשות</th><th class="num">שגיאות</th></tr></thead>
+              <tbody id="speedTable"></tbody>
+            </table></div>
+          </div>
+          <div>
+            <h3 class="small" style="margin:0 0 .5rem">חציון לפי ספק, בכל שעה ב-48 השעות האחרונות</h3>
+            <div class="legend" id="speedLegend"></div>
+            <div class="chart" id="speedChart"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table class="stack-mobile">
+          <caption class="sr-only">מודלים</caption>
+          <thead><tr><th>פעיל</th><th>מודל</th><th>ספק</th><th class="num">מחיר למיליון טוקנים</th><th class="num">שימוש החודש</th><th class="num">משתמשים</th><th>ברירת מחדל</th><th><span class="sr-only">פעולות</span></th></tr></thead>
+          <tbody id="modelsTable"></tbody>
+        </table></div>
+      </div>
+      <div class="card" style="margin-top:1.5rem" id="localCard">
+        <header><h2>שרת מודלים מקומי</h2><span id="localStatus"></span></header>
+        <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">מודלים שרצים על שרת של החברה עם Ollama או vLLM. השאלות לא יוצאות מהרשת של החברה, ואין תשלום לפי טוקנים (אפשר לקבוע מחיר פנימי בעריכת המודל). את כתובת השרת והמפתח קובעים בהגדרות; כאן בודקים חיבור ומוסיפים את המודלים שהוא מציע.</p>
+        <div class="row" style="gap:16px">
+          <div class="set-line" id="localLine" style="flex:1"></div>
+          <button type="button" class="ghost" id="localTest"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg>בדיקת חיבור</button>
+        </div>
+        <div id="localModels" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <!-- sources -->
+    <section data-page="sources" hidden>
+      <div class="page-head">
+        <h1>מקורות מידע</h1>
+        <button id="newSource"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>מקור חדש</button>
+      </div>
+      <p class="muted" style="margin:0 0 1.5rem;max-width:75ch">מסמכים של החברה שהצ'אט מחפש בהם ומצטט מהם. כל עובד רואה רק מקורות שהצוות שלו קיבל גישה אליהם. אפשר להעלות PDF, ‏Word וקבצי טקסט (Markdown, CSV, HTML ועוד), או לחבר תיקייה בשרת שמסתנכרנת בלחיצה.</p>
+      <div class="card" style="margin-bottom:1.5rem"><div class="row spread" id="sourceStatus"></div></div>
+      <div class="grid" id="sources"></div>
+    </section>
+
+    <!-- reports -->
+    <section data-page="reports" hidden>
+      <div class="page-head">
+        <h1>דוחות</h1>
+        <div class="filters">
+          <select id="reportMonth" aria-label="חודש"></select>
+          <button id="reportCsv"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>הורדה לאקסל</button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="grid kpis" id="reportKpis"></div>
+        <div class="card"><header><h2>לפי צוות</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>צוות</th><th class="num">בקשות</th><th class="num">הוצאה</th><th class="num">תקציב</th><th class="num">ניצול</th></tr></thead><tbody id="reportTeams"></tbody></table></div></div>
+        <div class="card"><header><h2>לפי משתמש</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>שם</th><th>צוות</th><th class="num">בקשות</th><th class="num">טוקנים</th><th class="num">הוצאה</th><th class="num">תקציב</th></tr></thead><tbody id="reportAccounts"></tbody></table></div></div>
+        <div class="card"><header><h2>לפי מודל</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>מודל</th><th class="num">בקשות</th><th class="num">טוקנים</th><th class="num">מתוכם מהמטמון</th><th class="num">הוצאה</th></tr></thead><tbody id="reportModels"></tbody></table></div></div>
+        <div class="card">
+          <header><h2>חיוב פנימי לפי צוות</h2>
+            <div class="row"><button class="ghost" id="cbCsv"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>הורדה ל-CSV</button><button class="ghost" id="cbJson"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>הורדה ל-JSON</button></div></header>
+          <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">העלות של כל צוות בחודש שנבחר למעלה, עם מרכז העלות והחשבון בהנהלת החשבונות שלו (קובעים אותם בעריכת הצוות). בקובץ, שמות העמודות באנגלית, כדי שמערכת הנהלת החשבונות תקלוט אותם כמו שהם.</p>
+          <div class="table-wrap"><table class="stack-mobile">
+            <thead><tr><th>צוות</th><th>מרכז עלות</th><th>חשבון</th><th class="num">בקשות</th><th class="num">טוקנים נכנסים</th><th class="num">טוקנים יוצאים</th><th class="num">עלות</th></tr></thead>
+            <tbody id="cbRows"></tbody><tfoot id="cbTotal"></tfoot>
+          </table></div>
+        </div>
+        <div class="card">
+          <header><h2>סיכום חודשי במייל</h2><span id="smtpStatus"></span></header>
+          <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">פעם בחודש השער שולח להנהלה סיכום של החודש שעבר: הוצאה מול החודש הקודם, הצוותים והמשתמשים שהוציאו הכי הרבה, הוצאה לפי מודל, המלצות לחיסכון, אירועי אבטחה וחריגות מהתקציב. תצוגה מקדימה ו"לשלוח עכשיו" הן לחודש שנבחר למעלה.</p>
+          <div class="grid" style="gap:12px">
+            <div class="set-line" id="sumLine"></div>
+            <div class="row"><button type="button" class="ghost" id="sumPreview">תצוגה מקדימה</button><button type="button" class="ghost" id="sumSend"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>לשלוח עכשיו</button></div>
+            <p class="muted small" id="sumSent" style="margin:0"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- security -->
+    <section data-page="security" hidden>
+      <div class="page-head">
+        <h1>אבטחה</h1>
+        <select id="eventFilter" aria-label="סינון לפי סוג אירוע"><option value="">כל האירועים</option></select>
+      </div>
+      <div class="grid">
+        <div class="grid kpis" id="secKpis"></div>
+        <div class="card"><header><h2>בדיקת מצב</h2></header><div class="grid" style="gap:10px" id="secChecks"></div></div>
+        <div class="card">
+          <header><h2>מדיניות</h2></header>
+          <div class="grid" style="gap:8px">
+            <div class="set-line" id="policyLine"></div>
+            <span class="muted small" id="pSensitiveNote"></span>
+          </div>
+        </div>
+        <div class="card"><header><h2>יומן השינויים לא שונה</h2></header><div id="auditCheck"></div></div>
+        <div class="card">
+          <header><h2>בקשות שנחסמו</h2><span class="muted small">200 האחרונות</span></header>
+          <div class="table-wrap"><table>
+            <thead><tr><th>מתי</th><th>מי</th><th>סיבה</th><th>מודל</th><th>קטע מהשאלה</th></tr></thead>
+            <tbody id="secBlocked"></tbody>
+          </table></div>
+        </div>
+        <div class="card">
+          <header><h2>אירועי אבטחה</h2><span class="muted small">200 האחרונים</span></header>
+          <p class="muted small" style="margin:-8px 0 12px">מה קורה לשאלה שמנסה לעקוף את ההוראות של המודל נקבע במדיניות למעלה. שאלות על קוד ופקודות רק נרשמות, כי עובדים שואלים עליהן בצדק. מסמכים חשודים נחסמים בהעלאה, כי הם מגיעים לכל מי שמחפש בהם. תשובה עם פקודה מסוכנת או קישור חשוד מקבלת אזהרה לעובד.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>מתי</th><th>אירוע</th><th>מי</th><th>פרטים</th></tr></thead>
+            <tbody id="secEvents"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- logs -->
+    <section data-page="logs" hidden>
+      <div class="page-head">
+        <h1>לוג טוקנים</h1>
+        <div class="filters">
+          <input type="text" id="logFilter" placeholder="סינון לפי שם, צוות או מודל">
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>מתי</th><th>מי</th><th>צוות</th><th>מודל</th><th class="num">טוקנים נכנסו</th><th class="num">טוקנים יצאו</th><th class="num">עלות</th><th></th></tr></thead>
+          <tbody id="logs"></tbody>
+        </table></div>
+        <p class="muted small" style="margin:12px 0 0">מוצגות 200 השאלות האחרונות. כל השאלות נשמרות במסד הנתונים.</p>
+      </div>
+    </section>
+
+    <!-- audit -->
+    <section data-page="audit" hidden>
+      <div class="page-head"><h1>יומן שינויים</h1></div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>מתי</th><th>פעולה</th><th>פרטים</th></tr></thead>
+          <tbody id="audit"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- archive -->
+    <!-- settings: everything adjustable, from settings.py; #settings=<key> opens one setting -->
+    <section data-page="settings" hidden>
+      <div class="page-head">
+        <h1>הגדרות</h1>
+        <div class="filters">
+          <input type="search" id="setSearch" placeholder="חיפוש הגדרה, למשל תקציב או מייל" aria-label="חיפוש בכל ההגדרות">
+        </div>
+      </div>
+      <div class="alert warn" id="setRestart" role="status" hidden></div>
+      <div class="set-layout">
+        <nav class="set-nav" aria-label="פרקי ההגדרות">
+          <ul id="setSections"></ul>
+          <select id="setSectionSelect" aria-label="פרק"></select>
+        </nav>
+        <div class="grid" id="setBody"></div>
+      </div>
+      <div class="set-bar" id="setBar" role="region" aria-label="שינויים שלא נשמרו" hidden>
+        <span class="grow">יש שינויים שלא נשמרו <span id="setBarCount" class="small" style="font-weight:400"></span></span>
+        <button type="button" id="setSave"><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button>
+        <button type="button" class="ghost" id="setCancel">ביטול</button>
+      </div>
+      <input type="file" id="setImportFile" accept=".json,application/json" hidden>
+    </section>
+
+    <section data-page="archive" hidden>
+      <div class="page-head"><h1>ארכיון</h1></div>
+      <p class="muted" style="margin:0 0 1.5rem;max-width:75ch">שום מידע לא נמחק. משתמש, צוות, מודל, מקור מידע או מסמך שהועברו לארכיון לא מופיעים במסכים ולא עובדים, אבל נשמרים עם כל ההיסטוריה שלהם, ואפשר לשחזר אותם. ההוצאה שלהם נשארת ביומן ובדוחות.</p>
+      <div class="card">
+        <div class="table-wrap"><table class="stack-mobile">
+          <caption class="sr-only">ארכיון</caption>
+          <thead><tr><th>סוג</th><th>שם</th><th>הועבר לארכיון</th><th><span class="sr-only">פעולות</span></th></tr></thead>
+          <tbody id="archiveList"></tbody>
+        </table></div>
+      </div>
+    </section>
+    </main>
+    <footer class="footer"><div class="row spread"><span>FireGate · ניהול שימוש בבינה מלאכותית</span><span class="muted small ltr" data-version></span><a href="chat.html">מסך הצ'אט לעובדים</a></div></footer>
+  </div>
+</div>
+
+<dialog id="accountDialog">
+  <form id="accountForm">
+    <h2 id="accountTitle"></h2>
+    <fieldset>
+      <legend>מי</legend>
+      <label class="field" id="nameField">שם (עובד, אפליקציה או לקוח)<input type="text" id="aName" required></label>
+      <label class="field">צוות<select id="aTeam"></select></label>
+    </fieldset>
+    <fieldset>
+      <legend>מגבלות</legend>
+      <div class="grid two" style="gap:12px">
+        <label class="field">תקציב חודשי ($)<input type="number" id="aBudget" min="0" step="0.01" required></label>
+        <label class="field">בקשות לדקה (0 = ללא הגבלה)<input type="number" id="aRpm" min="0" step="1" value="0"></label>
+        <label class="field">טוקנים ליום (0 = ללא הגבלה)<input type="number" id="aDaily" min="0" step="1" value="0"></label>
+      </div>
+      <div class="field">מודלים מותרים <span class="muted small">מחיר לכל מיליון טוקנים: נכנס / יוצא</span><div id="aModels"></div></div>
+    </fieldset>
+    <fieldset>
+      <legend>גישה</legend>
+      <label class="field"><span id="pwLabel"></span><input type="password" id="aPassword" autocomplete="new-password" minlength="8"></label>
+      <label class="check" id="keyField"><input type="checkbox" id="aKey"> ליצור מפתח לאפליקציות (API)</label>
+      <div class="field" id="keyRow"></div>
+      <label class="field">המפתח בתוקף עד (ריק = בלי תאריך תפוגה)<input type="date" id="aKeyExpires"></label>
+    </fieldset>
+    <p class="error" id="accountError" role="alert"></p>
+    <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
+<dialog id="teamDialog">
+  <form id="teamForm">
+    <h2 id="teamTitle"></h2>
+    <label class="field" id="tNameField">שם הצוות<input type="text" id="tName" required></label>
+    <label class="field">תקציב חודשי לצוות ($, 0 = ללא תקרה)<input type="number" id="tBudget" min="0" step="0.01" required></label>
+    <fieldset>
+      <legend>חיוב פנימי</legend>
+      <div class="grid two" style="gap:12px">
+        <label class="field">מרכז עלות<input type="text" id="tCostCenter" class="ltr" maxlength="64"></label>
+        <label class="field">חשבון בהנהלת החשבונות<input type="text" id="tGlAccount" class="ltr" maxlength="64"></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>מודלים מותרים לצוות</legend>
+      <p class="muted small" style="margin:0">בלי סימון, הצוות לא מגביל. עם סימון, חברי הצוות יכולים להשתמש רק במודלים המסומנים, גם אם הותרו להם אישית מודלים נוספים. זה חל גם על הבחירה האוטומטית ועל מודל הגיבוי.</p>
+      <div id="tModels"></div>
+    </fieldset>
+    <fieldset class="team-set">
+      <legend>הגדרות מיוחדות</legend>
+      <p class="muted small" style="margin:0">ברירת המחדל היא "כמו ההגדרה הכללית". הגדרה מיוחדת חלה רק על חברי הצוות.</p>
+      <div id="tSettings"></div>
+    </fieldset>
+    <p class="error" id="teamError" role="alert"></p>
+    <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
+<dialog id="modelDialog">
+  <form id="modelForm">
+    <h2 id="modelTitle"></h2>
+    <fieldset>
+      <legend>זיהוי</legend>
+      <label class="field" id="mAliasField">כינוי (מה שאפליקציות שולחות בשדה model)<input type="text" id="mAlias" class="ltr" pattern="[a-z0-9][a-z0-9._\-]{1,39}" placeholder="claude-top" required></label>
+      <label class="field">שם לתצוגה (מה שעובדים רואים בצ'אט)<input type="text" id="mLabel" maxlength="60" placeholder="Claude Opus 5.5"></label>
+    </fieldset>
+    <fieldset>
+      <legend>אצל הספק</legend>
+      <label class="field">ספק<select id="mProvider"><option value="anthropic">Anthropic ‏(Claude)</option><option value="openai">OpenAI ‏(GPT)</option><option value="gemini">Google ‏(Gemini)</option><option value="local">שרת החברה ‏(Ollama / vLLM)</option></select></label>
+      <label class="field">שם המודל אצל הספק<input type="text" id="mModel" class="ltr" placeholder="claude-opus-5-5" required></label>
+      <div class="grid two" style="gap:12px">
+        <label class="field">מחיר לטוקנים נכנסים ($ למיליון)<input type="number" id="mIn" min="0" step="0.001" required></label>
+        <label class="field">מחיר לטוקנים יוצאים ($ למיליון)<input type="number" id="mOut" min="0" step="0.001" required></label>
+      </div>
+      <label class="field">מחיר לטוקנים שנקראים מהמטמון של הספק ($ למיליון; ריק = עשירית ממחיר הנכנסים)<input type="number" id="mCached" min="0" step="0.0001"></label>
+      <p class="muted small" style="margin:0">את השם המדויק והמחירים מעתיקים מעמוד המחירים של הספק.</p>
+    </fieldset>
+    <fieldset>
+      <legend>כשהספק לא זמין</legend>
+      <label class="field">מודל גיבוי<select id="mFallback"></select></label>
+      <p class="muted small" style="margin:0">אם הספק עמוס או לא עונה, השאלה עוברת אוטומטית למודל הגיבוי ומחויבת לפי המחיר שלו. באפליקציות זה עובד רק בין מודלים באותו פורמט: Claude עם Claude, או GPT עם Gemini.</p>
+    </fieldset>
+    <label class="check"><input type="checkbox" id="mEnabled" checked> פעיל: אפשר להשתמש בו</label>
+    <p class="error" id="modelError" role="alert"></p>
+    <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
+  </form>
+</dialog>
+
+<dialog id="sourceDialog">
+  <form id="sourceForm">
+    <h2 id="sourceTitle"></h2>
+    <label class="field" id="sNameField">שם המקור<input type="text" id="sName" required></label>
+    <label class="field">תיאור קצר (העובדים רואים אותו)<input type="text" id="sDesc"></label>
+    <div class="field">סוג
+      <div class="row">
+        <label class="check"><input type="radio" name="sKind" value="upload" checked> קבצים שמעלים כאן</label>
+        <label class="check"><input type="radio" name="sKind" value="folder"> תיקייה בשרת</label>
+        <label class="check"><input type="radio" name="sKind" value="mcp"> שרת MCP</label>
+      </div>
+    </div>
+    <label class="field" id="sPathField" hidden>נתיב התיקייה בשרת<input type="text" id="sPath" class="ltr" placeholder="/sources/policies"></label>
+    <fieldset id="sMcpFields" hidden>
+      <legend>חיבור לשרת MCP</legend>
+      <p class="muted small" style="margin:0">MCP הוא דרך סטנדרטית שבה מערכות (CRM, ויקי, מערכת כרטיסים) חושפות מידע לבינה מלאכותית. מכניסים את הכתובת שהמערכת נותנת.</p>
+      <label class="field">כתובת השרת<input type="text" id="sMcpUrl" class="ltr" placeholder="https://crm.example.com/mcp"></label>
+      <label class="field">מפתח גישה (אם השרת דורש)<input type="password" id="sMcpToken" class="ltr" autocomplete="off"></label>
+      <div class="row"><button type="button" class="ghost" id="sMcpTest">בדיקת חיבור</button><span class="small" id="sMcpInfo" role="status"></span></div>
+      <div class="field">איך להשתמש בו
+        <label class="check"><input type="radio" name="sMode" value="search" checked> חיפוש חי: בכל שאלה, לשאול את השרת</label>
+        <label class="check"><input type="radio" name="sMode" value="resources"> סנכרון: להעתיק את המסמכים שלו לאינדקס</label>
+      </div>
+      <div class="grid two" style="gap:12px" id="sToolFields">
+        <label class="field">כלי החיפוש<select id="sTool"></select></label>
+        <label class="field">השדה שמקבל את השאלה<select id="sArg"></select></label>
+      </div>
+    </fieldset>
+    <div class="field">מי רשאי לחפש במקור הזה
+      <label class="check"><input type="checkbox" id="sEveryone"> כל העובדים</label>
+      <div id="sTeams"></div>
+    </div>
+    <p class="error" id="sourceError" role="alert"></p>
+    <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
+  </form>
+</dialog>
+<dialog id="summaryDialog">
+  <div class="grid" style="gap:14px">
+    <h2 id="summarySubject"></h2>
+    <iframe id="summaryFrame" sandbox="" referrerpolicy="no-referrer" title="תצוגה מקדימה של המייל"></iframe>
+    <div class="row"><button type="button" class="ghost" data-close>סגירה</button></div>
+  </div>
+</dialog>
+<input type="file" id="fileInput" multiple hidden accept=".txt,.md,.csv,.json,.html,.htm,.log,.xml,.yaml,.yml,.pdf,.docx">
+
+<dialog id="keyDialog">
+  <div class="grid" style="gap:14px">
+    <h2>המפתח החדש</h2>
+    <p class="small" style="margin:0">המפתח מוצג <b>פעם אחת בלבד</b>. השער שומר רק טביעת אצבע חד-כיוונית שלו (<bdi>SHA-256</bdi>), ולכן אי אפשר לשחזר אותו. העתיקו ומסרו אותו עכשיו.</p>
+    <div class="secret" id="keyValue"></div>
+    <div class="row"><button id="copyKey"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span>העתקה</span></button><button type="button" class="ghost" data-close>סגירה</button></div>
+  </div>
+</dialog>
+
+<script src="data.js"></script>
+<script src="mock.js"></script>
+<script src="ui.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
