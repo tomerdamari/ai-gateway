@@ -24,6 +24,7 @@ import os
 import re
 import secrets
 import smtplib
+import socket
 import sqlite3
 import ssl
 import sys
@@ -120,7 +121,20 @@ PROVIDERS = {
         {"authorization": "Bearer " + os.environ.get("GEMINI_API_KEY", "")},
         ("prompt_tokens", "completion_tokens"),
     ),
+    # models on the company's own server (Ollama, vLLM): the same API as OpenAI. The address is set on the models page
+    # (LOCAL_URL below, read from the settings); an optional key comes only from LOCAL_API_KEY and is never stored or shown.
+    "local": (
+        "/v1/chat/completions",
+        "",
+        {"authorization": "Bearer " + os.environ["LOCAL_API_KEY"].strip()} if os.environ.get("LOCAL_API_KEY", "").strip() else {},
+        ("prompt_tokens", "completion_tokens"),
+    ),
 }
+# The local model server usually sits on the company network, so private addresses are allowed; this machine itself only
+# with ALLOW_LOCAL_LOOPBACK=1 (Ollama installed next to the gateway). Cloud metadata and link-local addresses never.
+LOCAL_LOOPBACK = os.environ.get("ALLOW_LOCAL_LOOPBACK", "").strip().lower() in ("1", "true", "yes", "on")
+LOCAL_URL = ""  # base address, e.g. http://ollama:11434/v1; refreshed from the settings with the models
+LOCAL_OPENER = mcp.opener(lambda ip: mcp.blocked_ip(ip, loopback=LOCAL_LOOPBACK, private=True), "the local model server", OSError)
 
 # Models live in the database and are managed from the admin "models" page.
 # These are only the first-run defaults: alias, label, provider, real model, $ per 1M input / output tokens.
@@ -199,6 +213,8 @@ def migrate(c):
                            ("accounts", "daily_tokens int not null default 0"),
                            # teams: accounting codes for the chargeback export, and the models the team may use (NULL = no limit)
                            ("teams", "cost_center text"), ("teams", "gl_account text"), ("teams", "models text"),
+                           # speed: whole call and time to the first piece of answer (ms), and the provider's HTTP status
+                           ("logs", "latency_ms int"), ("logs", "ttft_ms int"), ("logs", "status int"),
                            ("audit", "seq int"), ("audit", "prev_hash text"), ("audit", "hash text"),
                            # archive instead of delete: when the item was archived, NULL = in use
                            *((t, "archived real") for t in ("accounts", "teams", "models", "sources", "docs", "conversations"))):
@@ -206,6 +222,8 @@ def migrate(c):
                 c.execute(f"alter table {table} add column {col}")
             except sqlite3.OperationalError:
                 pass  # already there
+        # speed statistics read only these columns: an index holding them all spares reading the wide log rows
+        c.execute("create index if not exists logs_speed on logs(ts, model, latency_ms, ttft_ms, status, name)")
         with c:
             c.execute("update models set price_cached = round(price_in * 0.1, 6) where price_cached is null")
             c.execute("update accounts set key_created = ? where key_hash is not null and key_created is null", (time.time(),))
@@ -383,7 +401,8 @@ def setting(c, key, default=None):
 
 
 def refresh_models(c):
-    global MODELS, ALL_MODELS, MODEL_EXTRA
+    global MODELS, ALL_MODELS, MODEL_EXTRA, LOCAL_URL
+    LOCAL_URL = setting(c, "local_base_url", "")
     rows = c.execute("select alias, provider, model, price_in, price_out, enabled, price_cached, fallback from models"
                      " where archived is null order by created, alias").fetchall()
     ALL_MODELS = {r["alias"]: (r["provider"], r["model"], r["price_in"], r["price_out"]) for r in rows}
@@ -733,9 +752,18 @@ def authorize(c, acct, alias):
 
 
 def policy(c):
-    """(injection policy: block|log, sensitive-data policy: mask|block|log), set on the admin security page."""
+    """(injection policy: block|log, sensitive-data policy: mask|block|log|local), set on the admin security page.
+    local: a question with sensitive data goes, unmasked, to a model on the company's own server (mask when there is none)."""
     inj, sens = setting(c, "policy_injection", "block"), setting(c, "policy_sensitive", "mask")
-    return inj if inj in ("block", "log") else "block", sens if sens in ("mask", "block", "log") else "mask"
+    return inj if inj in ("block", "log") else "block", sens if sens in SENSITIVE_POLICIES else "mask"
+
+
+SENSITIVE_POLICIES = ("mask", "block", "log", "local")
+
+
+def local_models(c, acct):
+    """The account's models (team policy included) that are on and run on the company's own server."""
+    return [a for a in effective_models(c, acct) if a in MODELS and MODELS[a][0] == "local"]
 
 
 def last_user_text(messages):
@@ -773,10 +801,12 @@ def price_usage(price_in, price_out, price_cached, u):
 
 
 def log_call(c, name, team, model, u, cost, request, response, note="", request_id=None):
+    """u may also carry "ms" / "ttft" (speed), "status" (the provider's answer) and "estimated" (token counts guessed)."""
+    note = "; ".join(x for x in (note, "estimated" if u.get("estimated") else "") if x)
     c.execute("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, request, response, cache_read, cache_write, note,"
-              " request_id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              " request_id, latency_ms, ttft_ms, status) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (time.time(), name, team, model, u["in"] + u["cache_read"] + u["cache_write"], u["out"], cost, encrypt(request),
-               encrypt(response), u["cache_read"], u["cache_write"], note or None, request_id))
+               encrypt(response), u["cache_read"], u["cache_write"], note or None, request_id, u.get("ms"), u.get("ttft"), u.get("status")))
 
 
 def charge(c, acct, alias, u, request, response, note="", request_id=None):
@@ -1092,7 +1122,8 @@ SEC_KINDS_HE = {"suspicious-prompt": "שאלות חשודות", "sensitive-data-
                 "admin-denied": "סיסמת מנהל שגויה מבחוץ", "document-refused": "מסמכים חשודים שלא נקלטו", "document-forced": "מסמכים חשודים שהועלו באישור",
                 "document-flagged": "מסמכים חשודים שנשלחו למודל", "answer-masked": "מפתחות שהוסתרו מתשובות", "suspicious-link": "קישורים חשודים בתשובות",
                 "prompt-leak": "תשובות שחשפו את הוראות השער", "mcp-tool-refused": "כלי MCP שלא הופעלו", "cost-spike": "הוצאות חריגות",
-                "login-throttled": "יותר מדי סיסמאות שגויות מכתובת אחת", "summary-failed": "שליחות סיכום שנכשלו"}
+                "login-throttled": "יותר מדי סיסמאות שגויות מכתובת אחת", "summary-failed": "שליחות סיכום שנכשלו",
+                "sensitive-routed-local": "שאלות עם מידע רגיש שנענו במודל המקומי"}
 SUMMARY_HOUR, SUMMARY_TRIES = 8, 3  # sent on the 1st after 08:00 local time; a failed send is tried again next hour, 3 times at most
 EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
 
@@ -1301,15 +1332,28 @@ def read_usage(obj, provider, u):
 
 def upstream(provider, body, on_line):
     """POST body to the provider. Streams call on_line(raw line, parsed event or None) per line.
-    Returns (status, raw response bytes, usage). Raises URLError if unreachable."""
+    Returns (status, raw response bytes, usage). Raises URLError if unreachable.
+    usage also gets "ms" (the whole call) and "ttft" (until the first piece of answer text; the whole call when not streamed).
+    The local model server: its own address, through the opener that refuses metadata/link-local addresses and redirects;
+    when it reports no token counts they are estimated (about 4 characters a token) and marked "estimated"."""
     _, url, auth, _ = PROVIDERS[provider]
+    send = urllib.request.urlopen
+    if provider == "local":
+        if not LOCAL_URL:
+            raise urllib.error.URLError("no address set for the local model server")
+        url, send = LOCAL_URL + "/chat/completions", LOCAL_OPENER.open
     req = urllib.request.Request(url, json.dumps(body).encode(), {"content-type": "application/json", **auth})
+    t0 = time.monotonic()
+    ms = lambda: round((time.monotonic() - t0) * 1000)
+    u = new_usage()
     try:
-        r = urllib.request.urlopen(req, timeout=300)
+        r = send(req, timeout=300)
     except urllib.error.HTTPError as e:
         with e:
-            return e.code, e.read(), new_usage()  # provider error: nothing to charge
-    u = new_usage()
+            data = e.read()  # provider error: nothing to charge
+        u["ms"] = u["ttft"] = ms()
+        return e.code, data, u
+    answer = []
     with r:
         if not body.get("stream"):
             data = r.read()
@@ -1317,19 +1361,72 @@ def upstream(provider, body, on_line):
                 read_usage(json.loads(data), provider, u)
             except (ValueError, AttributeError):
                 pass
-            return r.status, data, u
-        chunks = []
-        for line in r:
-            chunks.append(line)
-            ev = None
-            if line.startswith(b"data:"):
-                try:
-                    ev = json.loads(line[5:])
-                    read_usage(ev, provider, u)
-                except (ValueError, AttributeError):
-                    ev = None  # "[DONE]" and other non-JSON lines
-            on_line(line, ev)
-        return r.status, b"".join(chunks), u
+            if provider == "local":
+                answer.append(excerpt(data.decode(errors="replace"), False, len(data)))
+            u["ms"] = u["ttft"] = ms()
+        else:
+            chunks = []
+            for line in r:
+                chunks.append(line)
+                ev = None
+                if line.startswith(b"data:"):
+                    try:
+                        ev = json.loads(line[5:])
+                        read_usage(ev, provider, u)
+                    except (ValueError, AttributeError):
+                        ev = None  # "[DONE]" and other non-JSON lines
+                piece = delta_text(provider, ev)
+                if piece:
+                    answer.append(piece)
+                    u.setdefault("ttft", ms())
+                on_line(line, ev)
+            data = b"".join(chunks)
+            u["ms"] = ms()
+            u.setdefault("ttft", u["ms"])
+        if provider == "local" and r.status < 400 and not u["in"] and not u["out"]:
+            u.update({"in": len(json.dumps(body.get("messages"), ensure_ascii=False)) // 4, "out": len("".join(answer)) // 4,
+                      "estimated": True})
+        return r.status, data, u
+
+
+def check_local_url(url):
+    """The local model server's base address as the admin typed it, checked like an MCP address except that company
+    (private) addresses are the point: http(s) only, no user name or password in it, and a name that resolves to cloud
+    metadata, link-local or (without ALLOW_LOCAL_LOOPBACK) this machine is refused. Every connection checks again, so a
+    name that changes its answer later is still caught. "" turns the local server off."""
+    url = str(url or "").strip().rstrip("/")
+    if not url:
+        return ""
+    p = urllib.parse.urlsplit(url)
+    try:
+        port = p.port
+    except ValueError:
+        port = -1
+    if p.scheme not in ("http", "https") or not p.hostname or port == -1 or p.username or p.password or p.query or p.fragment:
+        raise ValueError("local model server address must look like http://server:11434/v1")
+    try:
+        infos = socket.getaddrinfo(p.hostname, port or (443 if p.scheme == "https" else 80), type=socket.SOCK_STREAM)
+    except OSError:
+        return url  # not resolvable from here right now; the connection check will say so
+    for *_, sa in infos:
+        if mcp.blocked_ip(sa[0], loopback=LOCAL_LOOPBACK, private=True):
+            raise ValueError(f"address {sa[0]} is not allowed for the local model server")
+    return url
+
+
+def local_list(url):
+    """GET {url}/models on the local server: the model ids it offers (OpenAI format, as Ollama and vLLM answer)."""
+    req = urllib.request.Request(url + "/models", headers=PROVIDERS["local"][2])
+    t0 = time.monotonic()
+    try:
+        with LOCAL_OPENER.open(req, timeout=10) as r:
+            d = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "error": f"HTTP {e.code}"}
+    except (OSError, ValueError) as e:  # OSError: unreachable, refused address, timeout
+        return {"ok": False, "error": str(getattr(e, "reason", e))[:300]}
+    ids = [str(m.get("id")) for m in (d.get("data") if isinstance(d, dict) else None) or [] if isinstance(m, dict) and m.get("id")]
+    return {"ok": True, "models": ids[:200], "ms": round((time.monotonic() - t0) * 1000)}
 
 
 # --- meaning vectors for document search (OpenAI or Gemini embeddings; Anthropic has none) ---
@@ -1463,6 +1560,86 @@ def mcp_sync(c, row):
     return len(seen), skipped, flagged, gone
 
 
+# --- speed: how long answers take, per model and per provider ---
+SLOW_FACTOR, SLOW_MIN = 2, 10  # alert: last hour's p95 above 2x the 7 days before it, with at least 10 answers in the hour
+FAST_MIN = 20  # "prefer the fast model" trusts a model's last-24h median only from this many answers
+
+
+def pct(values, p):
+    """Nearest-rank percentile of a sorted list; None when empty."""
+    return values[max(0, math.ceil(p * len(values)) - 1)] if values else None
+
+
+def speed_summary(items):
+    """items: (latency ms, time to first token ms, status). Percentiles count answers only; errors and timeouts are rates."""
+    good = [(ms, ttft) for ms, ttft, st in items if not st or st < 400]
+    total, first = sorted(ms for ms, _ in good), sorted(ms if ttft is None else ttft for ms, ttft in good)
+    n = len(items)
+    errors, timeouts = sum(1 for *_, st in items if st and st >= 400), sum(1 for *_, st in items if st in (408, 504))
+    return {"requests": n, "answers": len(good), "p50": pct(total, .5), "p95": pct(total, .95), "ttft_p50": pct(first, .5), "ttft_p95": pct(first, .95),
+            "errors": errors, "error_rate": round(errors / n, 4) if n else 0, "timeouts": timeouts,
+            "timeout_rate": round(timeouts / n, 4) if n else 0}
+
+
+def latency(c, now=None):
+    """Speed per model and per provider over the last 24 hours and 7 days, the median per provider for each of the last 48
+    hours, and slow alerts (a model whose last-hour p95 is over SLOW_FACTOR x its p95 in the 7 days before that hour).
+    Test calls and document indexing don't count."""
+    now = time.time() if now is None else now
+    info = {}  # the logs keep the provider's model name; models in use win over archived ones with the same name
+    for r in c.execute("select alias, label, provider, model from models order by archived is not null, created"):
+        info.setdefault(r["model"], {"alias": r["alias"], "label": r["label"] or r["alias"], "provider": r["provider"]})
+    week, base_from = now - 7 * 86400, now - 7 * 86400 - 3600
+    by_model, by_provider, hours = {}, {}, {}
+    for ts, model, ms, ttft, st in c.execute(
+            "select ts, model, latency_ms, ttft_ms, status from logs where ts >= ? and latency_ms is not null and name not like '(%'",
+            (base_from,)):
+        if model not in info:
+            continue
+        item, p = (ms, ttft, st), info[model]["provider"]
+        for groups, key in ((by_model, model), (by_provider, p)):
+            g = groups.setdefault(key, {"hour": [], "day": [], "week": [], "base": []})
+            if ts >= now - 3600:
+                g["hour"].append(item)
+            else:
+                g["base"].append(item)
+            if ts >= now - 86400:
+                g["day"].append(item)
+            if ts >= week:
+                g["week"].append(item)
+        if ts >= now - 48 * 3600 and (not st or st < 400):
+            hours.setdefault((int(ts // 3600) * 3600, p), []).append(ms)
+    models, alerts = [], []
+    for model, g in by_model.items():
+        hour, base = speed_summary(g["hour"]), speed_summary(g["base"])
+        slow = hour["answers"] >= SLOW_MIN and bool(base["p95"]) and hour["p95"] > SLOW_FACTOR * base["p95"]
+        models.append({"model": model, **info[model], "day": speed_summary(g["day"]), "week": speed_summary(g["week"]),
+                       "hour": hour, "slow": slow})
+        if slow:
+            alerts.append({"model": model, **info[model], "hour_p95": hour["p95"], "week_p95": base["p95"], "requests": hour["answers"]})
+    models.sort(key=lambda m: (-m["day"]["requests"], m["label"]))
+    return {"models": models, "alerts": alerts, "slow_factor": SLOW_FACTOR, "slow_min": SLOW_MIN,
+            "providers": [{"provider": p, "day": speed_summary(g["day"]), "week": speed_summary(g["week"])}
+                          for p, g in sorted(by_provider.items())],
+            "hourly": [{"hour": h, "provider": p, "p50": pct(sorted(v), .5), "requests": len(v)} for (h, p), v in sorted(hours.items())]}
+
+
+def fastest_like(c, alias, allowed, now=None):
+    """Among alias and the allowed models priced like it (within STRONG_FACTOR either way, any provider), the one with the
+    lowest median over the last 24 hours, counting only models with FAST_MIN answers or more; alias when none has that."""
+    now = time.time() if now is None else now
+    price = model_price(alias)
+    tier = {MODELS[a][1]: a for a in allowed if a in MODELS and (a == alias or price / STRONG_FACTOR <= model_price(a) <= price * STRONG_FACTOR)}
+    # ponytail: reads the last day's speed on every automatic choice; cache it for a minute if chat traffic gets heavy
+    times = {}
+    for model, ms in c.execute(f"select model, latency_ms from logs where ts >= ? and model in ({','.join('?' * len(tier))})"
+                               " and latency_ms is not null and (status is null or status < 400) and name not like '(%'",
+                               (now - 86400, *tier)):
+        times.setdefault(model, []).append(ms)
+    medians = {tier[m]: pct(sorted(v), .5) for m, v in times.items() if len(v) >= FAST_MIN}
+    return min(medians, key=medians.get) if medians else alias
+
+
 def fallback_for(alias, path=None, allowed=None):
     """The backup model for alias, if it is on, (for app calls) speaks the same request format, and is in allowed (the
     team's model list; None = no team limit). A backup the team may not use means no backup."""
@@ -1493,7 +1670,9 @@ def route_auto(c, acct, messages):
         want, reason = cheap, "שאלה קצרה ופשוטה"
     for a in (want, cheap, strong):
         if a in allowed:
-            return a, reason if a == want else f"{reason} (המודל המתאים לא זמין לך)"
+            reason = reason if a == want else f"{reason} (המודל המתאים לא זמין לך)"
+            fast = fastest_like(c, a, allowed) if setting(c, "auto_prefer_fast", "0") == "1" else a
+            return (a, reason) if fast == a else (fast, f"{reason} (המהיר מבין המתאימים)")
     return None, "no model available for automatic choice"
 
 
@@ -1632,18 +1811,36 @@ class Handler(BaseHTTPRequestHandler):
             self.refuse(c, acct, 403, "request blocked: possible prompt injection or jailbreak", "policy-injection", model, text)
         return not blocked
 
-    def sensitive(self, c, acct, original, masked_obj, count, model, text):
-        """The sensitive-data policy. Returns what to send on (masked or original), or None if refused."""
+    local_route = None  # set when sensitive data was sent unmasked to the local model: the masked copy, for the log
+
+    def sensitive(self, c, acct, original, masked_obj, count, model, text, path="/v1/chat/completions"):
+        """The sensitive-data policy. Returns (what to send on: masked or original, model alias), or (None, model) if refused.
+        local: the question goes unmasked to a model on the company's own server that the account may use (the model asked
+        for, if it is one), never to an outside provider, backups included. Apps calling the Anthropic format can't be
+        moved to it, and without such a model the question is masked."""
         if not count:
-            return masked_obj
+            return masked_obj, model
         mode = policy(c)[1]
+        if mode == "local":
+            local = local_models(c, acct) if path == "/v1/chat/completions" else []
+            if local:
+                target = model if model in local else local[0]
+                with c:
+                    self.event(c, "sensitive-routed-local", acct["name"], {"count": count, "model": MODELS[target][1]})
+                self.local_route = masked_obj
+                return original, target
+            mode = "mask"
         kind = {"mask": "sensitive-data-masked", "block": "sensitive-data-blocked", "log": "sensitive-data-logged"}[mode]
         with c:
             self.event(c, kind, acct["name"], {"count": count})
         if mode == "block":
             self.refuse(c, acct, 403, "request blocked: sensitive data", "policy-sensitive", model, text)
-            return None
-        return masked_obj if mode == "mask" else original
+            return None, model
+        return (masked_obj if mode == "mask" else original), model
+
+    def backups(self, c, acct):
+        """Models a backup may come from: the team's list, or only local models when sensitive data went unmasked."""
+        return local_models(c, acct) if self.local_route else team_models(c, acct["team"])
 
     def host_ok(self):
         host = (self.headers.get("host") or "").lower()
@@ -1768,10 +1965,15 @@ class Handler(BaseHTTPRequestHandler):
             if not a:
                 continue
             self.current_alias = a
+            t0 = time.monotonic()
             try:
                 status, data, u = upstream(MODELS[a][0], build(a), on_line)
-            except urllib.error.URLError as e:
-                status, data, u = 502, json.dumps({"error": f"provider unreachable: {e.reason}"}).encode(), new_usage()
+            except (urllib.error.URLError, TimeoutError) as e:  # TimeoutError: the provider stopped answering mid-way
+                reason = getattr(e, "reason", e)
+                status = 504 if isinstance(reason, TimeoutError) else 502
+                data, u = json.dumps({"error": f"provider unreachable: {reason or 'timed out'}"}).encode(), new_usage()
+                u["ms"] = u["ttft"] = round((time.monotonic() - t0) * 1000)
+            u["status"] = status
             last = (a, status, data, u)
             if status < 400 or started or status not in RETRYABLE:
                 break
@@ -1800,8 +2002,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.screen(c, acct, question, alias):
             return
         clean = redact(body)  # masked before anything leaves for the provider; the log keeps the same masked version
-        body = self.sensitive(c, acct, body, clean, masked(json.dumps(body, ensure_ascii=False), json.dumps(clean, ensure_ascii=False)),
-                              alias, question)
+        body, alias = self.sensitive(c, acct, body, clean, masked(json.dumps(body, ensure_ascii=False), json.dumps(clean, ensure_ascii=False)),
+                                     alias, question, path)
         if body is None:
             return
         for k in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
@@ -1838,8 +2040,10 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(line)
             self.wfile.flush()
 
-        used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, path, team_models(c, acct["team"]))
-        if status >= 400 and not u["in"] and not u["out"] and b"provider unreachable" in data:
+        used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, path, self.backups(c, acct))
+        logged = json.dumps(self.local_route or body, ensure_ascii=False)  # sent to our own server unmasked: the log keeps it masked
+        if not started and status >= 400 and not u["in"] and not u["out"] and b"provider unreachable" in data:
+            charge(c, acct, used_alias, u, logged, data.decode(errors="replace"), note, self.rid)  # $0, but counts in the error rate
             return self.reply(502, json.loads(data))
         if started:
             data = b"".join(sent)
@@ -1853,7 +2057,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 pass
         text = data.decode(errors="replace")
-        charge(c, acct, used_alias, u, json.dumps(body, ensure_ascii=False), text, note, self.rid)
+        charge(c, acct, used_alias, u, logged, text, note, self.rid)
         self.answer_events(c, acct, used_alias, text, hidden[0], security.bad_links(text))
         if not started:
             self.send_raw(status, data, "application/json", [("x-gateway-model", used_alias)])
@@ -2010,9 +2214,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         original = [{"role": m["role"], "content": m["content"]} for m in messages]
         clean = redact(original)
-        messages = self.sensitive(c, acct, original, clean, masked(last, clean[-1]["content"]), alias, last)
+        messages, alias = self.sensitive(c, acct, original, clean, masked(last, clean[-1]["content"]), alias, last)
         if messages is None:
             return
+        if self.local_route:
+            route = "מידע רגיש: נענה במודל המקומי"
         if not inflight_enter(acct["name"]):
             return self.refuse(c, acct, 429, "too many requests in progress", "concurrency", alias, last)
         try:
@@ -2081,7 +2287,7 @@ class Handler(BaseHTTPRequestHandler):
             if piece:
                 write(masker.feed(piece))  # keys in the answer are masked before they reach the employee
 
-        used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, None, team_models(c, acct["team"]))
+        used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, None, self.backups(c, acct))
         answer = ""
         if started:
             write(masker.flush())
@@ -2095,8 +2301,9 @@ class Handler(BaseHTTPRequestHandler):
             if leaks:
                 with c:
                     self.event(c, "prompt-leak", acct["name"], {"model": MODELS[used_alias][1], "count": leaks})
-        logged = {"sources": used, "messages": messages} if used else messages
-        note = "; ".join(x for x in (f"auto: {route}" if route else "", note) if x)
+        shown = self.local_route or messages  # sent to our own server unmasked: the log keeps it masked
+        logged = {"sources": used, "messages": shown} if used else shown
+        note = "; ".join(x for x in ("sensitive: local" if self.local_route else f"auto: {route}" if route else "", note) if x)
         charge(c, acct, used_alias, u, json.dumps(logged, ensure_ascii=False),
                answer if started else data.decode(errors="replace"), note, self.rid)
         if not started:
@@ -2105,7 +2312,10 @@ class Handler(BaseHTTPRequestHandler):
     def test_model(self, c, row):
         """Send a 5-token question to the provider and report whether the key and model id work."""
         _, url, auth, fields = PROVIDERS[row["provider"]]
-        if not next((v.removeprefix("Bearer ").strip() for k, v in auth.items() if k != "anthropic-version"), ""):
+        if row["provider"] == "local":
+            if not LOCAL_URL:
+                return {"ok": False, "error": "no address set for the local model server"}
+        elif not next((v.removeprefix("Bearer ").strip() for k, v in auth.items() if k != "anthropic-version"), ""):
             return {"ok": False, "error": "no API key for this provider in .env"}
         body = {"model": row["model"], "messages": [{"role": "user", "content": "Reply with the word OK."}]}
         body["max_completion_tokens" if row["provider"] == "openai" else "max_tokens"] = 5  # newer OpenAI models reject max_tokens
@@ -2246,6 +2456,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, month_report(c, self.query("month") or time.strftime("%Y-%m")))
         if path == "/admin/api/savings":
             return self.reply(200, savings(c))
+        if path == "/admin/api/latency":
+            return self.reply(200, latency(c))
         if path == "/admin/api/chargeback":  # ?month=2026-09&format=json|csv
             month, fmt = self.query("month") or time.strftime("%Y-%m"), self.query("format") or "json"
             if fmt not in ("json", "csv"):
@@ -2286,11 +2498,13 @@ class Handler(BaseHTTPRequestHandler):
                              "backup_answers": backups.get(r["model"], 0)})
             providers = {p: bool(next((v.removeprefix("Bearer ").strip() for k, v in auth.items() if k != "anthropic-version"), ""))
                          for p, (_, _, auth, _) in PROVIDERS.items()}
+            providers["local"] = bool(LOCAL_URL)  # the key is optional there: "connected" means an address is set
             auto = {"enabled": setting(c, "auto_enabled", "1") == "1", "cheap": setting(c, "auto_cheap", "fast"),
-                    "strong": setting(c, "auto_strong", "smart"),
+                    "strong": setting(c, "auto_strong", "smart"), "prefer_fast": setting(c, "auto_prefer_fast", "0") == "1",
                     "count": c.execute("select count(*) from logs where ts >= ? and note like 'auto:%'", (start,)).fetchone()[0]}
             return self.reply(200, {"models": rows, "default_model": default_model(c), "providers": providers,
-                                    "cache_saved": round(saved, 6), "auto": auto})
+                                    "cache_saved": round(saved, 6), "auto": auto,
+                                    "local": {"url": LOCAL_URL, "has_key": bool(PROVIDERS["local"][2]), "loopback": LOCAL_LOOPBACK}})
         if path == "/admin/api/archive":
             return self.reply(200, archive_list(c))
         if path == "/admin/api/audit":
@@ -2468,7 +2682,7 @@ class Handler(BaseHTTPRequestHandler):
             return (200, {"ok": True})
         if path == "/admin/api/security/policy":  # name is "policy"
             inj, sens = str(body.get("injection", "")), str(body.get("sensitive", ""))
-            if inj not in ("block", "log") or sens not in ("mask", "block", "log"):
+            if inj not in ("block", "log") or sens not in SENSITIVE_POLICIES:
                 raise ValueError("unknown security policy")
             old = policy(c)
             for k, v in (("policy_injection", inj), ("policy_sensitive", sens)):
@@ -2496,10 +2710,20 @@ class Handler(BaseHTTPRequestHandler):
             cheap, strong = str(body.get("cheap", "")), str(body.get("strong", ""))
             if cheap not in ALL_MODELS or strong not in ALL_MODELS:
                 raise ValueError("pick existing models for automatic choice")
-            for k, v in (("auto_enabled", "1" if body.get("enabled") else "0"), ("auto_cheap", cheap), ("auto_strong", strong)):
+            for k, v in (("auto_enabled", "1" if body.get("enabled") else "0"), ("auto_cheap", cheap), ("auto_strong", strong),
+                         ("auto_prefer_fast", "1" if body.get("prefer_fast") else "0")):
                 c.execute("insert into settings values (?, ?) on conflict(key) do update set value = excluded.value", (k, v))
-            audit(c, "model-auto", {"name": "auto", "enabled": bool(body.get("enabled")), "cheap": cheap, "strong": strong})
+            audit(c, "model-auto", {"name": "auto", "enabled": bool(body.get("enabled")), "cheap": cheap, "strong": strong,
+                                    "prefer_fast": bool(body.get("prefer_fast"))})
             return (200, {"ok": True})
+        if path == "/admin/api/local":  # the local model server's address; name is "local"
+            url, old = check_local_url(body.get("url")), LOCAL_URL
+            put_setting(c, "local_base_url", url)
+            audit(c, "local-server", {"name": "local", "url": url, "old": old})
+            return (200, {"ok": True, "url": url})
+        if path == "/admin/api/local/test":  # the models the server offers; the typed address, else the saved one
+            url = check_local_url(body.get("url") or LOCAL_URL)
+            return (200, local_list(url) if url else {"ok": False, "error": "no address set for the local model server"})
         if path.startswith("/admin/api/models/"):
             row = c.execute("select * from models where alias = ? and archived is null", (name,)).fetchone()
             if not row:

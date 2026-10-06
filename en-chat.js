@@ -95,6 +95,7 @@ window.EN = Object.assign(window.EN || {}, {
   "קוד, ניתוח או השוואה": "code, analysis or comparison",
   "שיחה ארוכה": "long chat",
   "שאלה קצרה ופשוטה": "short, simple question",
+  "מידע רגיש: נענה במודל המקומי": "sensitive data: answered by the local model",
   "אזהרת אבטחה:": "Security warning:",
   "התשובה כוללת פקודה שעלולה למחוק מידע או להריץ קוד מהאינטרנט. אל תריצו אותה בלי לבדוק בדיוק מה היא עושה.":
     "The answer includes a command that could delete data or run code from the internet. Don't run it without checking exactly what it does.",
@@ -108,7 +109,7 @@ window.EN = Object.assign(window.EN || {}, {
 // translate each part of a composite text; untranslated parts stay as they are
 (() => {
 const enPart = s => (typeof I18N !== "undefined" ? I18N.t(s) : s);
-const enRoute = "(?:שאלה ארוכה|קוד, ניתוח או השוואה|שיחה ארוכה|שאלה קצרה ופשוטה)(?: \\(המודל המתאים לא זמין לך\\))?|גיבוי: .+ לא זמין";
+const enRoute = "(?:שאלה ארוכה|קוד, ניתוח או השוואה|שיחה ארוכה|שאלה קצרה ופשוטה)(?: \\(המודל המתאים לא זמין לך\\))?(?: \\(המהיר מבין המתאימים\\))?|גיבוי: .+ לא זמין|מידע רגיש: נענה במודל המקומי";
 
 // placed before the other pages' patterns so a general one (e.g. "מחיקת …") does not catch the chat's texts first
 window.EN_PATTERNS = [
@@ -121,6 +122,7 @@ window.EN_PATTERNS = [
   [/^העברת השיחה "(.*)" לארכיון$/, (m, t) => `Move chat "${t === "שיחה" ? "Chat" : t}" to the archive`],
   [/^שחזור השיחה "(.*)"$/, (m, t) => `Restore chat "${t === "שיחה" ? "Chat" : t}"`],
   [/^(.+) \/ דוגמה$/, "$1 / sample"],
+  [/^([^·]+) \(מקומי\)$/, "$1 (local)"],  // a model on the company's own server
   // answer header: model name · why that model
   [new RegExp(`^(.+) · (${enRoute})$`), (m, label, route) => `${enPart(label)} · ${enRoute2(route)}`],
   [new RegExp(`^(${enRoute})$`), (m, route) => enRoute2(route)],
@@ -130,8 +132,10 @@ window.EN_PATTERNS = [
 function enRoute2(r) {
   const backup = r.match(/^גיבוי: (.+) לא זמין$/);
   if (backup) return `backup: ${enPart(backup[1])} unavailable`;
+  const fastest = r.endsWith(" (המהיר מבין המתאימים)");
+  if (fastest) r = r.slice(0, -" (המהיר מבין המתאימים)".length);
   const unavailable = r.endsWith(" (המודל המתאים לא זמין לך)");
   const base = unavailable ? r.slice(0, -" (המודל המתאים לא זמין לך)".length) : r;
-  return enPart(base) + (unavailable ? " (the right model isn't available to you)" : "");
+  return enPart(base) + (unavailable ? " (the right model isn't available to you)" : "") + (fastest ? " (the fastest suitable one)" : "");
 }
 })();

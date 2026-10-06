@@ -565,6 +565,54 @@ window.EN = Object.assign(window.EN || {}, {
   "אין נמענים שמורים. צריך להוסיף לפחות כתובת מייל אחת ולשמור.": "No saved recipients. Add at least one email address and save.",
   "אפשר עד 50 נמענים": "Up to 50 recipients",
   "החודש לא תקין": "Invalid month",
+
+  // models on the company's own server, and speed
+  "שרת מודלים מקומי": "Local model server",
+  "מודלים שרצים על שרת של החברה עם Ollama או vLLM. השאלות לא יוצאות מהרשת של החברה, ואין תשלום לפי טוקנים (אפשר לקבוע מחיר פנימי בעריכת המודל). כותבים את כתובת השרת, בודקים חיבור, ומוסיפים את המודלים שהוא מציע. מפתח גישה לשרת, אם צריך, נכנס רק להגדרות השרת (LOCAL_API_KEY).":
+    "Models running on a company server with Ollama or vLLM. Questions never leave the company network, and there is no per-token charge (you can set an internal price when editing the model). Type the server's address, check the connection, and add the models it offers. An access key for the server, if it needs one, goes only into the server settings (LOCAL_API_KEY).",
+  "כתובת השרת": "Server address",
+  "בדיקת חיבור": "Check connection",
+  "כתובת שמורה": "Address saved",
+  "לא מוגדר": "Not set up",
+  "כבר ברשימת המודלים": "Already in the model list",
+  "הוספת מודל": "Add model",
+  "כתובת השרת נשמרה.": "Server address saved.",
+  "השרת עונה, אבל אין בו עדיין מודלים.": "The server answers, but it has no models yet.",
+  "שרת החברה": "Company server",
+  "שרת החברה \u200f(Ollama / vLLM)": "Company server (Ollama / vLLM)",
+  "מקומי": "local",
+  "נשמרה כתובת לשרת": "A server address is saved",
+  "אין כתובת לשרת: המודלים המקומיים לא יעבדו": "No server address: the local models won't work",
+  "אין כתובת לשרת המקומי": "No address for the local server",
+  "כתובת שרת המודלים המקומי עודכנה": "Local model server address updated",
+  "כתובת השרת צריכה להיראות כך: http://server:11434/v1": "The server address should look like http://server:11434/v1",
+  "עוד לא נשמרה כתובת לשרת המודלים המקומי": "No address has been saved for the local model server yet",
+  "לשלוח למודל המקומי": "Send to the local model",
+  "מידע רגיש נענה במודל המקומי": "Sensitive data answered by the local model",
+  "\"לשלוח למודל המקומי\": שאלה עם מידע רגיש נענית בלי הסתרה במודל שרץ על שרת החברה, אם העובד מורשה להשתמש בו. אחרת המידע מוסתר.":
+    "\"Send to the local model\": a question with sensitive data is answered, unmasked, by a model on the company's server, if the employee may use it. Otherwise the data is masked.",
+  "אין מודל מקומי פעיל, ולכן המידע מוסתר בינתיים.": "No local model is on, so the data is masked for now.",
+  "\"לשלוח למודל המקומי\" נפתח אחרי שמוסיפים מודל משרת החברה בעמוד המודלים.":
+    "\"Send to the local model\" opens up once a model from the company's server is added on the Models page.",
+  "להעדיף את המודל המהיר מבין המתאימים": "Prefer the fastest suitable model",
+  "בין המודלים שמתאימים לשאלה ובמחיר דומה (עד פי 2 לכאן או לכאן), אצל כל ספק שמותר לעובד: זה שענה הכי מהר ב-24 השעות האחרונות. נחשבים רק מודלים עם 20 תשובות לפחות.":
+    "Among the models that suit the question and cost about the same (up to 2x either way), at any provider the employee may use: the one that answered fastest in the last 24 hours. Only models with at least 20 answers count.",
+  "מהירות תגובה": "Response speed",
+  "תקופה": "Period",
+  "24 השעות האחרונות": "Last 24 hours",
+  "7 הימים האחרונים": "Last 7 days",
+  "כמה זמן לוקח לכל מודל לענות. \"חציון\" הוא הזמן שחצי מהתשובות מהירות ממנו, \"95%\" הוא הזמן ש-95 מכל 100 תשובות מהירות ממנו (המקרים האיטיים). \"זמן עד מילה ראשונה\" הוא כמה זמן העובד מחכה עד שהתשובה מתחילה להופיע.":
+    "How long each model takes to answer. \"Median\" is the time half the answers beat, \"95%\" the time 95 of every 100 answers beat (the slow cases). \"Time to first word\" is how long the employee waits until the answer starts to appear.",
+  "מהירות תגובה לפי מודל": "Response speed by model",
+  "חציון": "Median",
+  "זמן עד מילה ראשונה": "Time to first word",
+  "שגיאות": "Errors",
+  "חציון לפי ספק, בכל שעה ב-48 השעות האחרונות": "Median by provider, each hour of the last 48",
+  "איטי מהרגיל עכשיו": "Slower than usual now",
+  "עוד אין נתוני מהירות": "No speed data yet",
+  "עוד אין נתוני מהירות ב-48 השעות האחרונות": "No speed data in the last 48 hours yet",
+  "חציון זמן התשובה לפי ספק בכל שעה ב-48 השעות האחרונות. המספרים המלאים בטבלה שלצד הגרף.":
+    "Median answer time by provider for each of the last 48 hours. The full numbers are in the table next to the chart.",
 });
 
 // texts with numbers, money or names inside. Order matters: the " · " splitter first, then specific patterns, generic ones last.
@@ -679,18 +727,33 @@ window.EN = Object.assign(window.EN || {}, {
 
     // models
     [/^לכבות את (.+)\?$/, "Turn off $1?"],
+    // models on the company's own server, and speed
+    [/^(.+) \(מקומי\)( \(.*\))?$/, (_, n, rest) => `${t(n)} (local)${rest || ""}`],
+    [/^השרת לא עונה: (.*)$/, (_, e) => `The server isn't answering: ${t(e)}`],
+    [/^השרת עונה: (\d+) מודלים זמינים \((\d+) מילישניות\)\.$/, "The server answers: $1 models available ($2 ms)."],
+    [/^(.+) נוסף לרשימת המודלים, במחיר 0\. אפשר לשנות מחיר בעריכה, ולהתיר אותו למשתמשים\.$/,
+      "$1 was added to the model list at price 0. You can change the price under Edit, and allow it for users."],
+    [/^הכתובת (.+) חסומה לשרת המודלים המקומי \(כתובת פנימית של ענן, או המחשב הזה עצמו\)$/,
+      "The address $1 is blocked for the local model server (a cloud-internal address, or this machine itself)"],
+    [/^([\d.]+) שנ׳$/, "$1 s"],
+    [/^([\d.]+) דק׳$/, "$1 min"],
+    [/^בשעה האחרונה: ([\d.]+ (?:שנ׳|דק׳)) ב-95% מהתשובות$/, (_, a) => `In the last hour: ${t(a)} for 95% of answers`],
+    [/^ספק (.+) איטי מהרגיל: (.+)\.$/, (_, p, rest) => `${t(p)} is slower than usual: ` + rest.split("; ").map(x => x.replace(
+      /^(.+) ענה בשעה האחרונה תוך ([\d.]+ (?:שנ׳|דק׳)) \(95% מהתשובות\), בדרך כלל ([\d.]+ (?:שנ׳|דק׳))$/, (__, m, a, b) => `${t(m)} took up to ${t(a)} in the last hour (95% of answers), usually ${t(b)}`)).join("; ") + "."],
+    [/^(\d+) ערכים רגישים, לא הוסתרו$/, "$1 sensitive values, not masked"],
     [/^(\d+) משתמשים ואפליקציות מורשים להשתמש בו\. מרגע הכיבוי הם יקבלו הודעה שהמודל כבוי, עד שתדליקו אותו שוב\.$/, "$1 users and apps are allowed to use it. Once it's off they get a message that the model is off, until you turn it back on."],
     [/^(\d+) משתמשים עדיין מורשים להשתמש בו, ולכן אי אפשר להעביר אותו לארכיון\. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם\.$/, "$1 users are still allowed to use it, so it can't be archived. Turn it off, or remove it from those users first."],
     [/^(\d+) משתמשים עדיין מורשים להשתמש בו, ולכן אי אפשר למחוק\. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם\.$/, "$1 users are still allowed to use it, so it can't be deleted. Turn it off, or remove it from those users first."],
     [/^(.+) עונה: החיבור תקין \((\d+) מילישניות\)\.$/, "$1 answers: connection OK ($2 ms)."],
     [/^(.+) לא עונה: אין מפתח של (.+) בקובץ \.env$/, "$1 isn't answering: no $2 key in the .env file"],
-    [/^(.+) לא עונה: (.*)$/, "$1 isn't answering: $2"],
+    [/^(.+) לא עונה: (.*)$/, (_, m, e) => `${m} isn't answering: ${t(e)}`],
     [/^([\d,]+) שאלות נותבו החודש$/, "$1 questions routed this month"],
     [/^(.+) פעיל$/, "$1 on"],
     [/^מחיקת (.+)$/, "Delete $1"],
     [R("חיסכון מהמטמון החודש: $M"), "Cache savings this month: $1"],
-    [/^(.+): מחובר$/, "$1: connected"],
+    [/^(.+): מחובר$/, (_, p) => `${t(p)}: connected`],
     [/^(.+): חסר מפתח$/, "$1: key missing"],
+    [/^(.+): חסרה כתובת$/, (_, p) => `${t(p)}: address missing`],
     [/^גיבוי: (.+) לא זמין$/, "backup: $1 unavailable"],
     [/^גיבוי: (.+)$/, "Backup: $1"],
     [/^ענה (\d+) פעמים החודש$/, "answered $1 times this month"],
@@ -701,6 +764,7 @@ window.EN = Object.assign(window.EN || {}, {
     [/^הוצאה יומית לפי מודל ב-30 הימים האחרונים\. הפירוט המלא בטבלת המודלים שמתחת\.$/, "Daily spend by model over the last 30 days. Full details in the models table below."],
     // automatic-choice reason with a fallback note (server)
     [/^(.+) \(המודל המתאים לא זמין לך\)$/, (_, r) => `${t(r)} (the right model isn't available to you)`],
+    [/^(.+) \(המהיר מבין המתאימים\)$/, (_, r) => `${t(r)} (the fastest suitable one)`],
 
     // security
     [/^(\d+) ערכים הוסתרו$/, "$1 values masked"],

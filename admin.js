@@ -28,14 +28,14 @@ const actionNames = { create: "חשבון נוצר", update: "חשבון עוד�
   "source-delete": "מקור מידע נמחק", "source-upload": "הועלו מסמכים", "source-sync": "תיקייה סונכרנה",
   "model-save": "מודל נשמר", "model-delete": "מודל נמחק", "model-default": "נקבע מודל ברירת מחדל", "model-auto": "בחירה אוטומטית עודכנה",
   "security-policy": "מדיניות האבטחה עודכנה", archive: "הועבר לארכיון", restore: "שוחזר מהארכיון",
-  "summary-settings": "הגדרות הסיכום החודשי עודכנו", "summary-sent": "הסיכום החודשי נשלח" };
+  "summary-settings": "הגדרות הסיכום החודשי עודכנו", "summary-sent": "הסיכום החודשי נשלח", "local-server": "כתובת שרת המודלים המקומי עודכנה" };
 // what can be archived (nothing is ever deleted) and restored from the archive page
 const ARCHIVE_KINDS = { account: "משתמש", team: "צוות", model: "מודל", source: "מקור מידע", doc: "מסמך", chat: "שיחה" };
 // archive one item after a confirm; the item leaves the lists and stops working, and stays restorable
 const archiveButton = (kind, name, extra, label, title, body, cls = "danger") => el("button", { className: cls, textContent: "העברה לארכיון",
   onclick: run(() => UI.confirm({ title, body: body + " אפשר לשחזר מהארכיון.", ok: "העברה לארכיון", danger: true })
     .then(ok => ok ? api("archive", { kind, name, ...extra }) : false), `${label} הועבר לארכיון.`) });
-const POLICY_NAMES = { block: "לחסום", log: "רק לרשום", mask: "להסתיר" };
+const POLICY_NAMES = { block: "לחסום", log: "רק לרשום", mask: "להסתיר", local: "לשלוח למודל המקומי" };
 const dateOnly = ts => { const d = new Date(ts * 1000); return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`; };
 
 async function api(path, body) {
@@ -83,7 +83,7 @@ function showTab(name) {
   const want = name === "user" ? userHash(userName) : "#" + name;
   if (location.hash !== want) history.replaceState(null, "", want);
   if (name === "overview") { drawDaily(); drawBurn(); }
-  if (name === "models") drawModelCharts();
+  if (name === "models") { drawModelCharts(); drawSpeedChart(); }
   if (name === "reports") loadReport();
   if (name === "user") loadUser();
 }
@@ -209,7 +209,7 @@ async function applyBudget(kind, item, budget) {
     } });
   } catch (e) { fail(e); }
 }
-const PROVIDER_NAMES = { anthropic: "Claude", openai: "GPT", gemini: "Gemini" };
+const PROVIDER_NAMES = { anthropic: "Claude", openai: "GPT", gemini: "Gemini", local: "מקומי" };
 // teamModels: the team's model list (null = no limit); a checked model outside it gets a badge, since the team blocks it
 function modelChecks(container, checked, teamModels = null) {
   container.replaceChildren(...state.models.map(m => {
@@ -250,7 +250,9 @@ const MODEL_ERRORS = {
   "MCP server address must start with http:// or https://": "כתובת שרת ה-MCP צריכה להתחיל ב-http:// או https://",
   "choose the MCP tool to call": "צריך לבדוק חיבור ולבחור את כלי החיפוש",
   "only folder sources and MCP sources in sync mode can be synced": "אפשר לסנכרן רק תיקייה או שרת MCP במצב סנכרון",
-  "turn the model on before making it the default": "קודם מדליקים את המודל, ואז אפשר לקבוע אותו כברירת מחדל" };
+  "turn the model on before making it the default": "קודם מדליקים את המודל, ואז אפשר לקבוע אותו כברירת מחדל",
+  "local model server address must look like http://server:11434/v1": "כתובת השרת צריכה להיראות כך: http://server:11434/v1",
+  "no address set for the local model server": "עוד לא נשמרה כתובת לשרת המודלים המקומי" };
 const ERRORS = { ...MODEL_ERRORS, "nothing to update": "אין מה לעדכן", "pick at least one known model": "צריך לבחור לפחות מודל אחד",
   "password must be at least 8 characters": "הסיסמה צריכה להיות באורך 8 תווים לפחות", "budget must be >= 0": "התקציב לא יכול להיות שלילי",
   "name is required": "צריך למלא שם", "give a password (chat login) or an API key, or both": "צריך סיסמה לצ'אט, מפתח API, או את שניהם",
@@ -273,6 +275,7 @@ const hebrew = msg => ERRORS[msg] || (/already exists/.test(msg) ? "השם הז�
   : /restore the team first/.test(msg) ? "הצוות של המשתמש נמצא בארכיון. קודם משחזרים את הצוות, ואז את המשתמש."
   : /^not a valid email address: /.test(msg) ? "כתובת מייל לא תקינה: " + msg.replace(/^not a valid email address: /, "")
   : /^sending failed: /.test(msg) ? "השליחה נכשלה: " + msg.slice(16)
+  : /^address (.+) is not allowed for the local model server$/.test(msg) ? `הכתובת ${msg.split(" ")[1]} חסומה לשרת המודלים המקומי (כתובת פנימית של ענן, או המחשב הזה עצמו)`
   : msg);
 const fail = e => { if (e.message !== "unauthorized") UI.toast(hebrew(e.message), { kind: "bad", timeout: 9000 }); };
 const run = (fn, done) => async () => { try { const r = await fn(); if (r === false) return; await load(); if (done) UI.toast(done); } catch (e) { fail(e); } };
@@ -354,7 +357,7 @@ function drawDaily(box = $("dailyChart"), days = lastDays(30)) {
   box.replaceChildren(svg, tip);
 }
 let resizeTimer;
-addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawDaily(); drawBurn(); drawModelCharts(); if (tab === "user") drawUserChart(); }, 120); });
+addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawDaily(); drawBurn(); drawModelCharts(); drawSpeedChart(); if (tab === "user") drawUserChart(); }, 120); });
 
 // cumulative spend this month against last month and against the sum of team budgets, with a straight-line projection
 let activity = null, teamBudgetTotal = 0;
@@ -496,7 +499,7 @@ async function load() {
   if (!loadedOnce) $("loadState").replaceChildren(el("div", { className: "grid kpis" }, ...[1, 2, 3, 4].map(() => el("div", { className: "skeleton" }))));
   let data;
   try {
-    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity"), api("audit/verify"), api("archive"), api("savings")]);
+    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity"), api("audit/verify"), api("archive"), api("savings"), api("latency")]);
   } catch (e) {
     if (e.message !== "unauthorized") {
       showTab(tab);
@@ -512,8 +515,9 @@ async function load() {
   }
   loadedOnce = true;
   $("loadState").replaceChildren();
-  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act, verify, archived, sav] = data;
+  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act, verify, archived, sav, lat] = data;
   savingsData = sav;
+  speedData = lat;
   activity = act;
   sourceStatus = sstat;
   modelsData = mdl;
@@ -571,6 +575,11 @@ async function load() {
   }
   for (const s of security.spikes || []) alerts.push(["bad", `${s.name}: הוצאה חריגה בשעה האחרונה (${money(s.hour)}, בדרך כלל ${money(s.average)} לשעה). כדאי לבדוק שהמפתח לא דלף.`, null, s.name]);
   if (auditCheck && !auditCheck.ok) alerts.push(["bad", "מישהו שינה או מחק שורות ביומן השינויים מחוץ למערכת.", "security"]);
+  // a provider answering much slower than usual: one line per provider, its slow models inside
+  const slowBy = {};
+  for (const a of lat.alerts) (slowBy[a.provider] = slowBy[a.provider] || []).push(a);
+  for (const [p, list] of Object.entries(slowBy)) alerts.push(["warn", `ספק ${PROVIDER_FULL[p] || p} איטי מהרגיל: ` + list.map(a =>
+    `${a.label} ענה בשעה האחרונה תוך ${secs(a.hour_p95)} (95% מהתשובות), בדרך כלל ${secs(a.week_p95)}`).join("; ") + ".", "models"]);
   for (const t of ov.teams) {
     const lv = level(t.spent, t.budget);
     if (lv) alerts.push([lv, lv === "bad" ? `צוות ${t.name}: תקציב הצוות נגמר. כל חברי הצוות חסומים.` : `צוות ${t.name}: עבר ${Math.round(t.spent / t.budget * 100)}% מתקציב הצוות.`]);
@@ -883,7 +892,7 @@ function renderUserPanel() {
       el("h3", { textContent: "אירועי אבטחה" }),
       listTable(["מתי", "אירוע", "פרטים"], d.events.map(e => el("tr", {},
         el("td", { dataset: { label: "מתי" } }, whenEl(e.ts)),
-        el("td", { dataset: { label: "אירוע" } }, el("span", { className: "badge " + (secLabels.bad.has(e.kind) ? "bad" : e.kind === "sensitive-data-masked" ? "" : "warn"),
+        el("td", { dataset: { label: "אירוע" } }, el("span", { className: "badge " + (secLabels.bad.has(e.kind) ? "bad" : ["sensitive-data-masked", "sensitive-routed-local"].includes(e.kind) ? "" : "warn"),
           textContent: secLabels.kinds[e.kind] || e.kind })),
         el("td", { className: "small", dataset: { label: "פרטים" } }, secDetail(e)))), "אין אירועים"),
       el("h3", { textContent: "בקשות שנחסמו" }),
@@ -1006,7 +1015,7 @@ $("teamForm").onsubmit = async e => {
 
 // ---------- models ----------
 let modelsData = { models: [], default_model: null, providers: {} };
-const PROVIDER_FULL = { anthropic: "Anthropic", openai: "OpenAI", gemini: "Google" };
+const PROVIDER_FULL = { anthropic: "Anthropic", openai: "OpenAI", gemini: "Google", local: "שרת החברה" };
 function saveModel(m, changes) {
   return api("models", { name: m.alias, label: m.label, provider: m.provider, model: m.model, price_in: m.price_in,
     price_out: m.price_out, price_cached: m.price_cached, fallback: m.fallback || "", enabled: m.enabled, ...changes });
@@ -1034,7 +1043,7 @@ async function testModel(m, btn) {
   try {
     const r = await api("models/test", { name: m.alias });
     UI.toast(r.ok ? `${m.label || m.alias} עונה: החיבור תקין (${r.ms} מילישניות).`
-      : `${m.label || m.alias} לא עונה: ${r.error === "no API key for this provider in ⁦.env⁩" ? `אין מפתח של ${PROVIDER_FULL[m.provider]} בקובץ ⁦.env⁩` : r.error}`,
+      : `${m.label || m.alias} לא עונה: ${r.error === "no API key for this provider in ⁦.env⁩" ? `אין מפתח של ${PROVIDER_FULL[m.provider]} בקובץ ⁦.env⁩` : hebrew(r.error)}`,
       { kind: r.ok ? "good" : "bad", timeout: r.ok ? 6000 : 12000 });
   } catch (e) { fail(e); }
   finally { btn.classList.remove("busy"); btn.removeAttribute("aria-busy"); }
@@ -1048,11 +1057,12 @@ function renderAuto() {
     $(id).value = val;
   }
   $("autoCount").textContent = a.count ? `${a.count.toLocaleString(I18N.locale)} שאלות נותבו החודש` : "";
+  $("autoFast").checked = !!a.prefer_fast;
 }
 $("autoEnabled").onclick = () => $("autoEnabled").setAttribute("aria-checked", String($("autoEnabled").getAttribute("aria-checked") !== "true"));
 $("autoForm").onsubmit = run(async () => {
   await api("models/auto", { name: "auto", enabled: $("autoEnabled").getAttribute("aria-checked") === "true",
-    cheap: $("autoCheap").value, strong: $("autoStrong").value });
+    cheap: $("autoCheap").value, strong: $("autoStrong").value, prefer_fast: $("autoFast").checked });
 }, "הגדרות הבחירה האוטומטית נשמרו.");
 $("autoForm").addEventListener("submit", e => e.preventDefault(), true);
 
@@ -1314,13 +1324,17 @@ function drawShare() {
 function renderModels() {
   const { models, providers } = modelsData, def = modelsData.default_model;
   renderAuto();
+  renderLocal();
+  renderSpeed();
   $("providerStatus").replaceChildren(
     modelsData.cache_saved > 0.0001 ? el("span", { className: "badge good", title: "חלקים חוזרים בשיחות נקראו מהמטמון של הספק במחיר מוזל",
       textContent: `חיסכון מהמטמון החודש: ${money(modelsData.cache_saved)}` }) : null,
     el("span", { className: "muted small", textContent: "מפתחות ספקים:" }),
-    ...Object.entries(providers).map(([p, ok]) => el("span", { className: "badge " + (ok ? "good" : "warn"),
-      title: ok ? "יש מפתח בקובץ ⁦.env⁩" : "אין מפתח בקובץ ⁦.env⁩: המודלים של הספק הזה לא יעבדו",
-      textContent: `${PROVIDER_FULL[p]}: ${ok ? "מחובר" : "חסר מפתח"}` })));
+    // the local server shows only once it is set up or has models: most companies don't run one
+    ...Object.entries(providers).filter(([p, ok]) => p !== "local" || ok || models.some(m => m.provider === "local")).map(([p, ok]) => el("span", { className: "badge " + (ok ? "good" : "warn"),
+      title: p === "local" ? (ok ? "נשמרה כתובת לשרת" : "אין כתובת לשרת: המודלים המקומיים לא יעבדו")
+        : ok ? "יש מפתח בקובץ ⁦.env⁩" : "אין מפתח בקובץ ⁦.env⁩: המודלים של הספק הזה לא יעבדו",
+      textContent: `${PROVIDER_FULL[p]}: ${ok ? "מחובר" : p === "local" ? "חסרה כתובת" : "חסר מפתח"}` })));
   $("modelsTable").replaceChildren(...models.map(m => {
     const sw = el("button", { type: "button", className: "switch", role: "switch", ariaChecked: String(m.enabled),
       ariaLabel: `${m.label || m.alias} פעיל`, onclick: () => toggleModel(m) });
@@ -1330,7 +1344,7 @@ function renderModels() {
         el("span", { className: "ltr muted small", title: "הכינוי · השם אצל הספק", textContent: `${m.alias} · ${m.model}` }),
         m.fallback ? el("span", { className: "muted small", textContent: `גיבוי: ${modelName(m.fallback)}` + (m.backup_answers ? ` · ענה ${m.backup_answers} פעמים החודש` : "") }) : null)),
       el("td", { dataset: { label: "ספק" } }, el("span", { className: "badge " + (providers[m.provider] ? "" : "warn"),
-        title: providers[m.provider] ? "" : "אין מפתח לספק הזה", textContent: PROVIDER_FULL[m.provider] || m.provider })),
+        title: providers[m.provider] ? "" : m.provider === "local" ? "אין כתובת לשרת המקומי" : "אין מפתח לספק הזה", textContent: PROVIDER_FULL[m.provider] || m.provider })),
       el("td", { className: "num", dataset: { label: "מחיר למיליון טוקנים" } }, num(`$${m.price_in} / $${m.price_out}`)),
       el("td", { className: "num", dataset: { label: "שימוש החודש" } }, el("div", { className: "stack" }, num(money(m.cost)),
         el("span", { className: "muted small", textContent: `${m.requests.toLocaleString(I18N.locale)} בקשות` }),
@@ -1388,8 +1402,112 @@ $("modelForm").onsubmit = async e => {
   } catch (err) { $("modelError").textContent = hebrew(err.message); }
 };
 
+// ---------- models on the company's own server (Ollama / vLLM) ----------
+let localOffered = [];  // model ids the server listed at the last connection check
+function renderLocal() {
+  const local = modelsData.local || { url: "" };
+  if (document.activeElement !== $("localUrl")) $("localUrl").value = local.url;
+  $("localStatus").replaceChildren(local.url ? el("span", { className: "badge good", textContent: "כתובת שמורה" })
+    : el("span", { className: "badge", textContent: "לא מוגדר" }));
+  renderLocalOffered();
+}
+// "Llama3.3 70B" from "llama3.3:70b"; the alias keeps only what an alias may hold
+const localLabel = id => id.split("/").pop().split(/[:_\-\s]+/).filter(Boolean)
+  .map(w => /^\d+(\.\d+)?[bm]$/i.test(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)).join(" ");
+const localAlias = id => (id.split("/").pop().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[^a-z0-9]+/, "").slice(0, 40)) || "local";
+function renderLocalOffered() {
+  const have = new Set(modelsData.models.filter(m => m.provider === "local").map(m => m.model));
+  $("localModels").replaceChildren(...localOffered.map(id => el("div", { className: "row spread", style: "padding:8px 0;border-top:1px solid var(--line)" },
+    el("span", {}, el("b", { textContent: localLabel(id) }), " ", el("span", { className: "ltr muted small", textContent: id })),
+    have.has(id) ? el("span", { className: "badge good", textContent: "כבר ברשימת המודלים" })
+      : el("button", { className: "ghost sm", textContent: "הוספת מודל", onclick: run(async () => {
+        let alias = localAlias(id);
+        while (modelsData.models.some(m => m.alias === alias)) alias = (alias.slice(0, 37) + "-" + Math.floor(Math.random() * 100)).slice(0, 40);
+        await api("models", { name: alias, label: localLabel(id) + " (מקומי)", provider: "local", model: id, price_in: 0, price_out: 0, enabled: true });
+      }, `${localLabel(id)} נוסף לרשימת המודלים, במחיר 0. אפשר לשנות מחיר בעריכה, ולהתיר אותו למשתמשים.`) }))));
+}
+$("localForm").onsubmit = run(async () => {
+  await api("local", { name: "local", url: $("localUrl").value });
+  document.activeElement.blur();
+}, "כתובת השרת נשמרה.");
+$("localForm").addEventListener("submit", e => e.preventDefault(), true);
+$("localTest").onclick = () => busy($("localTest"), async () => {
+  const r = await api("local/test", { name: "local", url: $("localUrl").value });
+  if (!r.ok) { localOffered = []; renderLocalOffered(); return UI.toast(`השרת לא עונה: ${hebrew(r.error)}`, { kind: "bad", timeout: 12000 }); }
+  localOffered = r.models;
+  renderLocalOffered();
+  UI.toast(r.models.length ? `השרת עונה: ${r.models.length} מודלים זמינים (${r.ms} מילישניות).` : "השרת עונה, אבל אין בו עדיין מודלים.", { kind: "good" });
+});
+
+// ---------- speed: how long each model takes to answer ----------
+let speedData = { models: [], providers: [], hourly: [], alerts: [] };
+const secs = ms => ms == null ? "—" : ms >= 60000 ? (ms / 60000).toFixed(1) + " דק׳" : (ms / 1000).toFixed(ms < 10000 ? 2 : 1) + " שנ׳";
+const PROVIDER_ORDER = ["anthropic", "openai", "gemini", "local"];
+const providerColor = p => `var(${SERIES[Math.max(PROVIDER_ORDER.indexOf(p), 0) % SERIES.length]})`;
+function renderSpeed() {
+  const w = $("speedWindow").value;
+  const rows = speedData.models.filter(m => m[w].requests).sort((a, b) => b[w].requests - a[w].requests);
+  $("speedTable").replaceChildren(...rows.map(m => el("tr", {},
+    el("td", {}, el("div", { className: "stack" }, el("b", { style: "white-space:nowrap", textContent: m.label }),
+      el("span", { className: "muted small", textContent: PROVIDER_FULL[m.provider] || m.provider }),
+      m.slow ? el("span", { className: "badge warn", title: `בשעה האחרונה: ${secs(m.hour.p95)} ב-95% מהתשובות`, textContent: "איטי מהרגיל עכשיו" }) : null)),
+    el("td", { className: "num", dataset: { label: "חציון" } }, num(secs(m[w].p50))),
+    el("td", { className: "num", dataset: { label: "95%" } }, num(secs(m[w].p95))),
+    el("td", { className: "num", dataset: { label: "זמן עד מילה ראשונה" } }, num(secs(m[w].ttft_p50))),
+    el("td", { className: "num", dataset: { label: "בקשות" } }, num(m[w].requests.toLocaleString(I18N.locale))),
+    el("td", { className: "num", dataset: { label: "שגיאות" } }, num(m[w].errors ? `${(m[w].error_rate * 100).toFixed(1)}%` : "0")))));
+  if (!rows.length) $("speedTable").append(el("tr", {}, el("td", { colSpan: 6, className: "empty", textContent: "עוד אין נתוני מהירות" })));
+  drawSpeedChart();
+}
+$("speedWindow").onchange = renderSpeed;
+// one line per provider: the median of each hour; an hour without answers leaves a gap
+function drawSpeedChart() {
+  const box = $("speedChart"), W = box.clientWidth;
+  if (!W) return;
+  const H = 220, padL = 52, padB = 26, padT = 12, padR = 8, end = Math.floor(Date.now() / 3600000) * 3600, start = end - 47 * 3600;
+  const providers = PROVIDER_ORDER.filter(p => speedData.hourly.some(h => h.provider === p));
+  $("speedLegend").replaceChildren(...providers.map(p => el("span", {}, el("i", { className: "legend-dot", style: `background:${providerColor(p)}` }), PROVIDER_FULL[p])));
+  const pts = speedData.hourly.filter(h => h.hour >= start);
+  const max = Math.max(...pts.map(h => h.p50), 0);
+  if (!max) { box.replaceChildren(el("div", { className: "empty", textContent: "עוד אין נתוני מהירות ב-48 השעות האחרונות" })); return; }
+  const raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].find(s => s * mag >= raw) * mag, lines = Math.max(1, Math.ceil(max / step)), top = step * lines;
+  const plotW = W - padL - padR, plotH = H - padB - padT;
+  const x = t => padL + (t - start) / (end - start) * plotW, y = v => padT + plotH - v / top * plotH;
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  for (const [k, v] of Object.entries({ viewBox: `0 0 ${W} ${H}`, height: H, direction: "ltr", role: "img",
+    "aria-label": "חציון זמן התשובה לפי ספק בכל שעה ב-48 השעות האחרונות. המספרים המלאים בטבלה שלצד הגרף." })) svg.setAttribute(k, v);
+  const add = (tag, attrs, text) => { const n = document.createElementNS(ns, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text !== undefined) n.textContent = text; svg.append(n); return n; };
+  for (let i = 0; i <= lines; i++) {
+    add("line", { x1: padL, x2: W - padR, y1: y(step * i), y2: y(step * i), class: i ? "grid-line" : "base-line" });
+    add("text", { x: padL - 8, y: y(step * i) + 4, "text-anchor": "end", class: "tick" }, secs(step * i));
+  }
+  for (let t = start; t <= end; t += 3600) {
+    const d = new Date(t * 1000);
+    if (d.getHours() % 12 === 0) add("text", { x: x(t), y: H - 6, "text-anchor": "middle", class: "tick" },
+      d.toLocaleDateString(I18N.locale, { day: "numeric", month: "numeric" }) + " " + String(d.getHours()).padStart(2, "0") + ":00");
+  }
+  for (const p of providers) {
+    const by = Object.fromEntries(pts.filter(h => h.provider === p).map(h => [h.hour, h]));
+    let d = "", prev = false;
+    for (let t = start; t <= end; t += 3600) {
+      const h = by[t];
+      if (h) d += (prev ? "L" : "M") + x(t).toFixed(1) + "," + y(h.p50).toFixed(1);
+      prev = !!h;
+    }
+    add("path", { d, class: "line", style: `stroke:${providerColor(p)}` });
+    for (const h of Object.values(by)) {  // a dot per hour: a single hour between gaps would draw no line
+      const c = add("circle", { cx: x(h.hour), cy: y(h.p50), r: 2.5, fill: providerColor(p) });
+      const tt = document.createElementNS(ns, "title");
+      tt.textContent = `${PROVIDER_FULL[p]} · ${new Date(h.hour * 1000).toLocaleString(I18N.locale, { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${secs(h.p50)} · ${h.requests} בקשות`;
+      c.append(tt);
+    }
+  }
+  box.replaceChildren(svg);
+}
+
 // ---------- security ----------
-let security = { events: [], counts: {}, checks: [], blocked: [], policy: {}, spikes: [] }, auditCheck = null;
+let security ={ events: [], counts: {}, checks: [], blocked: [], policy: {}, spikes: [] }, auditCheck = null;
 const secLabels = {
   kinds: { "suspicious-prompt": "שאלה חשודה", "dangerous-answer": "תשובה עם פקודה מסוכנת", "sensitive-data-masked": "מידע רגיש הוסתר",
     "sensitive-data-blocked": "שאלה עם מידע רגיש נחסמה", "sensitive-data-logged": "מידע רגיש נשלח בלי הסתרה",
@@ -1397,7 +1515,8 @@ const secLabels = {
     "admin-denied": "סיסמת מנהל שגויה מבחוץ", "document-refused": "מסמך חשוד לא נקלט", "document-forced": "מסמך חשוד הועלה באישור",
     "document-flagged": "מסמך חשוד נשלח למודל", "answer-masked": "מפתח גישה הוסתר מתשובה", "suspicious-link": "קישור חשוד בתשובה",
     "prompt-leak": "התשובה חשפה את ההוראות של השער", "mcp-tool-refused": "כלי MCP שמשנה מידע לא הופעל",
-    "cost-spike": "הוצאה חריגה", "login-throttled": "יותר מדי סיסמאות שגויות מאותה כתובת", "summary-failed": "שליחת הסיכום החודשי נכשלה" },
+    "cost-spike": "הוצאה חריגה", "login-throttled": "יותר מדי סיסמאות שגויות מאותה כתובת", "summary-failed": "שליחת הסיכום החודשי נכשלה",
+    "sensitive-routed-local": "מידע רגיש נענה במודל המקומי" },
   found: { "prompt-injection": "ניסיון לעקוף הוראות", "jailbreak": "ניסיון לשחרר את המודל מהכללים", "script": "קוד דפדפן", "dangerous-command": "פקודה מסוכנת" },
   bad: new Set(["cross-site-request", "bad-host", "admin-denied", "account-locked", "document-forced", "sensitive-data-blocked",
     "cost-spike", "login-throttled", "prompt-leak", "mcp-tool-refused", "summary-failed"]),
@@ -1410,7 +1529,7 @@ const secLabels = {
 function secDetail(e) {
   const d = e.detail, parts = [];
   if (d.found) parts.push(d.found.map(f => secLabels.found[f] || f).join(", "));
-  if (d.count) parts.push(`${d.count} ערכים הוסתרו`);
+  if (d.count) parts.push(e.kind === "sensitive-routed-local" ? `${d.count} ערכים רגישים, לא הוסתרו` : `${d.count} ערכים הוסתרו`);
   if (d.file) parts.push(`קובץ: ${d.file}`);
   if (d.model) parts.push(d.model);
   if (d.ip) parts.push(`כתובת: ${d.ip}`);
@@ -1445,12 +1564,19 @@ function renderSecurity() {
   const rows = security.events.filter(e => !sel.value || e.kind === sel.value);
   $("secEvents").replaceChildren(...rows.map(e => el("tr", {},
     el("td", {}, whenEl(e.ts)),
-    el("td", {}, el("span", { className: "badge " + (secLabels.bad.has(e.kind) ? "bad" : e.kind === "sensitive-data-masked" ? "" : "warn"),
+    el("td", {}, el("span", { className: "badge " + (secLabels.bad.has(e.kind) ? "bad" : ["sensitive-data-masked", "sensitive-routed-local"].includes(e.kind) ? "" : "warn"),
       textContent: secLabels.kinds[e.kind] || e.kind })),
     el("td", { textContent: e.name || "—", className: e.name ? "" : "muted" }),
     el("td", { className: "small" }, secDetail(e)))));
   if (!rows.length) $("secEvents").append(el("tr", {}, el("td", { colSpan: 4, className: "empty", textContent: "אין אירועים" })));
 
+  // "send to the local model" needs a local model that is on; without one the gateway masks instead
+  const hasLocal = modelsData.models.some(m => m.provider === "local" && m.enabled);
+  $("pSensitiveLocal").disabled = !hasLocal && security.policy.sensitive !== "local";
+  $("pSensitiveNote").textContent = hasLocal
+    ? "\"לשלוח למודל המקומי\": שאלה עם מידע רגיש נענית בלי הסתרה במודל שרץ על שרת החברה, אם העובד מורשה להשתמש בו. אחרת המידע מוסתר."
+    : security.policy.sensitive === "local" ? "אין מודל מקומי פעיל, ולכן המידע מוסתר בינתיים."
+    : "\"לשלוח למודל המקומי\" נפתח אחרי שמוסיפים מודל משרת החברה בעמוד המודלים.";
   if (security.policy && security.policy.injection && document.activeElement?.closest("#policyForm") == null) {
     $("pInjection").value = security.policy.injection;
     $("pSensitive").value = security.policy.sensitive;

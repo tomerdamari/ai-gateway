@@ -34,6 +34,8 @@ window.EN_HTML = Object.assign(window.EN_HTML || {}, {
             <li class="sub"><a href="#backup">Backup model</a></li>
             <li class="sub"><a href="#auto">Automatic selection</a></li>
             <li class="sub"><a href="#cache">Provider-side cache</a></li>
+            <li class="sub"><a href="#local">Models on the company's own server</a></li>
+            <li class="sub"><a href="#speed">Speed monitoring</a></li>
             <li><a href="#sources">Knowledge sources</a></li>
             <li class="sub"><a href="#mcp">MCP connections</a></li>
             <li><a href="#reports">Reports</a></li>
@@ -117,7 +119,7 @@ python gateway.py</pre>
         <ul>
           <li><b>The "To handle" page</b> (in the menu, under the dashboard) gathers what waits for the admin, and the menu shows the number of open items next to it (savings recommendations included). It has three parts:</li>
           <li><b>First steps:</b> shown until the system is ready: connecting a provider, a team, a user and a first question, with a button for each step.</li>
-          <li><b>Needs attention:</b> budget overruns (from 80% and from 100%), locked accounts and open security notes. When there is nothing, it says "All good".</li>
+          <li><b>Needs attention:</b> budget overruns (from 80% and from 100%), locked accounts, open security notes, and a provider answering slower than usual (see <a href="#speed">Speed monitoring</a>). When there is nothing, it says "All good".</li>
           <li><b>Savings recommendations:</b> all of them, each with an action button. See <a href="#savings">Savings recommendations</a>.</li>
           <li><b>Four numbers:</b> spend this month, forecast for the end of the month, requests, and active users. Each with the percentage change from the previous week or month.</li>
           <li><b>Charts:</b> daily spend over the last 30 days (hover to see the day), spend split by model, the users who spent the most, and teams against their budget.</li>
@@ -184,14 +186,33 @@ python gateway.py</pre>
           <li><b>Connection test:</b> sends the provider a short question and shows whether the key and name work, and how long it took.</li>
           <li><b>Moving to the archive:</b> only when no account is allowed to use the model. An archived model works for no one, not even an app that sends its alias, and it can be restored.</li>
           <li><b>Charts:</b> daily spend by model, and share of requests against share of spend, to spot a model that is expensive per request.</li>
-          <li>At the top, each provider shows whether it has a key in the <code>.env</code> file.</li>
+          <li>At the top, each provider shows whether it has a key in the <code>.env</code> file (and the company server: whether an address is saved for it).</li>
         </ul>
         <h3 id="backup">Backup model</h3>
         <p>For each model you can choose a backup model. If the provider is overloaded or not responding (errors 429, 5xx, 529), the question moves to the backup on its own and is charged at the backup's price. The log records that the backup answered, and the models screen shows how many times that happened this month. For apps, the backup only works between models with the same format: Claude with Claude, or GPT with Gemini.</p>
         <h3 id="auto">Automatic selection</h3>
         <p>Set a cheap model and a strong model, and turn it on. A long question (over 1,200 characters), code, analysis, comparison, planning, or a long conversation goes to the strong one; everything else to the cheap one. If the matching model isn't allowed for the employee, the other one is chosen. The screen shows how many questions were routed this month.</p>
+        <p><b>"Prefer the fastest suitable model"</b> (off at first): once the cheap or the strong model is picked, the gateway also looks at the models the employee may use whose price (input plus output) is close: at most 2 times more expensive or 2 times cheaper, at any provider. Of those, it picks the one with the lowest median answer time over the last 24 hours. Only models that answered at least 20 times in those 24 hours count; if there are none, the usual choice stays. When a different model is picked for this reason, the employee sees "(the fastest suitable one)" next to the reason.</p>
         <h3 id="cache">Provider-side cache</h3>
-        <p>In conversations with Claude, the gateway asks the provider to keep the start of the conversation, and on the next turn it is read at about a tenth of the price. OpenAI and Gemini do this on their own. The cost is calculated using each model's cache price, and the monthly savings are shown on the screen.</p>`,
+        <p>In conversations with Claude, the gateway asks the provider to keep the start of the conversation, and on the next turn it is read at about a tenth of the price. OpenAI and Gemini do this on their own. The cost is calculated using each model's cache price, and the monthly savings are shown on the screen.</p>
+        <h3 id="local">Models on the company's own server</h3>
+        <p>A model running on the company's own server, with Ollama or vLLM (two programs that run open models such as Llama and Qwen and speak the same language as OpenAI). Questions never leave the company network, and there is no per-token charge.</p>
+        <ul>
+          <li><b>Connecting:</b> in the "Local model server" card on the Models page, type the server's address, for example <code>http://ollama:11434/v1</code> or <code>http://10.0.0.5:8000/v1</code>, and save. "Check connection" asks the server which models it has and lists them.</li>
+          <li><b>Adding:</b> every model in the list has "Add model". It joins the model list with the provider "Company server", at price 0 (you can set an internal price under Edit), and from there you allow it for users and teams like any model. You can also create it by hand with "New model" and the provider "Company server".</li>
+          <li><b>Use:</b> in the chat, and for apps through <code>/v1/chat/completions</code> (the OpenAI format), streaming included. Token counts come from the server's answer; a server that doesn't return them gets an estimate, about one token for every four characters, and the log says "estimated".</li>
+          <li><b>Access key:</b> if the server needs a key, it goes only into the <code>LOCAL_API_KEY</code> server setting. It isn't stored in the database and isn't shown on screen.</li>
+          <li><b>Which addresses are allowed:</b> internal-network addresses are allowed, since that's where the server lives. Link-local addresses (169.254.x.x) and cloud providers' information addresses are always blocked, as is anything that isn't http or https, and an address with a user name and password in it. The machine the gateway runs on (localhost) is blocked unless you set <code>ALLOW_LOCAL_LOOPBACK=1</code>, for example when Ollama is installed on the same machine without Docker. The check runs both when saving and on every connection, against the address the name points to at that moment, and redirects are not followed.</li>
+          <li><b>Sensitive data:</b> you can have questions with sensitive data go to this model instead of being masked. See <a href="#policy">Blocking policy</a>.</li>
+        </ul>
+        <h3 id="speed">Speed monitoring</h3>
+        <p>For every question the gateway records how long the whole answer took, and how soon the first word arrived (in a streamed answer; in a regular answer the two times are the same). The time is measured at the gateway, from sending to the provider until the end of the answer, so it includes the trip over the network. Failed questions are recorded with their error code, including a provider that didn't answer at all (502) or stopped answering midway (504).</p>
+        <ul>
+          <li><b>The "Response speed" card</b> on the Models page: a table per model over the last 24 hours or 7 days: median (half the answers are faster), 95% (only 5 in 100 answers are slower), time to first word, number of requests, and error rate. Next to it, a chart of the median by provider for each hour of the last 48.</li>
+          <li><b>Alert:</b> when a model answered at least 10 times in the last hour, and 95% of its answers took more than 2 times the usual (its 95% over the 7 days before that hour), the "To handle" page shows "Provider X is slower than usual", with a link to the Models page, and the model is marked "Slower than usual now" in the table.</li>
+          <li>Connection tests from the Models page and document indexing aren't counted.</li>
+          <li>For scripts: <code>GET /admin/api/latency</code>, with the same admin access as the screen.</li>
+        </ul>`,
 
   "#sources": `
         <h2>Knowledge sources</h2>
@@ -267,9 +288,10 @@ python gateway.py</pre>
           <thead><tr><th>What was caught</th><th>The options</th></tr></thead>
           <tbody>
             <tr><td><b>An attempt to override the model's instructions</b> (prompt injection or jailbreak)</td><td><b>Block</b> ("Block the question", the default), or <b>log only</b> ("Send and record in the log").</td></tr>
-            <tr><td><b>Sensitive data</b> (ID number, credit card, phone, email, keys and more)</td><td><b>Mask</b> ("Hide the data and send", the default), <b>block</b> ("Block the question"), or <b>log only</b> ("Send without hiding and record in the log").</td></tr>
+            <tr><td><b>Sensitive data</b> (ID number, credit card, phone, email, keys and more)</td><td><b>Mask</b> ("Hide the data and send", the default), <b>block</b> ("Block the question"), <b>log only</b> ("Send without hiding and record in the log"), or <b>local model</b> ("Send to the local model").</td></tr>
           </tbody>
         </table>
+        <p><b>"Send to the local model"</b> works only when there is a <a href="#local">model on the company's server</a> that is turned on. A question with sensitive data goes to it unmasked, instead of to the model the employee picked, but only if the employee may use it (the models their team may use included). The employee sees "sensitive data: answered by the local model" in the chat, and the "Security" tab records the event "Sensitive data answered by the local model". If the employee has no local model, the data is masked as usual. The unmasked question never reaches an outside provider: if the local model doesn't answer, its backup is used only if it is on the company server too. The log keeps the masked version of the question. Apps on the Claude format (<code>/v1/messages</code>) can't move to the local model, so for them the data is masked.</p>
         <p>A blocked question gets a refusal (code 403), and appears in the "Blocked requests" card with the reason. Questions about code and commands are never blocked, only logged, because employees legitimately ask about them.</p>
 
         <h3 id="encryption">Encryption and the encryption key</h3>
@@ -306,7 +328,7 @@ python gateway.py</pre>
 
             <tr class="group"><th colspan="3">4. Gateway and API security</th></tr>
             <tr><td>SQL/NoSQL Injection</td><td>Slipping database commands into text a user sends. The gateway sends the database only fixed queries, with the values passed separately, so text never becomes a command. There is no NoSQL database.</td><td>—</td></tr>
-            <tr><td>SSRF</td><td>Making the server contact an internal address on the attacker's behalf. The gateway contacts only the fixed providers and MCP servers an admin configured. Before every MCP call the address is resolved to an IP address and checked: the server itself, local addresses and the cloud provider's internal information address are always blocked, and the gateway doesn't follow redirects to another address.</td><td>If all MCP servers are outside the internal network, set <code>ALLOW_PRIVATE_MCP=0</code>.</td></tr>
+            <tr><td>SSRF</td><td>Making the server contact an internal address on the attacker's behalf. The gateway contacts only the fixed providers, and the MCP servers and local model server an admin configured. Before every call to them the address is resolved to an IP address and checked: the server itself, local addresses and the cloud provider's internal information address are always blocked, and the gateway doesn't follow redirects to another address. (The local model server may be the server itself only with <code>ALLOW_LOCAL_LOOPBACK=1</code>.)</td><td>If all MCP servers are outside the internal network, set <code>ALLOW_PRIVATE_MCP=0</code>.</td></tr>
             <tr><td>Command Injection</td><td>Running operating-system commands through input. The gateway runs no system commands anywhere.</td><td>—</td></tr>
             <tr><td>Path Traversal</td><td>Reading files outside the allowed folder (for example with <code>../</code>). Site files are served from a fixed list. A folder used as a knowledge source must be a full path, inside <code>SOURCE_ROOTS</code> if it's set, and files can't escape it through shortcuts (links).</td><td>Set <code>SOURCE_ROOTS</code> to the document folders only (with Docker: <code>/sources</code>).</td></tr>
             <tr><td>Header Injection</td><td>Inserting a line break into the response headers to add a forged header. The gateway strips line breaks and control characters from every header it sends.</td><td>—</td></tr>
@@ -383,6 +405,7 @@ python gateway.py</pre>
             <tr><td><code>MAX_CONCURRENT</code></td><td>4</td><td>Questions at once per account. Beyond that, code 429.</td></tr>
             <tr><td><code>MAX_MESSAGES</code></td><td>500</td><td>Messages in a single request. Beyond that, code 400.</td></tr>
             <tr><td><code>SOURCE_ROOTS</code></td><td>Not set</td><td>The folders that folder-type knowledge sources may come from, separated by commas. When set, a folder outside them is refused.</td></tr>
+            <tr><td><code>ALLOW_LOCAL_LOOPBACK</code></td><td>off</td><td><code>1</code> = the <a href="#local">local model server</a> may be the machine the gateway runs on (localhost). Internal-network addresses are always allowed for it; link-local addresses and the cloud provider's information address are always blocked.</td></tr>
             <tr><td><code>ALLOW_PRIVATE_MCP</code></td><td><code>1</code></td><td><code>0</code> = also block MCP servers at internal-network addresses. The server itself, local addresses and the cloud provider's information address are always blocked, and redirects are never followed.</td></tr>
             <tr><td><code>PUBLIC_DEPLOY</code></td><td>Off</td><td><code>1</code> = the gateway doesn't distinguish the office from outside: the admin screen always asks for the password, and open mode is off. Required if anything sits in front of Caddy (a load balancer, a CDN), or if the gateway can be reached from the internet.</td></tr>
             <tr><td><code>ALLOWED_HOSTS</code></td><td>Empty</td><td>Extra server names the gateway will answer to, separated by commas (the domain in <code>SITE_ADDRESS</code> is already included).</td></tr>
@@ -433,10 +456,11 @@ client.messages.create(model="smart", max_tokens=1000, messages=[...])
 client = openai.OpenAI(base_url="http://&lt;your-server&gt;/v1", api_key="gw-...")
 client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
         <ul>
-          <li>Claude through <code>/v1/messages</code>; GPT and Gemini through <code>/v1/chat/completions</code>.</li>
+          <li>Claude through <code>/v1/messages</code>; GPT, Gemini and <a href="#local">models on the company's server</a> through <code>/v1/chat/completions</code>.</li>
           <li>Streamed answers (<code>stream</code>) are supported, and tokens are counted for them too.</li>
           <li>The <code>x-gateway-model</code> header in the response says which model actually answered (different from the one requested if the backup answered).</li>
-          <li>Errors: 401 invalid key, 402 budget used up, 403 model not allowed or turned off, 429 too many requests.</li>
+          <li>Errors: 401 invalid key, 402 budget used up, 403 model not allowed or turned off, 429 too many requests, 502 provider unavailable.</li>
+          <li>When the policy is "Send to the local model", a question with sensitive data is answered by the local model even if the app asked for another one; <code>x-gateway-model</code> shows it.</li>
         </ul>`,
 
   "#settings": `
@@ -446,6 +470,8 @@ client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
           <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
           <tbody>
             <tr><td><code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code></td><td>The provider keys. A provider without a key simply won't work.</td></tr>
+            <tr><td><code>LOCAL_API_KEY</code></td><td>A key for the company's model server (Ollama or vLLM), if it needs one. Optional. The server's address is set on the Models page. See <a href="#local">Models on the company's own server</a>.</td></tr>
+            <tr><td><code>ALLOW_LOCAL_LOOPBACK</code></td><td><code>1</code> = the company's model server may be the gateway's own machine.</td></tr>
             <tr><td><code>ADMIN_PASSWORD</code></td><td>Password for the admin screen from outside. Empty = completely closed from outside.</td></tr>
             <tr><td><code>SITE_ADDRESS</code></td><td>Domain for an automatically encrypted connection.</td></tr>
             <tr><td><code>ALLOWED_HOSTS</code></td><td>Extra server names the gateway will answer to, separated by commas.</td></tr>
@@ -471,5 +497,7 @@ client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
           <li>The requests-per-minute limit is kept in memory and resets when the gateway restarts.</li>
           <li>Alerts appear only on the admin screen; there are no alerts by email, Teams or Slack yet. Only the <a href="#summary">monthly summary</a> goes out by email.</li>
           <li>Savings recommendations are an estimate: they assume the same short questions would work well on the cheap model, and don't check answer quality.</li>
+          <li>Speed monitoring starts with this version: questions from before it have no times. Answer time includes the network trip to the provider, and a long answer naturally takes longer, so comparing models is fair only when they answer similar work.</li>
+          <li>A local model server that returns no token counts gets an estimate (about one token for every four characters), so the daily token limit is approximate for it.</li>
         </ul>`,
 });

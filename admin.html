@@ -384,6 +384,7 @@
           <label class="check"><button type="button" class="switch" role="switch" id="autoEnabled" aria-checked="true" aria-label="בחירה אוטומטית פעילה"></button> פעיל</label>
           <label class="field">מודל זול<select id="autoCheap"></select></label>
           <label class="field">מודל חזק<select id="autoStrong"></select></label>
+          <label class="check" title="בין המודלים שמתאימים לשאלה ובמחיר דומה (עד פי 2 לכאן או לכאן), אצל כל ספק שמותר לעובד: זה שענה הכי מהר ב-24 השעות האחרונות. נחשבים רק מודלים עם 20 תשובות לפחות."><input type="checkbox" id="autoFast"> להעדיף את המודל המהיר מבין המתאימים</label>
           <button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button>
         </form>
       </div>
@@ -400,12 +401,41 @@
           <div id="shareChart"></div>
         </div>
       </div>
+      <div class="card" style="margin-bottom:1.5rem" id="speedCard">
+        <header><h2>מהירות תגובה</h2>
+          <select id="speedWindow" aria-label="תקופה"><option value="day">24 השעות האחרונות</option><option value="week">7 הימים האחרונים</option></select></header>
+        <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">כמה זמן לוקח לכל מודל לענות. "חציון" הוא הזמן שחצי מהתשובות מהירות ממנו, "95%" הוא הזמן ש-95 מכל 100 תשובות מהירות ממנו (המקרים האיטיים). "זמן עד מילה ראשונה" הוא כמה זמן העובד מחכה עד שהתשובה מתחילה להופיע.</p>
+        <div class="grid wide-narrow">
+          <div>
+            <div class="table-wrap"><table class="stack-mobile">
+              <caption class="sr-only">מהירות תגובה לפי מודל</caption>
+              <thead><tr><th>מודל</th><th class="num">חציון</th><th class="num">95%</th><th class="num">זמן עד מילה ראשונה</th><th class="num">בקשות</th><th class="num">שגיאות</th></tr></thead>
+              <tbody id="speedTable"></tbody>
+            </table></div>
+          </div>
+          <div>
+            <h3 class="small" style="margin:0 0 .5rem">חציון לפי ספק, בכל שעה ב-48 השעות האחרונות</h3>
+            <div class="legend" id="speedLegend"></div>
+            <div class="chart" id="speedChart"></div>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <div class="table-wrap"><table class="stack-mobile">
           <caption class="sr-only">מודלים</caption>
           <thead><tr><th>פעיל</th><th>מודל</th><th>ספק</th><th class="num">מחיר למיליון טוקנים</th><th class="num">שימוש החודש</th><th class="num">משתמשים</th><th>ברירת מחדל</th><th><span class="sr-only">פעולות</span></th></tr></thead>
           <tbody id="modelsTable"></tbody>
         </table></div>
+      </div>
+      <div class="card" style="margin-top:1.5rem" id="localCard">
+        <header><h2>שרת מודלים מקומי</h2><span id="localStatus"></span></header>
+        <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">מודלים שרצים על שרת של החברה עם Ollama או vLLM. השאלות לא יוצאות מהרשת של החברה, ואין תשלום לפי טוקנים (אפשר לקבוע מחיר פנימי בעריכת המודל). כותבים את כתובת השרת, בודקים חיבור, ומוסיפים את המודלים שהוא מציע. מפתח גישה לשרת, אם צריך, נכנס רק להגדרות השרת (LOCAL_API_KEY).</p>
+        <form class="row" id="localForm" style="align-items:flex-end;gap:16px">
+          <label class="field" style="flex:1;min-width:min(100%,280px)">כתובת השרת<input type="text" id="localUrl" class="ltr" placeholder="http://ollama:11434/v1" autocomplete="off" spellcheck="false"></label>
+          <button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button>
+          <button type="button" class="ghost" id="localTest"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg>בדיקת חיבור</button>
+        </form>
+        <div id="localModels" style="margin-top:12px"></div>
       </div>
     </section>
 
@@ -480,7 +510,9 @@
                   <option value="mask">להסתיר את המידע ולשלוח</option>
                   <option value="block">לחסום את השאלה</option>
                   <option value="log">לשלוח בלי להסתיר ולרשום ביומן</option>
+                  <option value="local" id="pSensitiveLocal">לשלוח למודל המקומי</option>
                 </select>
+                <span class="muted small" id="pSensitiveNote" style="font-weight:400"></span>
               </label>
             </div>
             <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירת המדיניות</button></div>
@@ -611,7 +643,7 @@
     </fieldset>
     <fieldset>
       <legend>אצל הספק</legend>
-      <label class="field">ספק<select id="mProvider"><option value="anthropic">Anthropic ‏(Claude)</option><option value="openai">OpenAI ‏(GPT)</option><option value="gemini">Google ‏(Gemini)</option></select></label>
+      <label class="field">ספק<select id="mProvider"><option value="anthropic">Anthropic ‏(Claude)</option><option value="openai">OpenAI ‏(GPT)</option><option value="gemini">Google ‏(Gemini)</option><option value="local">שרת החברה ‏(Ollama / vLLM)</option></select></label>
       <label class="field">שם המודל אצל הספק<input type="text" id="mModel" class="ltr" placeholder="claude-opus-5-5" required></label>
       <div class="grid two" style="gap:12px">
         <label class="field">מחיר לטוקנים נכנסים ($ למיליון)<input type="number" id="mIn" min="0" step="0.001" required></label>

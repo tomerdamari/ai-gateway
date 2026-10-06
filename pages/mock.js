@@ -60,6 +60,8 @@
       }
       if (key === "models/test") return json({ ok: false, error: "no API key for this provider in .env" });
       if (key === "sources/mcp-test") return json({ ok: false, error: "זו תצוגת הדגמה, אין חיבור לשרתים" });
+      // the local model server's connection check: a recorded answer, as an Ollama server would give it
+      if (key === "local/test") return json({ ok: true, ms: 38, models: ["llama3.3:70b", "qwen3:32b", "mistral-small3.1:24b"] });
       if (key === "accounts" || key === "accounts/key") { notSaved(); return json({ ok: true, key: "gw-demo-key-not-real" }); }
       notSaved();
       return json({ ok: true });

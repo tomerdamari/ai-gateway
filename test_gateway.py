@@ -12,14 +12,45 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 received = {}  # path -> last body the fake provider got
+sent_bodies = []  # (path, body as text): everything the fake providers were sent
 
 
 class FakeProvider(BaseHTTPRequestHandler):
     """Anthropic on /v1/messages, OpenAI on /v1/chat/completions, Gemini on /gemini/chat/completions.
     Every response uses 1000 input + 1000 output tokens; checks the real provider key arrives."""
+    def send_json(self, obj, status=200):
+        data = json.dumps(obj).encode()
+        self.send_response(status)
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):  # the local model server (Ollama / vLLM): the models it offers
+        if self.path == "/local-redirect/v1/models":
+            self.send_response(302)
+            self.send_header("location", "http://169.254.169.254/latest")
+            self.send_header("content-length", "0")
+            return self.end_headers()
+        if self.path != "/local/v1/models" or self.headers.get("authorization") != "Bearer local-key":
+            return self.send_json({"error": "no"}, 404)
+        self.send_json({"object": "list", "data": [{"id": "llama3.3:70b", "object": "model"}, {"id": "qwen3:32b", "object": "model"}]})
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         received[self.path] = body
+        sent_bodies.append((self.path, json.dumps(body, ensure_ascii=False)))
+        if self.path == "/local/v1/chat/completions":  # OpenAI format; "NOUSAGE" in the question: no token counts, like some servers
+            assert self.headers.get("authorization") == "Bearer local-key"
+            usage = {} if "NOUSAGE" in json.dumps(body) else {"usage": {"prompt_tokens": 300, "completion_tokens": 100}}
+            if not body.get("stream"):
+                return self.send_json({"choices": [{"message": {"content": "local answer"}}], **usage})
+            self.send_response(200)
+            self.send_header("content-type", "text/event-stream")
+            self.end_headers()
+            for e in ({"choices": [{"delta": {"content": "local "}}]}, {"choices": [{"delta": {"content": "answer"}}]},
+                      *([{"choices": [], **usage}] if usage else [])):
+                self.wfile.write(b"data: " + json.dumps(e).encode() + b"\n\n")
+            return self.wfile.write(b"data: [DONE]\n\n")
         if self.path.endswith("/embeddings"):  # meaning vectors: words of one topic share a dimension
             topics = [{"חופשה", "נופש", "vacation", "חופש"}, {"רכב", "הוצאות", "ק\"מ", "car"}, {"סיסמה", "סיסמאות", "password"}]
             data = []
@@ -159,11 +190,11 @@ def serve(handler):
 
 
 os.environ["GATEWAY_DB"] = os.path.join(tempfile.mkdtemp(), "t.db")
-fake = f"http://127.0.0.1:{serve(FakeProvider)}"
+fake = FAKE = f"http://127.0.0.1:{serve(FakeProvider)}"  # FAKE: "fake" is reused further down
 os.environ.update(ANTHROPIC_URL=fake + "/v1/messages", ANTHROPIC_API_KEY="real-anthropic",
                   OPENAI_URL=fake + "/v1/chat/completions", OPENAI_API_KEY="real-openai",
                   GEMINI_URL=fake + "/gemini/chat/completions", GEMINI_API_KEY="real-gemini",
-                  ADMIN_PASSWORD="test-admin")
+                  ADMIN_PASSWORD="test-admin", LOCAL_API_KEY="local-key")
 import gateway  # noqa: E402  (env must be set first)
 
 gateway.PBKDF2_ROUNDS = 1000  # fast tests
@@ -483,7 +514,7 @@ assert "ignore all previous" in next(e for e in sec["events"] if e["kind"] == "s
 
 # --- models page: list, add, price, turn off, default, delete, connection test ---
 ml = adm("models")[1]
-assert len(ml["models"]) == 6 and ml["default_model"] == "fast" and ml["providers"] == {"anthropic": True, "openai": True, "gemini": True}
+assert len(ml["models"]) == 6 and ml["default_model"] == "fast" and ml["providers"] == {"anthropic": True, "openai": True, "gemini": True, "local": False}
 assert next(m for m in ml["models"] if m["alias"] == "fast")["label"] == "Claude Haiku 4.5"
 assert adm("models", {"name": "Bad Alias", "provider": "anthropic", "model": "x", "price_in": 1, "price_out": 1})[0] == 400
 assert adm("models", {"name": "top", "provider": "nope", "model": "x", "price_in": 1, "price_out": 1})[0] == 400
@@ -1260,6 +1291,174 @@ assert len(failed) == 3 and failed[0]["detail"]["month"] == "2031-11" and "ceo@c
 FakeSMTP.fail = False
 assert adm("summary/settings", {"name": "summary", "recipients": "ceo@corp.test", "enabled": False})[0] == 200
 assert gateway.summary_tick(at(2032, 1, 1, 9)) is None and len(FakeSMTP.sent) == n + 1  # turned off
+
+# ================= models on the company's own server (Ollama / vLLM) =================
+local_base = FAKE + "/local/v1"
+# the address: cloud metadata, link-local, other schemes and passwords in it are refused; company addresses are the point;
+# this machine only with ALLOW_LOCAL_LOOPBACK
+for bad in ("http://169.254.169.254/v1", "http://[fd00:ec2::254]/v1", "ftp://10.0.0.5/v1", "http://u:p@10.0.0.5/v1", "http://0.0.0.0:9/v1",
+            local_base, "http://localhost:11434/v1"):
+    s, r = adm("local", {"name": "local", "url": bad})
+    assert s == 400, (bad, r)
+assert gateway.check_local_url("http://10.0.0.5:8000/v1/") == "http://10.0.0.5:8000/v1"
+assert gateway.check_local_url("http://192.168.1.9:11434/v1") and gateway.check_local_url("") == ""
+assert adm("local/test", {"name": "local"})[1] == {"ok": False, "error": "no address set for the local model server"}
+assert adm("models")[1]["providers"]["local"] is False
+gateway.LOCAL_LOOPBACK = True  # the fake local server runs on this machine
+assert adm("local", {"name": "local", "url": local_base + "/"}) == (200, {"ok": True, "url": local_base})
+lt = adm("local/test", {"name": "local"})[1]
+assert lt["ok"] and lt["models"] == ["llama3.3:70b", "qwen3:32b"], lt
+assert adm("local/test", {"name": "local", "url": FAKE + "/local-redirect/v1"})[1] == {"ok": False, "error": "HTTP 302"}  # no redirects
+ml = adm("models")[1]
+assert ml["providers"]["local"] is True and ml["local"]["url"] == local_base and ml["local"]["has_key"] is True
+assert "local-key" not in json.dumps(ml) and adm("audit")[1][0]["action"] == "local-server"
+# a model it offers: provider "local", price 0
+assert adm("models", {"name": "llama3.3-70b", "label": "Llama3.3 70B", "provider": "local", "model": "llama3.3:70b",
+                      "price_in": 0, "price_out": 0})[0] == 200
+assert adm("models/test", {"name": "llama3.3-70b"})[1]["ok"] is True
+assert adm("teams", {"name": "lab", "budget": 0})[0] == 200
+k_lab = adm("accounts", {"name": "lab1", "team": "lab", "budget": 50, "models": ["fast", "gpt-fast", "llama3.3-70b"],
+                         "password": "lab-pass-11", "api_key": True})[1]["key"]
+adm("accounts", {"name": "lab2", "team": "lab", "budget": 50, "models": ["gpt-fast"], "password": "lab-pass-22"})
+lab = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+lab2 = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+assert http_call("/api/login", {"name": "lab1", "password": "lab-pass-11"}, opener=lab)[0] == 200
+assert http_call("/api/login", {"name": "lab2", "password": "lab-pass-22"}, opener=lab2)[0] == 200
+
+
+def log_row(name):
+    return gateway.db().execute("select * from logs where name = ? order by ts desc, rowid desc limit 1", (name,)).fetchone()
+
+
+# chat (streamed) and an app call (not streamed) to the local model; speed is recorded for both
+assert chat_as(lab, "hello", "llama3.3-70b") == (200, "local answer")
+r = log_row("lab1")
+assert r["model"] == "llama3.3:70b" and r["tokens_in"] == 300 and r["tokens_out"] == 100 and r["cost"] == 0 and r["status"] == 200
+assert r["latency_ms"] is not None and r["ttft_ms"] is not None and 0 <= r["ttft_ms"] <= r["latency_ms"]
+assert received["/local/v1/chat/completions"]["stream_options"] == {"include_usage": True}
+s, data = api(k_lab, "llama3.3-70b", "/v1/chat/completions")
+assert s == 200 and json.loads(data)["choices"][0]["message"]["content"] == "local answer"
+r = log_row("lab1")
+assert r["status"] == 200 and r["latency_ms"] is not None and r["ttft_ms"] == r["latency_ms"]
+assert api(k_lab, "llama3.3-70b", "/v1/messages")[0] == 400  # OpenAI format only
+# no token counts from the server: estimated from the text (about 4 characters a token) and marked
+assert api(k_lab, "llama3.3-70b", "/v1/chat/completions", text="NOUSAGE " + "x" * 400)[0] == 200
+r = log_row("lab1")
+assert r["note"] == "estimated" and r["tokens_in"] > 100 and r["tokens_out"] == len("local answer") // 4
+assert chat_as(lab, "NOUSAGE hi", "llama3.3-70b")[0] == 200 and log_row("lab1")["note"] == "estimated"
+# an outside provider: speed recorded too, streamed and not
+chat_as(lab, "hello", "gpt-fast")
+r = log_row("lab1")
+assert r["model"] == "gpt-6-luna" and r["status"] == 200 and r["ttft_ms"] is not None and r["latency_ms"] >= r["ttft_ms"]
+# the local server refused at connection time when its address stops being allowed
+gateway.LOCAL_LOOPBACK = False
+s, data = api(k_lab, "llama3.3-70b", "/v1/chat/completions")
+assert s == 502 and b"not allowed" in data and log_row("lab1")["status"] == 502  # counted in the error rate
+gateway.LOCAL_LOOPBACK = True
+
+# sensitive data -> the local model, unmasked; never to an outside provider
+assert adm("security/policy", {"name": "policy", "injection": "block", "sensitive": "bogus"})[0] == 400
+assert adm("security/policy", {"name": "policy", "injection": "block", "sensitive": "local"})[0] == 200
+assert adm("security")[1]["policy"]["sensitive"] == "local"
+SECRET_ID = "123456782"
+sent_bodies.clear()
+r = lab.open(urllib.request.Request(base + "/api/chat", json.dumps({"model": "fast", "messages": [
+    {"role": "user", "content": f"ת.ז. {SECRET_ID} מה הסטטוס?"}]}).encode(), {"content-type": "application/json"}))
+assert r.read().decode() == "local answer" and r.headers["x-model-used"] == "llama3.3-70b"
+assert urllib.parse.unquote(r.headers["x-route"]) == "מידע רגיש: נענה במודל המקומי"
+assert SECRET_ID in received["/local/v1/chat/completions"]["messages"][-1]["content"]
+row = log_row("lab1")
+assert row["note"] == "sensitive: local" and SECRET_ID not in gateway.decrypt(row["request"])  # the log keeps it masked
+ev = events("sensitive-routed-local")[0]
+assert ev["name"] == "lab1" and ev["detail"]["count"] == 1 and ev["detail"]["model"] == "llama3.3:70b"
+# an app on the OpenAI format: moved to the local model too
+s, data = api(k_lab, "gpt-fast", "/v1/chat/completions", text=f"id {SECRET_ID}")
+assert s == 200 and json.loads(data)["choices"][0]["message"]["content"] == "local answer"
+# the Anthropic format can't go to the local model: masked
+assert api(k_lab, "fast", "/v1/messages", text=f"id {SECRET_ID}")[0] == 200
+assert "[REDACTED_ID]" in json.dumps(received["/v1/messages"])
+# the local model down: its backup is an outside model, which must not get the unmasked question
+assert adm("models", {"name": "llama3.3-70b", "label": "Llama3.3 70B", "provider": "local", "model": "llama3.3:70b",
+                      "price_in": 0, "price_out": 0, "fallback": "gpt-fast"})[0] == 200
+assert adm("local", {"name": "local", "url": "http://127.0.0.1:9/v1"})[0] == 200
+assert chat_as(lab, f"id {SECRET_ID}", "fast")[0] == 502
+assert adm("local", {"name": "local", "url": local_base})[0] == 200
+assert chat_as(lab, "hi", "llama3.3-70b") == (200, "local answer")
+# no local model for the person (or the team doesn't allow it): masked, as before
+assert chat_as(lab2, f"id {SECRET_ID}", "gpt-fast")[0] == 200
+assert "[REDACTED_ID]" in json.dumps(received["/v1/chat/completions"]) and events("sensitive-data-masked")[0]["name"] == "lab2"
+assert adm("teams", {"name": "lab", "budget": 0, "models": ["fast", "gpt-fast"]})[0] == 200
+assert chat_as(lab, f"id {SECRET_ID}", "gpt-fast")[0] == 200
+assert "[REDACTED_ID]" in json.dumps(received["/v1/chat/completions"]) and events("sensitive-data-masked")[0]["name"] == "lab1"
+assert adm("teams", {"name": "lab", "budget": 0, "models": []})[0] == 200
+assert all(SECRET_ID not in b for p, b in sent_bodies if not p.startswith("/local/")), [p for p, b in sent_bodies if SECRET_ID in b]
+assert any(SECRET_ID in b for p, b in sent_bodies if p.startswith("/local/"))
+assert adm("security/policy", {"name": "policy", "injection": "block", "sensitive": "mask"})[0] == 200
+
+# ================= speed monitoring =================
+assert adm("models", {"name": "speed-a", "label": "Speed A", "provider": "openai", "model": "speed-a", "price_in": 1, "price_out": 1})[0] == 200
+assert adm("models", {"name": "speed-b", "label": "Speed B", "provider": "gemini", "model": "speed-b", "price_in": 1, "price_out": 1})[0] == 200
+now = time.time()
+
+
+def add_speed(model, ago, ms, ttft=None, status=200, name="speedtest", n=1):
+    with gateway.db() as c:
+        c.executemany("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, latency_ms, ttft_ms, status) values (?,?,?,?,?,?,?,?,?,?)",
+                      [(now - ago, name, "", model, 10, 10, 0, ms, ttft, status)] * n)
+
+
+for i in range(20):  # speed-a: 100 .. 2000 ms over the last day, first token after a tenth
+    add_speed("speed-a", 7200 + i * 3000, 100 * (i + 1), 10 * (i + 1))
+add_speed("speed-b", 3 * 86400, 1000, n=30)  # speed-b: 1 second all week
+add_speed("speed-b", 600, 2500, n=9)  # then 2.5 seconds in the last hour, 9 answers: not enough for an alert
+add_speed("speed-b", 900, 99999, status=504, n=2)  # two timeouts: not in the times, in the rates
+add_speed("speed-b", 600, 1, name="(בדיקת מודל)", n=50)  # test calls don't count
+lat = adm("latency")[1]
+a = next(m for m in lat["models"] if m["model"] == "speed-a")
+assert a["alias"] == "speed-a" and a["provider"] == "openai" and a["day"]["requests"] == 20 == a["week"]["requests"]
+assert (a["day"]["p50"], a["day"]["p95"], a["day"]["ttft_p50"], a["day"]["ttft_p95"]) == (1000, 1900, 100, 190), a["day"]
+b = next(m for m in lat["models"] if m["model"] == "speed-b")
+assert b["hour"]["requests"] == 11 and b["hour"]["answers"] == 9 and b["hour"]["p95"] == 2500 and not b["slow"] and not any(x["model"] == "speed-b" for x in lat["alerts"])
+assert b["day"]["requests"] == 11 and b["day"]["timeouts"] == 2 and b["day"]["errors"] == 2 and b["day"]["p50"] == 2500
+assert b["week"]["requests"] == 41 and b["week"]["p50"] == 1000 and b["week"]["timeout_rate"] == round(2 / 41, 4)
+gp = next(p for p in lat["providers"] if p["provider"] == "gemini")
+assert gp["day"]["timeouts"] >= 2 and gp["week"]["requests"] >= 41
+assert any(h["provider"] == "openai" and h["p50"] for h in lat["hourly"]) and all(h["hour"] % 3600 == 0 for h in lat["hourly"])
+add_speed("speed-b", 300, 2500)  # the tenth answer in the hour: p95 2.5s > 2 x 1s
+lat = adm("latency")[1]
+al = next(x for x in lat["alerts"] if x["model"] == "speed-b")
+assert al == {"model": "speed-b", "alias": "speed-b", "label": "Speed B", "provider": "gemini", "hour_p95": 2500, "week_p95": 1000,
+              "requests": 10}, al
+assert next(m for m in lat["models"] if m["model"] == "speed-b")["slow"] is True
+
+# automatic choice: prefer the fastest allowed model of the same tier (Haiku $6 vs Gemini Flash $4.50; GPT Luna $0.60 is another tier)
+haiku, flash = gateway.MODELS["fast"][1], gateway.MODELS["gemini-fast"][1]
+with gateway.db() as c:
+    count = lambda m: c.execute("select count(*) from logs where model = ? and ts >= ? and latency_ms is not null", (m, now - 86400)).fetchone()[0]
+    busy_haiku, busy_flash = count(haiku), count(flash)
+assert busy_flash < gateway.FAST_MIN - 1
+add_speed(haiku, 60, 9000, n=busy_haiku + 30)  # Haiku's median: 9 seconds
+add_speed(flash, 60, 400, n=gateway.FAST_MIN - 1 - busy_flash)  # 19 answers: not enough to be trusted
+adm("accounts", {"name": "lab3", "team": "lab", "budget": 50, "models": ["fast", "gemini-fast", "gpt-fast"], "password": "lab-pass-33"})
+lab3 = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+assert http_call("/api/login", {"name": "lab3", "password": "lab-pass-33"}, opener=lab3)[0] == 200
+
+
+def auto_pick(opener):
+    r = opener.open(urllib.request.Request(base + "/api/chat", json.dumps({"model": "auto", "messages": [
+        {"role": "user", "content": "מה השעה?"}]}).encode(), {"content-type": "application/json"}))
+    r.read()
+    return r.headers["x-model-used"], urllib.parse.unquote(r.headers["x-route"])
+
+
+assert adm("models/auto", {"name": "auto", "enabled": True, "cheap": "fast", "strong": "smart", "prefer_fast": True})[0] == 200
+assert adm("models")[1]["auto"]["prefer_fast"] is True
+assert auto_pick(lab3) == ("fast", "שאלה קצרה ופשוטה")  # Gemini Flash has too few answers to be trusted
+add_speed(flash, 60, 400)
+assert auto_pick(lab3) == ("gemini-fast", "שאלה קצרה ופשוטה (המהיר מבין המתאימים)")
+assert auto_pick(lab) == ("fast", "שאלה קצרה ופשוטה")  # lab1 may not use Gemini Flash
+assert adm("models/auto", {"name": "auto", "enabled": True, "cheap": "fast", "strong": "smart"})[0] == 200
+assert auto_pick(lab3) == ("fast", "שאלה קצרה ופשוטה")  # turned off
 
 # one version number: the server's and the one the pages show
 ui_version = re.search(r'const VERSION = "([^"]+)"', open(os.path.join(here, "ui.js"), encoding="utf-8").read()).group(1)

@@ -15,7 +15,7 @@ import time
 
 import gateway
 
-SEED_VERSION = 2
+SEED_VERSION = 3  # 3: a model on the company's own server, and answer times (speed monitoring)
 # a public demo sets DEMO_PASSWORD (Render generates one); the fixed value is for local use only
 DEMO_PASSWORD = gateway.os.environ.get("DEMO_PASSWORD") or "demo-pass-1"
 DAYS = 90
@@ -30,6 +30,15 @@ EXTRA_MODELS = [
 # on, but nobody uses it: the savings page suggests turning it off
 UNUSED_MODEL = ("gemini-legacy", "Gemini 2.5 Pro", "gemini", "gemini-2.5-pro", 1.25, 10.0)
 ALL = ["fast", "smart", "gpt-fast", "gpt-smart", "gemini-fast", "gemini-smart", "claude-top", "gpt-top", "gemini-lite"]
+# a model on the company's own server (Ollama), free per token; these teams get it, legal for its confidential work
+LOCAL_MODEL = ("llama-local", "Llama 3.3 70B (מקומי)", "local", "llama3.3:70b", 0.0, 0.0)
+LOCAL_URL = "http://ollama:11434/v1"
+LOCAL_TEAMS = ("פיתוח", "כספים", "משפטי")
+# answer times: real model -> (ms to the first word, ms per answer token). Cheap models are quicker.
+SPEED = {"claude-haiku-4-5-20251001": (450, 7), "claude-sonnet-5-5": (900, 14), "claude-opus-5-5": (1500, 25),
+         "gpt-6-luna": (350, 6), "gpt-6.1-sol": (800, 12), "gpt-6-astra": (1700, 22), "gemini-3.8-flash": (400, 5),
+         "gemini-3.1-pro-preview": (1100, 13), "gemini-3.5-flash-lite": (300, 4), "llama3.3:70b": (600, 25)}
+SLOW_PROVIDER, SLOW_HOURS, SLOW_TIMES = "gemini", 3, 4  # Google answers 4x slower in the last 3 hours: the speed alert shows it
 
 # team -> (monthly team budget $, models the team gets, model weights when people pick)
 TEAMS = {
@@ -98,6 +107,16 @@ def doc_text(topic, kind):
             f"## עיקרי הנוהל\n\nבקשות בנושא מוגשות דרך הפורטל, ומקבלות מענה תוך {hours} שעות. "
             f"מנהל ישיר מאשר עד {amount} ש\"ח או {days} ימים; מעבר לכך נדרש אישור סמנכ\"ל.\n\n"
             f"## אחריות\n\nהאחריות על יישום הנוהל היא של מחלקת {random.choice(list(TEAMS))}. שאלות נשלחות לכתובת הפנימית של המחלקה.")
+
+
+def timing(real, provider, t_out, ts, now):
+    """(whole answer ms, ms to the first word) for one demo request."""
+    first, per = SPEED.get(real, (800, 12))
+    ttft = int(first * random.uniform(0.7, 1.4))
+    total = ttft + int(t_out * per * random.uniform(0.8, 1.25))
+    if provider == SLOW_PROVIDER and ts > now - SLOW_HOURS * 3600:
+        return total * SLOW_TIMES, ttft * SLOW_TIMES
+    return total, ttft
 
 
 def seed(c):
@@ -186,9 +205,9 @@ def seed(c):
                     q = random.choice(QUESTIONS) if not p["app"] else f"בקשה אוטומטית מ-{p['name']}"
                     rows.append((ts, p["name"], p["team"], real, t_in, t_out, cost,
                                  gateway.encrypt(json.dumps([{"role": "user", "content": q}], ensure_ascii=False)), gateway.encrypt("תשובת דוגמה: " + q),
-                                 cache_read, 0, note))
-        c.executemany("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, request, response, cache_read, cache_write, note)"
-                      " values (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+                                 cache_read, 0, note, *timing(real, provider, t_out, ts, now), 200))
+        c.executemany("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, request, response, cache_read, cache_write, note,"
+                      " latency_ms, ttft_ms, status) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
 
         # --- spending this month, and budgets that fit each person's real use ---
         c.execute("update accounts set spent = coalesce((select sum(cost) from logs where logs.name = accounts.name and ts >= ?), 0)",
@@ -294,16 +313,84 @@ def seed(c):
             c.execute("update accounts set archived = ? where name = ?", (now - 3 * 86400, left["name"]))
             gateway.audit(c, "archive", {"kind": "account", "name": left["name"]}, ts=now - 3 * 86400)
 
-        c.execute("insert into settings values ('seed_version', ?) on conflict(key) do update set value = excluded.value", (str(SEED_VERSION),))
+        c.execute("insert into settings values ('seed_version', '2') on conflict(key) do update set value = excluded.value")
     total = c.execute("select count(*), sum(cost) from logs where ts >= ?", (month_start,)).fetchone()
     print(f"demo data added: {len(people)} people and apps, {len(rows):,} requests over {DAYS} days, "
           f"this month ${total[1] or 0:,.0f}. Chat password: DEMO_PASSWORD in this file.")
 
 
+def seed_local_and_speed(c):
+    """Version 3: the company-server model with a month of use, the demo server address, and the last hours of Google
+    running slow (two requests timed out) so the speed alert has something to say. Only adds; a setting already there stays."""
+    random.seed(2027)
+    now = time.time()
+    with c:
+        alias, label, provider, model, _, _ = LOCAL_MODEL
+        c.execute("insert or ignore into models(alias, label, provider, model, price_in, price_out, enabled, created, price_cached)"
+                  " values (?,?,?,?,?,?,1,?,0)", (*LOCAL_MODEL, now - DAYS * 86400))
+        c.execute("insert or ignore into settings values ('local_base_url', ?)", (LOCAL_URL,))
+        c.execute("insert or ignore into settings values ('policy_sensitive', 'local')")  # the demo shows the local route
+        marks = ",".join("?" * len(LOCAL_TEAMS))
+        c.execute(f"update accounts set models = models || ',' || ? where team in ({marks}) and pw_hash is not null"
+                  " and ',' || models || ',' not like ?", (alias, *LOCAL_TEAMS, f"%,{alias},%"))
+        c.execute("update teams set models = models || ',' || ? where name = 'משפטי' and models = ?", (alias, TEAM_POLICY["משפטי"]))
+        gateway.refresh_models(c)
+        people = [dict(r) for r in c.execute(f"select name, team from accounts where team in ({marks}) and pw_hash is not null"
+                                             " and archived is null", LOCAL_TEAMS)]
+        rows = []
+        for day in range(30, -1, -1):
+            when = now - day * 86400
+            if time.localtime(when).tm_wday in (4, 5):  # Friday and Saturday
+                continue
+            for p in people:
+                for _ in range(random.randint(4, 10) if p["team"] == "משפטי" else random.randint(1, 6)):
+                    hour = random.randint(8, 18)
+                    ts = time.mktime(time.localtime(when)[:3] + (hour, random.randint(0, 59), random.randint(0, 59), 0, 0, -1))
+                    if ts > now:
+                        continue
+                    t_in, t_out = int(random.lognormvariate(0, 0.6) * 6000), int(random.lognormvariate(6.5, 0.6))
+                    q = random.choice(QUESTIONS)
+                    rows.append((ts, p["name"], p["team"], model, t_in, t_out, 0.0,
+                                 gateway.encrypt(json.dumps([{"role": "user", "content": q}], ensure_ascii=False)),
+                                 gateway.encrypt("תשובת דוגמה: " + q),
+                                 "sensitive: local" if p["team"] == "משפטי" or random.random() < 0.15 else None,
+                                 *timing(model, provider, t_out, ts, now), 200))
+        # the slow hour: enough Gemini Flash answers in the last hour for the alert, two of them timed out
+        _, flash, pi, po = gateway.ALL_MODELS["gemini-fast"]
+        users = [dict(r) for r in c.execute("select name, team from accounts where ',' || models || ',' like '%,gemini-fast,%'"
+                                            " and pw_hash is not null and archived is null")]
+        extra = []
+        for i in range(16 if users else 0):
+            u, ts = random.choice(users), now - random.uniform(60, 3000)
+            if i < 2:  # timed out: no answer, nothing charged
+                extra.append((ts, u["name"], u["team"], flash, 0, 0, 0.0, "", "", None, 300000, 300000, 504))
+                continue
+            t_in, t_out = random.randint(300, 4000), int(random.lognormvariate(7.0, 0.5))
+            cost = gateway.price_usage(pi, po, gateway.MODEL_EXTRA["gemini-fast"]["price_cached"],
+                                       {"in": t_in, "out": t_out, "cache_read": 0, "cache_write": 0})
+            extra.append((ts, u["name"], u["team"], flash, t_in, t_out, cost, gateway.encrypt("[]"), gateway.encrypt("תשובת דוגמה"), None,
+                          *timing(flash, "gemini", t_out, ts, now), 200))
+            c.execute("update accounts set spent = spent + ? where name = ?", (cost, u["name"]))
+            c.execute("update teams set spent = spent + ? where name = ?", (cost, u["team"]))
+        c.executemany("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, request, response, note, latency_ms, ttft_ms, status)"
+                      " values (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows + extra)
+        legal = [p["name"] for p in people if p["team"] == "משפטי"] or [p["name"] for p in people]
+        for _ in range(12 if legal else 0):
+            c.execute("insert into security_events values (?,?,?,?)", (now - random.uniform(0, 14) * 86400, "sensitive-routed-local",
+                                                                       random.choice(legal), json.dumps({"count": random.randint(1, 3), "model": model})))
+        gateway.audit(c, "model-save", {"name": alias, "new": True}, ts=now - 20 * 86400)
+        gateway.audit(c, "local-server", {"name": "local", "url": LOCAL_URL, "old": ""}, ts=now - 20 * 86400)
+        c.execute("insert into settings values ('seed_version', ?) on conflict(key) do update set value = excluded.value", (str(SEED_VERSION),))
+    print(f"local model and answer times added: {len(rows):,} requests to {label}, {len(extra)} slow Gemini requests in the last hour.")
+
+
 c = gateway.db()
-done = int(gateway.setting(c, "seed_version", "0") or 0) >= SEED_VERSION
-if done and "--force" not in sys.argv:
+version = int(gateway.setting(c, "seed_version", "0") or 0)
+if version >= SEED_VERSION and "--force" not in sys.argv:
     if __name__ == "__main__":
         sys.exit("demo data already loaded (nothing was changed); use --force to add another round")
+elif version >= 2 and "--force" not in sys.argv:
+    seed_local_and_speed(c)  # demo data from before version 3: only what version 3 adds
 else:
     seed(c)
+    seed_local_and_speed(c)

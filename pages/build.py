@@ -43,7 +43,7 @@ def post(path, body, opener):
 
 admin = {k: get("/admin/api/" + k) for k in ("overview", "usage", "daily", "logs", "audit", "sources", "security", "models",
                                               "models/daily", "sources/status", "activity", "audit/verify", "archive",
-                                              "savings", "summary/settings")}
+                                              "savings", "summary/settings", "latency")}
 months = get("/admin/api/report")["months"]
 for m in months:  # the pages ask these per month: the report, the chargeback table, the summary email preview
     for key in ("report", "chargeback", "summary"):

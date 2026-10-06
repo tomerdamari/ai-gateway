@@ -30,46 +30,49 @@ class MCPError(Exception):
     pass
 
 
-def blocked_ip(text):
+def blocked_ip(text, loopback=None, private=None):
+    """True if the gateway must not connect to this address. loopback / private override ALLOW_LOOPBACK / ALLOW_PRIVATE
+    (the local model server allows private addresses always, and loopback only with its own setting)."""
     ip = ipaddress.ip_address(text.split("%")[0])
     if getattr(ip, "ipv4_mapped", None):
         ip = ip.ipv4_mapped
     if ip.is_loopback:
-        return not ALLOW_LOOPBACK
+        return not (ALLOW_LOOPBACK if loopback is None else loopback)
     if ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved or ip in METADATA:
         return True  # 169.254.169.254 (cloud metadata) is link-local
-    return ip.is_private and not ALLOW_PRIVATE
+    return ip.is_private and not (ALLOW_PRIVATE if private is None else private)
 
 
-def _connect(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, *rest):
-    host, port = address[0], address[1]
-    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    for *_, sa in infos:
-        if blocked_ip(sa[0]):
-            raise MCPError(f"address {sa[0]} is not allowed for MCP servers")
-    return socket.create_connection((infos[0][4][0], port), timeout, source_address)
+def opener(blocked=blocked_ip, what="MCP servers", error=MCPError):
+    """An opener that resolves the name, refuses addresses blocked() rejects, connects to the exact address it checked,
+    follows no redirects and ignores system proxy settings."""
+    def connect(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, *rest):
+        host, port = address[0], address[1]
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        for *_, sa in infos:
+            if blocked(sa[0]):
+                raise error(f"address {sa[0]} is not allowed for {what}")
+        return socket.create_connection((infos[0][4][0], port), timeout, source_address)
 
+    class HTTP(http.client.HTTPConnection):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self._create_connection = connect
 
-class _HTTP(http.client.HTTPConnection):
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        self._create_connection = _connect
+    class HTTPS(http.client.HTTPSConnection):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self._create_connection = connect  # TLS still checks the certificate against the name
 
+    class HTTPHandler(urllib.request.HTTPHandler):
+        def http_open(self, req):
+            return self.do_open(HTTP, req)
 
-class _HTTPS(http.client.HTTPSConnection):
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        self._create_connection = _connect  # TLS still checks the certificate against the name
+    class HTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            return self.do_open(HTTPS, req, context=self._context)
 
-
-class _HTTPHandler(urllib.request.HTTPHandler):
-    def http_open(self, req):
-        return self.do_open(_HTTP, req)
-
-
-class _HTTPSHandler(urllib.request.HTTPSHandler):
-    def https_open(self, req):
-        return self.do_open(_HTTPS, req, context=self._context)
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), HTTPHandler, HTTPSHandler, _NoRedirect)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -77,7 +80,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None  # a 3xx answer becomes an error instead of a request somewhere else
 
 
-_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _HTTPHandler, _HTTPSHandler, _NoRedirect)
+_OPENER = opener()
 
 
 def check_tool(tools, name, arg):
