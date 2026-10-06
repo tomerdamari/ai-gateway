@@ -1,5 +1,13 @@
 # שינויים / Changelog
 
+## 1.2.1 — 2026-10-06
+
+- התפריט הצדדי צפוף יותר ונכנס במסך בלי גלילה, גם במחשב נייד (768 פיקסלים). במסכי מגע השורות נשארות בגודל של אצבע.
+
+---
+
+- The side menu is more compact and fits without scrolling, even on a laptop (768 px high). On touch screens rows stay finger-sized.
+
 ## 1.2.0 — 2026-10-06
 
 **חדש: מסך הגדרות** (בתפריט, תחת "מערכת")

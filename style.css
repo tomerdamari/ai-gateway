@@ -294,13 +294,15 @@ pre { white-space: pre-wrap; word-break: break-word; direction: ltr; text-align:
 .side-close:hover { background: rgba(255, 255, 255, .08); box-shadow: none; }
 .side-close .icon { width: 22px; height: 22px; }
 .sidebar.collapsed { margin-inline-start: -260px; }
-.sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 1.5rem 1.5rem 1.25rem; color: #fff; font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em; }
+.sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 1rem 1.5rem .75rem; color: #fff; font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em; }
 .sidebar-brand:hover { text-decoration: none; color: #fff; }
 .sidebar-brand .logo { width: 34px; height: 34px; flex: none; display: block; }
-.sidebar-nav { list-style: none; margin: 0; padding: 0 0 1rem; }
-.sidebar-header { padding: 1.25rem 1.75rem .5rem; font-size: .75rem; font-weight: 600; letter-spacing: .02em; color: var(--sidebar-header); }
-.sidebar-link { width: calc(100% - 1.5rem); margin-inline: .75rem; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 1rem; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--sidebar-ink); font-weight: 600; font-size: .9rem; text-align: start; justify-content: flex-start; box-shadow: none; }
-.sidebar-link + .sidebar-link, li + li > .sidebar-link { margin-top: 2px; }
+.sidebar-nav { list-style: none; margin: 0; padding: 0 0 .75rem; }
+.sidebar-header { padding: .7rem 1.75rem .3rem; font-size: .75rem; font-weight: 600; letter-spacing: .02em; color: var(--sidebar-header); }
+.sidebar-link { width: calc(100% - 1.5rem); margin-inline: .75rem; display: flex; align-items: center; gap: 12px; min-height: 34px; padding: 0 1rem; background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--sidebar-ink); font-weight: 600; font-size: .9rem; text-align: start; justify-content: flex-start; box-shadow: none; }
+.sidebar-link + .sidebar-link, li + li > .sidebar-link { margin-top: 1px; }
+/* compact menu so it fits without scrolling; touch screens keep finger-size rows */
+@media (pointer: coarse) { .sidebar-link { min-height: 44px; } }
 .sidebar-link:hover { background: rgba(255, 255, 255, .06); color: var(--sidebar-ink-hover); text-decoration: none; box-shadow: none; }
 .sidebar-link .icon { color: rgba(255, 255, 255, .6); width: 20px; height: 20px; }
 .sidebar-link[aria-current="page"] { background: rgba(255, 255, 255, .12); color: var(--sidebar-ink-active); }
