@@ -42,8 +42,9 @@ function showLogin() {
 
 // open access (office network): no login screen, people pick their own name in the side menu
 async function boot() {
+  let conf = {};
   try {
-    const conf = await call("/api/config");
+    conf = await call("/api/config");
     openMode = conf.open;
     // the organization's name next to FireGate (the settings page, "Organization name")
     if (conf.org_name) document.querySelectorAll(".brand, .sidebar-brand").forEach(b => { b.lastChild.textContent = "FireGate · " + conf.org_name; });
@@ -60,6 +61,8 @@ async function boot() {
     try { saved = localStorage.getItem("who") || ""; } catch {}
     const meNow = await fetch("/api/me").then(r => r.ok ? r.json() : null).catch(() => null);
     if (!meNow && saved && people.some(p => p.name === saved)) await becomeUser(saved);
+    // nobody chosen yet: the admin's default person (settings, "User picked automatically in the chat")
+    else if (!meNow && conf.default_person && people.some(p => p.name === conf.default_person)) await becomeUser(conf.default_person);
   }
   start();
 }

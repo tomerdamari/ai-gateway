@@ -83,6 +83,12 @@ REGISTRY = [
       "כל אחד ברשת המשרד בוחר את השם שלו ונכנס. נוח בהתחלה, אבל כל אחד יכול להשתמש בתקציב של אחר.",
       "Anyone on the office network picks their name and goes in. Handy at first, but anyone can use someone else's budget.",
       False, env="OPEN_ACCESS", sensitive=True),
+    S("chat_default_user", "access", "chat-login", "text", "משתמש שנבחר אוטומטית בצ'אט", "User picked automatically in the chat",
+      "בכניסה בלי סיסמה: מי נבחר כשנכנסים לצ'אט ועוד לא נבחר שם. אם אין משתמש בשם הזה, הוא נוצר בלי תקרת תקציב ועם כל המודלים. "
+      "אפשר תמיד לעבור לשם אחר מהרשימה. ריק = בלי בחירה אוטומטית.",
+      "With password-free chat: who is picked when someone opens the chat and no name was chosen yet. If no user has this name, "
+      "one is created with no budget cap and every model. One can always switch to another name from the list. Empty = no automatic pick.",
+      "מנהל", max=60),
     S("chat_sso", "access", "chat-login", B, "כניסה עם חשבון החברה", "Sign in with the company account",
       "כניסה לצ'אט עם החשבון של החברה (Microsoft או Google), בלי סיסמה נפרדת.",
       "Chat sign-in with the company account (Microsoft or Google), with no separate password.", False, soon=True),

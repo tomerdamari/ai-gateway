@@ -1,5 +1,13 @@
 # שינויים / Changelog
 
+## 1.2.2 — 2026-10-06
+
+- בצ'אט, במצב כניסה בלי סיסמה, המשתמש "מנהל" נבחר אוטומטית כשעוד לא נבחר שם. הוא נוצר בפעם הראשונה בלי תקרת תקציב ועם כל המודלים. אפשר לעבור לשם אחר מהרשימה, ולשנות או לבטל את הבחירה האוטומטית במסך ההגדרות ("משתמש שנבחר אוטומטית בצ'אט").
+
+---
+
+- In the chat, with password-free sign-in, the user "מנהל" (admin) is picked automatically when no name was chosen yet. It is created the first time with no budget cap and every model. One can switch to another name from the list, and change or turn off the automatic pick in Settings ("User picked automatically in the chat").
+
 ## 1.2.1 — 2026-10-06
 
 - התפריט הצדדי צפוף יותר ונכנס במסך בלי גלילה, גם במחשב נייד (768 פיקסלים). במסכי מגע השורות נשארות בגודל של אצבע.

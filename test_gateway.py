@@ -1677,4 +1677,13 @@ docs_he, docs_en = (open(os.path.join(here, f), encoding="utf-8").read() for f i
 for d in S.REGISTRY:
     assert d["label_he"] in docs_he and d["label_en"] in docs_en, d["key"]
 
+
+# the chat's default person is created on first use with no cap and every model, and only once
+with gateway.db() as c:
+    name = gateway.ensure_chat_default_user(c)
+    assert name == "מנהל", name
+    a = c.execute("select * from accounts where name = ?", (name,)).fetchone()
+    assert a["budget"] == 0 and a["pw_hash"] and a["models"] and set(a["models"].split(",")) <= set(gateway.ALL_MODELS), dict(a)
+    assert gateway.ensure_chat_default_user(c) == name
+    assert c.execute("select count(*) from accounts where name = ?", (name,)).fetchone()[0] == 1
 print("ok")

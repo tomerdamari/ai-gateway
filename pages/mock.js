@@ -82,7 +82,7 @@
       notSaved();
       return json({ ok: true });
     }
-    if (path === "/api/config") return json({ open: true });
+    if (path === "/api/config") return json(D.config || { open: true });
     if (path === "/api/people") return json(D.people);
     if (path === "/api/as" || path === "/api/login") {
       if (!D.me[body.name]) return json({ error: "no such user" }, 404);

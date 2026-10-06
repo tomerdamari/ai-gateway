@@ -60,6 +60,7 @@ for name in [a["name"] for a in admin["overview"]["accounts"]] + [a["name"] for 
     page["requests"] = page["requests"][:30]
     admin["account?name=" + name] = page
 
+config = get("/api/config")  # first: it creates the chat's default person, who then appears in the list
 people = get("/api/people")
 me, conversations, archived, items = {}, {}, {}, {}
 for p in people:
@@ -71,7 +72,7 @@ for p in people:
     items[p["name"]] = {c["id"]: get("/api/conversations/" + c["id"], o) for c in conversations[p["name"]] + archived[p["name"]]}
 srv.shutdown()
 
-data = {"admin": admin, "people": people, "me": me, "conversations": conversations, "archived_conversations": archived,
+data = {"config": config, "admin": admin, "people": people, "me": me, "conversations": conversations, "archived_conversations": archived,
         "conversation_items": items}
 
 # ---- write the site: relative paths (Pages serves under /<repo>/), recorded data, the mock ----

@@ -57,7 +57,7 @@ if os.path.exists(_env):
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip())
 
-VERSION = "1.2.1"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
+VERSION = "1.2.2"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
 DB =os.environ.get("GATEWAY_DB", "gateway.db")
 # Every adjustable value (admin password, open access, allowed host names, limits, thresholds, provider keys...) is a
 # setting: settings.py lists them all, cfg() reads one. The server's environment / .env wins over the settings screen.
@@ -446,6 +446,25 @@ def sql_local():
         return "localtime"
     # ponytail: today's offset for every row, so rows from the other side of a daylight-saving change sit an hour off in charts
     return f"{int(datetime.datetime.now(tz).utcoffset().total_seconds()):+d} seconds"
+
+
+def ensure_chat_default_user(c):
+    """The account the chat picks on its own (setting "chat_default_user"); created the first time it is needed:
+    no budget cap (0), every enabled model, a random password nobody knows (it can be reset from the admin screen).
+    Returns its name, or "" when the setting is empty or the name belongs to an archived account."""
+    name = (cfg(c, "chat_default_user") or "").strip()
+    if not name:
+        return ""
+    row = c.execute("select archived, pw_hash from accounts where name = ?", (name,)).fetchone()
+    if row:
+        return name if row["archived"] is None and row["pw_hash"] else ""
+    team = "הנהלה" if c.execute("select 1 from teams where name = 'הנהלה' and archived is null").fetchone() else ""
+    with c:
+        c.execute("insert or ignore into accounts(name, team, models, budget, month, pw_hash) values (?,?,?,?,?,?)",
+                  (name, team, ",".join(MODELS), 0, time.strftime("%Y-%m"), hash_password(secrets.token_urlsafe(24))))
+        audit(c, "create", {"name": name, "team": team, "budget": 0, "models": ",".join(MODELS), "password": True,
+                            "api_key": False, "by": "chat default user"})
+    return name
 
 
 def audit(c, action, detail, ts=None):
@@ -2432,7 +2451,9 @@ class Handler(BaseHTTPRequestHandler):
     def user_get(self, path):
         c = db()
         if path == "/api/config":
-            return self.reply(200, {"open": self.open_ok(), "org_name": cfg(c, "org_name")})
+            open_ok = self.open_ok()
+            return self.reply(200, {"open": open_ok, "org_name": cfg(c, "org_name"),
+                                    "default_person": ensure_chat_default_user(c) if open_ok else ""})
         if path == "/api/people" and self.open_ok():
             rows = c.execute("select name, team from accounts where pw_hash is not null and archived is null order by team, name")
             return self.reply(200, [dict(r) for r in rows])
