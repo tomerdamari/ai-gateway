@@ -27,6 +27,8 @@ EXTRA_MODELS = [
     ("gpt-top", "GPT-6 Astra", "openai", "gpt-6-astra", 10.0, 50.0),
     ("gemini-lite", "Gemini 3.5 Flash-Lite", "gemini", "gemini-3.5-flash-lite", 0.30, 2.50),
 ]
+# on, but nobody uses it: the savings page suggests turning it off
+UNUSED_MODEL = ("gemini-legacy", "Gemini 2.5 Pro", "gemini", "gemini-2.5-pro", 1.25, 10.0)
 ALL = ["fast", "smart", "gpt-fast", "gpt-smart", "gemini-fast", "gemini-smart", "claude-top", "gpt-top", "gemini-lite"]
 
 # team -> (monthly team budget $, models the team gets, model weights when people pick)
@@ -38,10 +40,15 @@ TEAMS = {
     "שירות לקוחות": (4500, ["fast", "gpt-fast", "gemini-fast", "gemini-lite", "smart"], {"fast": 5, "gpt-fast": 3, "gemini-lite": 2, "smart": 1}),
     "כספים": (1500, ["fast", "smart", "gpt-smart"], {"smart": 4, "gpt-smart": 2, "fast": 2}),
     "משאבי אנוש": (900, ["fast", "smart", "gemini-fast"], {"fast": 3, "smart": 2, "gemini-fast": 2}),
-    "משפטי": (2800, ["smart", "claude-top", "gpt-top"], {"claude-top": 4, "smart": 3, "gpt-top": 2}),
+    "משפטי": (2800, ["smart", "claude-top", "gpt-top"], {"claude-top": 6, "smart": 2}),
     "תפעול": (1200, ["fast", "gpt-fast", "gemini-fast", "gemini-lite"], {"fast": 3, "gemini-fast": 3, "gpt-fast": 2}),
     "הנהלה": (0, ["smart", "claude-top", "gpt-smart", "gpt-top"], {"smart": 3, "claude-top": 2, "gpt-smart": 2, "gpt-top": 1}),
 }
+# accounting codes for the chargeback export (teams not listed have none yet), and the one team with a model policy
+COST_CODES = {"פיתוח": ("CC-1100", "6110"), "מוצר": ("CC-1200", "6110"), "מכירות": ("CC-2100", "6210"), "שיווק": ("CC-2200", "6220"),
+              "שירות לקוחות": ("CC-3100", "6310"), "כספים": ("CC-4100", "6410"), "משפטי": ("CC-4300", "6430")}
+TEAM_POLICY = {"משפטי": "fast,smart,claude-top"}  # legal: Claude models only
+SHORT = 0.35  # share of people's questions that are short (few tokens in and out): what the savings recommendations look for
 FIRST = ["דנה", "רמי", "שירן", "נועה", "יוסי", "עומר", "מיכל", "אבי", "תמר", "אורי", "יעל", "גיל", "רוני", "ליאת", "עידו", "מאיה",
          "איתי", "שני", "אלון", "הדר", "נטע", "ערן", "קרן", "דור", "אורית", "בועז", "סיון", "טל", "ענבל", "אסף", "רותם", "גלעד",
          "לירון", "חן", "עדי", "נדב", "מורן", "אייל", "שירה", "יונתן", "אפרת", "אביב", "דפנה", "רועי", "הילה", "אמיר", "ורד", "משה",
@@ -62,6 +69,7 @@ APPS = [
     ("אינטגרציית CRM", "מכירות", ["gpt-fast", "gemini-fast"], 700, 2500, 150),
     ("בודק קוד אוטומטי", "פיתוח", ["smart", "gpt-smart", "claude-top"], 520, 22000, 90),
     ("תרגום מסמכים", "תפעול", ["gemini-fast", "gpt-fast"], 300, 12000, 60),
+    ("מסווג פניות", "שירות לקוחות", ["gpt-smart"], 1500, 0, 200),  # typical input 0: short requests only
 ]
 QUESTIONS = ["סכם לי את הדוח הרבעוני", "נסח מייל ללקוח על עיכוב במשלוח", "תתרגם את המסמך לאנגלית", "מה ההבדל בין שתי ההצעות?",
              "כתוב פונקציה שממיינת רשימה", "תן לי רעיונות לפוסט ללינקדאין", "תבדוק את הקוד הזה ותמצא באגים",
@@ -105,12 +113,23 @@ def seed(c):
             c.execute("insert or ignore into models(alias, label, provider, model, price_in, price_out, enabled, created, price_cached)"
                       " values (?,?,?,?,?,?,1,?,?)", (alias, label, provider, model, pi, po, now + i, round(pi * 0.1, 6)))
         c.execute("update models set fallback = 'smart' where alias = 'claude-top' and fallback is null")
+        # the history below starts DAYS ago, so the models it uses existed by then: models this fresh setup created a moment
+        # ago, with no usage at all, are dated back (order kept). Models with usage are never touched.
+        c.execute("update models set created = created - ? where created > ? and model not in (select distinct model from logs)",
+                  ((DAYS + 30) * 86400, now - 86400))
+        c.execute("insert or ignore into models(alias, label, provider, model, price_in, price_out, enabled, created, price_cached)"
+                  " values (?,?,?,?,?,?,1,?,?)", (*UNUSED_MODEL, now - DAYS * 86400, round(UNUSED_MODEL[4] * 0.1, 6)))
         gateway.refresh_models(c)
 
         # --- teams and people (names that already exist are skipped) ---
         new_teams = [t for t in TEAMS if not c.execute("select 1 from teams where name = ?", (t,)).fetchone()]
         for team, (budget, _, _) in TEAMS.items():
             c.execute("insert or ignore into teams(name, budget, month) values (?,?,?)", (team, budget, month))
+        for team, (cost_center, gl) in COST_CODES.items():  # only where the team has no codes yet
+            c.execute("update teams set cost_center = ?, gl_account = ? where name = ? and cost_center is null and gl_account is null",
+                      (cost_center, gl, team))
+        for team, models in TEAM_POLICY.items():
+            c.execute("update teams set models = ? where name = ? and models is null", (models, team))
         people, used_names = [], {r[0] for r in c.execute("select name from accounts")}
         names = [f"{f} {l}" for f in FIRST for l in LAST]
         random.shuffle(names)
@@ -153,6 +172,8 @@ def seed(c):
                         continue
                     t_in = int(random.lognormvariate(0, 0.6) * p["size"] * (2 if alias.endswith("top") else 1))
                     t_out = int(random.lognormvariate(8.0, 0.6))
+                    if not p["size"] or (not p["app"] and random.random() < SHORT):  # a short question and a short answer
+                        t_in, t_out = random.randint(150, 1900), random.randint(60, 580)
                     cache_read = int(t_in * random.uniform(0.3, 0.8)) if provider == "anthropic" and random.random() < 0.45 else 0
                     u = {"in": t_in - cache_read, "out": t_out, "cache_read": cache_read, "cache_write": 0}
                     cost = gateway.price_usage(pi, po, gateway.MODEL_EXTRA.get(alias, {}).get("price_cached", pi * 0.1), u)

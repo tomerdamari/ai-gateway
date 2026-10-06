@@ -26,8 +26,10 @@ window.EN_HTML = Object.assign(window.EN_HTML || {}, {
           </ul></div>
           <div><h3>Admin screen</h3><ul>
             <li><a href="#overview">Dashboard</a></li>
+            <li class="sub"><a href="#savings">Savings recommendations</a></li>
             <li><a href="#accounts">Users and keys</a></li>
             <li><a href="#teams">Teams and budgets</a></li>
+            <li class="sub"><a href="#team-models">Models a team may use</a></li>
             <li><a href="#models">Models</a></li>
             <li class="sub"><a href="#backup">Backup model</a></li>
             <li class="sub"><a href="#auto">Automatic selection</a></li>
@@ -35,6 +37,8 @@ window.EN_HTML = Object.assign(window.EN_HTML || {}, {
             <li><a href="#sources">Knowledge sources</a></li>
             <li class="sub"><a href="#mcp">MCP connections</a></li>
             <li><a href="#reports">Reports</a></li>
+            <li class="sub"><a href="#chargeback">Chargeback</a></li>
+            <li class="sub"><a href="#summary">Monthly summary by email</a></li>
             <li><a href="#security">Security</a></li>
             <li class="sub"><a href="#policy">Blocking policy</a></li>
             <li class="sub"><a href="#encryption">Encryption and the encryption key</a></li>
@@ -111,16 +115,25 @@ python gateway.py</pre>
         <h2>Dashboard</h2>
         <p>The gateway's main screen (<code>/</code>, and also <code>/admin</code>). From the office network it opens without a password; from outside only with <code>ADMIN_PASSWORD</code>.</p>
         <ul>
-          <li><b>The "To handle" page</b> (in the menu, under the dashboard) gathers what waits for the admin, and the menu shows the number of open items next to it. It has two parts:</li>
+          <li><b>The "To handle" page</b> (in the menu, under the dashboard) gathers what waits for the admin, and the menu shows the number of open items next to it (savings recommendations included). It has three parts:</li>
           <li><b>First steps:</b> shown until the system is ready: connecting a provider, a team, a user and a first question, with a button for each step.</li>
           <li><b>Needs attention:</b> budget overruns (from 80% and from 100%), locked accounts and open security notes. When there is nothing, it says "All good".</li>
+          <li><b>Savings recommendations:</b> all of them, each with an action button. See <a href="#savings">Savings recommendations</a>.</li>
           <li><b>Four numbers:</b> spend this month, forecast for the end of the month, requests, and active users. Each with the percentage change from the previous week or month.</li>
           <li><b>Charts:</b> daily spend over the last 30 days (hover to see the day), spend split by model, the users who spent the most, and teams against their budget.</li>
           <li><b>Cumulative spend this month:</b> a line that rises day by day, against the previous month and against the total of the team budgets, with a dashed line that continues the current pace to the end of the month.</li>
           <li><b>Budget usage forecast:</b> how many users will finish the month under half of their budget, close to it, or over it. Bars above 100% are colored as a warning.</li>
           <li><b>When people ask:</b> a heat map of requests by day of the week and hour over the last four weeks. Helps you see peak hours and plan rate limits.</li>
           <li><b>Monthly spend by team:</b> the last four months, each month split into the five largest teams and "Other".</li>
-        </ul>`,
+        </ul>
+        <h3 id="savings">Savings recommendations</h3>
+        <p>The gateway looks at the last 30 days for places where the same work could cost less. The dashboard shows the three biggest recommendations and the total that could be saved per month; the "To handle" page shows all of them. Three kinds:</p>
+        <ul>
+          <li><b>Short questions to a strong model:</b> a team (or an account without a team) sending short questions, up to 2,000 tokens in and 600 out, to a strong, expensive model. The gateway works out what the same questions would have cost on the same provider's cheap model (automatic choice's cheap model if it's from that provider, otherwise the provider's cheapest model that is on), with the same tokens and the same cache prices, and shows the difference per month. It appears only when the saving is at least $5 a month, and only when the team may use the cheap model. The button opens <a href="#auto">automatic choice</a>, which does exactly this in the chat.</li>
+          <li><b>A team spending almost everything on the expensive model:</b> more than 80% of the team's spend goes to the provider's most expensive model. The recommendation suggests checking the model one step below; this saving can't be worked out in advance, since not all work suits a simpler model.</li>
+          <li><b>A model that is on but unused:</b> on for more than 30 days with no question in the last 30. The button turns it off, after a confirmation. The default model is never listed.</li>
+        </ul>
+        <p>With less than 30 days of usage, the numbers are scaled up to a full month (under a week counts as a week, so one busy day doesn't look like a month).</p>`,
 
   "#accounts": `
         <h2>Users and keys</h2>
@@ -150,7 +163,15 @@ python gateway.py</pre>
           <li>A question is blocked when the personal budget <b>or</b> the team budget runs out.</li>
           <li>On the 1st of each month spending resets to zero; the history stays in the log.</li>
           <li>The teams screen shows the forecast, the recommended budget, and the total of the team members' budgets, so you can see whether the team cap fits them.</li>
+          <li><b>Cost center</b> and <b>GL account</b> (optional): they go into the <a href="#chargeback">chargeback</a> file, so accounting knows where to book each team's cost.</li>
           <li><b>Moving to the archive:</b> only for a team with no people in it, so nobody is suddenly left without a team. The team leaves the lists and the choices, and its budget and history are kept. An archived user whose team is archived comes back only after the team does.</li>
+        </ul>
+        <h3 id="team-models">Models a team may use</h3>
+        <p>When editing a team you can check the models the team may use, for example "the legal team works only with Claude". Nothing checked means the team sets no limit. With models checked:</p>
+        <ul>
+          <li>Everyone in the team can use only models allowed <b>both</b> to them personally <b>and</b> to the team. A model allowed personally but not by the team is blocked (error 403), and the request is recorded on the "Security" tab with the reason "Model not allowed for the team".</li>
+          <li>The chat's model list shows only what is really allowed. Automatic choice picks only from those, and a backup model the team may not use is never called: if the provider is down, the question fails instead of moving to another model.</li>
+          <li>In a user's edit window, a checked model the team blocks gets a "Blocked by team policy" label.</li>
         </ul>`,
 
   "#models": `
@@ -203,7 +224,23 @@ python gateway.py</pre>
 
   "#reports": `
         <h2>Reports</h2>
-        <p>Pick a month and see spend, requests, tokens and number of people, by team (including budget usage), by user, and by model (including tokens from the cache). "Download for Excel" saves a CSV file that opens in Excel with Hebrew displayed correctly.</p>`,
+        <p>Pick a month and see spend, requests, tokens and number of people, by team (including budget usage), by user, and by model (including tokens from the cache). "Download for Excel" saves a CSV file that opens in Excel with Hebrew displayed correctly.</p>
+        <h3 id="chargeback">Chargeback</h3>
+        <p>A table of each team's cost in the chosen month, with its cost center and GL account, for charging each department for its own use. One row per team that used the gateway, a "No team" row for accounts without a team (and the document index cost), and a total row. The amounts match the monthly report.</p>
+        <ul>
+          <li><b>"Download CSV"</b>: a file for the accounting system. Column names are in English and fixed, so an import only has to be set up once: <code>month, team, cost_center, gl_account, requests, tokens_in, tokens_out, cost_usd</code>. Cost is in dollars with two decimals; the total row is <code>TOTAL</code> and is the sum of the rows. The file is UTF-8 with a mark that makes Excel read Hebrew team names correctly. A cell starting with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> gets a leading apostrophe, so Excel doesn't run it as a formula.</li>
+          <li><b>"Download JSON"</b>: the same data for processing in a program.</li>
+          <li>For scripts: <code>GET /admin/api/chargeback?month=2026-09&amp;format=csv</code> (or <code>format=json</code>), with the same admin access as the screen.</li>
+          <li>The earlier "Download for Excel" report stays as it is: a file with headings in the interface language, easy to read.</li>
+        </ul>
+        <h3 id="summary">Monthly summary by email</h3>
+        <p>An email to management on the 1st of every month, after 08:00 (server time), about the month before: total spend against the previous month, the five teams and five users who spent the most, spend by model, the savings total and the three biggest recommendations, security events by kind, how many requests were blocked, and who went over budget. The email is in Hebrew, right to left, with a plain-text version for mail readers without HTML.</p>
+        <ul>
+          <li>On the "Monthly summary by email" card on the reports screen: the recipients' addresses (separated by commas), a switch for automatic sending, "Preview" and "Send now" (for the month chosen at the top of the screen), and a line saying whether a mail server is set up.</li>
+          <li>The mail server is set only in the server settings (see <a href="#settings">Server settings</a>). Its password is never stored in the database or sent to the browser; the screen only shows whether one is set up.</li>
+          <li>Each month is sent once. Every sending (manual too) is recorded in the change log, and a month already sent isn't sent again automatically. If sending fails, an event is recorded on the "Security" tab and the gateway tries again the next hour, up to 3 times.</li>
+          <li>The preview is shown inside a closed frame without scripts, and people's and teams' names appear as plain text only.</li>
+        </ul>`,
 
   "#security": `
         <h2>Security</h2>
@@ -415,6 +452,10 @@ client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
             <tr><td><code>OPEN_ACCESS</code></td><td><code>1</code> = chat without signing in on the office network.</td></tr>
             <tr><td><code>EMBEDDINGS</code></td><td>Provider for search by meaning: <code>openai</code>, <code>gemini</code> or <code>off</code>. Default: the first one that has a key.</td></tr>
             <tr><td><code>PORT</code>, <code>GATEWAY_DB</code></td><td>The server port (8080) and the location of the data file.</td></tr>
+            <tr><td><code>SMTP_HOST</code>, <code>SMTP_PORT</code></td><td>The mail server that sends the <a href="#summary">monthly summary</a>, and its port (default 587). Without <code>SMTP_HOST</code> no summary is sent.</td></tr>
+            <tr><td><code>SMTP_USER</code>, <code>SMTP_PASSWORD</code></td><td>User name and password for the mail server, if it needs them. The password stays in the server settings only.</td></tr>
+            <tr><td><code>SMTP_FROM</code></td><td>The address the email is sent from. Empty = <code>SMTP_USER</code>.</td></tr>
+            <tr><td><code>SMTP_TLS</code></td><td><code>1</code> (default) = encryption after connecting (STARTTLS, port 587); <code>ssl</code> = encrypted from the start (port 465); <code>0</code> = no encryption, only for a mail server inside the network.</td></tr>
           </tbody>
         </table>
         <p>The security settings (the encryption key, size and rate limits, <code>PUBLIC_DEPLOY</code> and more) are listed in <a href="#security-settings">Server security settings</a>.</p>`,
@@ -428,6 +469,7 @@ client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
           <li>Nothing is ever deleted: whatever leaves use moves to the <a href="#archive">archive</a> and stays in the database. If something truly has to be deleted (for example by law), there is no button for it.</li>
           <li>A scanned PDF (an image with no text) can't be read.</li>
           <li>The requests-per-minute limit is kept in memory and resets when the gateway restarts.</li>
-          <li>Alerts appear only on the admin screen; there's no email, Teams or Slack yet.</li>
+          <li>Alerts appear only on the admin screen; there are no alerts by email, Teams or Slack yet. Only the <a href="#summary">monthly summary</a> goes out by email.</li>
+          <li>Savings recommendations are an estimate: they assume the same short questions would work well on the cheap model, and don't check answer quality.</li>
         </ul>`,
 });

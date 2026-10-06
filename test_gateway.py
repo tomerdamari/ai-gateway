@@ -927,6 +927,10 @@ assert all(after[k] == before[k] for k in ("spent", "key_hash", "pw_hash", "lock
 http_call("/v1/messages", {"model": "fast", "max_tokens": 999999, "messages": [{"role": "user", "content": "x"}]},
           {"authorization": "Bearer " + k_feat})
 assert received["/v1/messages"]["max_tokens"] == gateway.MAX_OUTPUT_TOKENS
+for _ in range(200):  # the server sends the answer before it counts the request as finished: wait for that
+    if not gateway._inflight["feat"]:
+        break
+    time.sleep(0.01)
 gateway._inflight["feat"] = gateway.MAX_CONCURRENT
 status, data = api(k_feat, "fast")
 assert status == 429 and json.loads(data)["code"] == "concurrency"
@@ -1112,6 +1116,150 @@ with gateway.db() as c:
     gateway.sources.add_doc(c, "versions", "v.md", "second version of the text")
 old = gateway.db().execute("select text from doc_versions where doc_id = (select id from docs where source = 'versions')").fetchall()
 assert len(old) == 1 and old[0][0].startswith("enc1:") and gateway.decrypt(old[0][0]) == "first version of the text", old
+
+# --- per-team model policy: the team's list narrows each person's own; apps, chat, automatic choice and the backup obey it ---
+assert adm("models", {"name": "brk", "label": "שבור 2", "provider": "anthropic", "model": "broken-model", "price_in": 9, "price_out": 9,
+                      "fallback": "smart"})[0] == 200
+assert adm("teams", {"name": "legal", "budget": 0, "models": ["nope"]})[0] == 400
+assert adm("teams", {"name": "legal", "budget": 0, "models": ["fast", "brk"], "cost_center": "CC-100", "gl_account": "6100"})[0] == 200
+s, r = adm("accounts", {"name": "lex", "team": "legal", "budget": 50, "models": ["fast", "smart", "brk"], "api_key": True,
+                        "password": "lex-pass-12"})
+k_lex = r["key"]
+status, data = api(k_lex, "smart")  # allowed personally, not by the team
+assert status == 403 and json.loads(data)["code"] == "model-not-allowed-team"
+blocked = gateway.db().execute("select reason, model, team from blocked_requests where name = 'lex' order by ts desc limit 1").fetchone()
+assert tuple(blocked) == ("model-not-allowed-team", "smart", "legal")
+assert api(k_lex, "fast")[0] == 200
+lo = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+assert http_call("/api/login", {"name": "lex", "password": "lex-pass-12"}, opener=lo)[0] == 200
+assert json.loads(http_call("/api/me", opener=lo)[1])["models"] == ["fast", "brk"]  # the chat's model list
+assert chat_as(lo, "hi", "smart")[0] == 403
+r = lo.open(urllib.request.Request(base + "/api/chat", json.dumps({"model": "auto", "messages": [
+    {"role": "user", "content": "תנתח את ההבדלים בין שתי ההצעות"}]}).encode(), {"content-type": "application/json"}))
+r.read()
+assert r.headers["x-model-used"] == "fast"  # a heavy question wants smart; the team doesn't allow it
+assert api(k_lex, "brk")[0] == 529  # the backup (smart) isn't allowed for the team: no backup
+assert adm("teams", {"name": "legal", "budget": 0, "models": ["fast", "brk", "smart"]})[0] == 200
+assert api(k_lex, "brk")[0] == 200 and gateway.db().execute(
+    "select model from logs where name = 'lex' order by ts desc limit 1").fetchone()[0] == "claude-sonnet-5-5"
+assert adm("teams", {"name": "legal", "budget": 10})[0] == 200  # a budget-only change keeps the codes and the model list
+legal = next(t for t in adm("overview")[1]["teams"] if t["name"] == "legal")
+assert legal["models"] == ["fast", "brk", "smart"] and legal["cost_center"] == "CC-100" and legal["gl_account"] == "6100"
+assert adm("teams", {"name": "legal", "budget": 0})[0] == 200
+
+# --- chargeback export: one row per team with its accounting codes, plus accounts without a team, plus the total ---
+month = time.strftime("%Y-%m")
+with gateway.db() as c:
+    gateway.log_call(c, "<i>mal</i>", "<b>evil</b>", "claude-sonnet-5-5", {**gateway.new_usage(), "in": 100, "out": 100}, 99.0, "", "")
+    gateway.log_call(c, "formula", "=HYPERLINK(1)", "claude-sonnet-5-5", {**gateway.new_usage(), "in": 1, "out": 1}, 0.001, "", "")
+cb = adm("chargeback?month=" + month)[1]
+row = next(r for r in cb["rows"] if r["team"] == "legal")
+assert row["cost_center"] == "CC-100" and row["gl_account"] == "6100" and row["requests"] >= 3 and row["month"] == month
+assert cb["rows"][-1]["team"] == "ללא צוות" and cb["total"]["team"] == "TOTAL"
+assert cb["total"]["cost_usd"] == round(sum(r["cost_usd"] for r in cb["rows"]), 2)
+assert cb["total"]["requests"] == sum(r["requests"] for r in cb["rows"]) == adm("report?month=" + month)[1]["totals"]["requests"]
+status, headers, body = raw("GET", f"/admin/api/chargeback?month={month}&format=csv", {})
+body = body.decode("utf-8")
+assert status == 200 and headers["content-disposition"] == f'attachment; filename="firegate-chargeback-{month}.csv"'
+assert body.startswith("﻿month,team,cost_center,gl_account,requests,tokens_in,tokens_out,cost_usd\r\n")
+assert f"{month},legal,CC-100,6100," in body and "'=HYPERLINK(1)" in body and body.rstrip().splitlines()[-1].startswith(f"{month},TOTAL,,,")
+assert adm("chargeback?month=2026-1%0d%0aX-Evil:%201")[0] == 400 and adm("chargeback?format=xml")[0] == 400
+
+# --- savings recommendations ---
+assert adm("teams", {"name": "savers", "budget": 0})[0] == 200 and adm("teams", {"name": "conc", "budget": 0})[0] == 200
+now = time.time()
+short = {"in": 1500, "out": 400, "cache_read": 0, "cache_write": 0}
+cost_now = gateway.price_usage(*gateway.ALL_MODELS["smart"][2:], gateway.MODEL_EXTRA["smart"]["price_cached"], short)
+with gateway.db() as c:  # 3,000 short questions to the strong model over a month, and a team that only uses GPT's priciest model
+    c.executemany("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost) values (?,?,?,?,?,?,?)",
+                  [(now - 29.5 * 86400 + i * 800, "saver", "savers", "claude-sonnet-5-5", 1500, 400, cost_now) for i in range(3000)]
+                  + [(now - 86400, "big", "conc", "gpt-6.1-sol", 50000, 2000, 25.0) for _ in range(2)])
+    c.execute("update models set created = ? where alias = 'gemini-smart'", (now - 40 * 86400,))
+sv = adm("savings")[1]
+rec = next(x for x in sv["recommendations"] if x["team"] == "savers")
+cost_cheap = gateway.price_usage(*gateway.ALL_MODELS["fast"][2:], gateway.MODEL_EXTRA["fast"]["price_cached"], short)
+assert rec["kind"] == "simple-questions" and (rec["from_model"], rec["to_model"]) == ("smart", "fast") and rec["requests"] == 3000
+assert abs(rec["monthly_saving"] - 3000 * (cost_now - cost_cheap) * 30 / sv["days"]) < 0.02 and 29 < sv["days"] <= 30
+assert rec["text_he"].startswith("צוות savers שולח שאלות קצרות") and "בחודש" in rec["text_he"]
+conc = next(x for x in sv["recommendations"] if x["team"] == "conc")
+assert conc["kind"] == "concentrated" and (conc["from_model"], conc["to_model"]) == ("gpt-smart", "gpt-fast") and conc["text_he"].startswith("100%")
+assert [x["from_model"] for x in sv["recommendations"] if x["kind"] == "unused-model"] == ["gemini-smart"]
+assert sv["recommendations"][0]["monthly_saving"] >= sv["recommendations"][-1]["monthly_saving"]
+assert sv["total_monthly_saving"] == round(sum(x["monthly_saving"] for x in sv["recommendations"]), 2)
+assert adm("teams", {"name": "savers", "budget": 0, "models": ["smart"]})[0] == 200  # the cheap model isn't allowed: no recommendation
+assert not any(x["team"] == "savers" for x in adm("savings")[1]["recommendations"])
+assert adm("teams", {"name": "savers", "budget": 0, "models": []})[0] == 200
+assert any(x["team"] == "savers" for x in adm("savings")[1]["recommendations"])
+
+
+# --- monthly summary by email: settings, preview, send now, and the hourly check that sends once a month ---
+class FakeSMTP:
+    sent, fail, login_as = [], False, None
+
+    def __init__(self, host, port, timeout=None):
+        self.host = host
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def starttls(self, context=None):
+        pass
+
+    def login(self, user, password):
+        FakeSMTP.login_as = (user, password)
+
+    def send_message(self, msg, from_addr=None, to_addrs=None):
+        if FakeSMTP.fail:
+            raise gateway.smtplib.SMTPServerDisconnected("connection to ceo@corp.test lost")
+        FakeSMTP.sent.append((msg, from_addr, to_addrs))
+
+
+gateway.smtplib.SMTP = FakeSMTP
+st = adm("summary/settings")[1]
+assert st["smtp_configured"] is False and st["enabled"] is False and st["sent"] == []
+assert adm("summary/send", {"name": "summary", "month": month}) == (400, {"error": "SMTP is not configured"})
+os.environ.update(SMTP_HOST="mail.corp.test", SMTP_USER="bot@corp.test", SMTP_PASSWORD="smtp-secret-pw", SMTP_FROM="ai@corp.test")
+assert adm("summary/send", {"name": "summary", "month": month}) == (400, {"error": "no summary recipients"})
+assert adm("summary/settings", {"name": "summary", "recipients": "ceo@corp.test, not-an-email", "enabled": True})[0] == 400
+assert adm("summary/settings", {"name": "summary", "recipients": "", "enabled": True})[0] == 400
+assert adm("summary/settings", {"name": "summary", "recipients": "ceo@corp.test, cfo@corp.test", "enabled": True})[0] == 200
+st = adm("summary/settings")[1]
+assert st["recipients"] == "ceo@corp.test, cfo@corp.test" and st["enabled"] and st["smtp_configured"] is True
+assert "smtp-secret-pw" not in json.dumps(st) and "mail.corp.test" not in json.dumps(st)
+pv = adm("summary?month=" + month)[1]
+assert pv["month"] == month and month.split("-")[0] in pv["subject"] and pv["html"].startswith("<!doctype html><html lang=\"he\" dir=\"rtl\">")
+assert "&lt;b&gt;evil&lt;/b&gt;" in pv["html"] and "<b>evil</b>" not in pv["html"] and "<i>mal</i>" not in pv["html"]
+assert "<i>mal</i>" in pv["text"] and "<td" not in pv["text"]
+assert adm("summary")[1]["month"] == gateway.last_full_month() and adm("summary?month=2026-13")[0] == 400
+import contextlib  # noqa: E402
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    assert adm("summary/send", {"name": "summary", "month": month}) == (200, {"ok": True, "sent": 2})
+msg, sender, to = FakeSMTP.sent[-1]
+assert to == ["ceo@corp.test", "cfo@corp.test"] and sender == "ai@corp.test" and msg["Subject"] == pv["subject"]
+assert FakeSMTP.login_as == ("bot@corp.test", "smtp-secret-pw")
+html_part = msg.get_body(("html",)).get_content()
+assert "&lt;b&gt;evil&lt;/b&gt;" in html_part and "<b>evil</b>" not in html_part and msg.get_body(("plain",)) is not None
+assert "c***@corp.test" in out.getvalue() and "ceo@corp.test" not in out.getvalue()  # the server log masks the addresses
+assert month in adm("summary/settings")[1]["sent"] and adm("audit")[1][0]["action"] == "summary-sent"
+assert gateway.mask_email("dana@corp.test") == "d***@corp.test"
+# the hourly check: only on the 1st, only after 08:00, once a month; a failure is recorded and retried, 3 times at most
+at = lambda y, m, d, h: time.mktime((y, m, d, h, 0, 0, 0, 0, -1))
+n = len(FakeSMTP.sent)
+assert gateway.summary_tick(at(2031, 11, 1, 7)) is None and gateway.summary_tick(at(2031, 11, 2, 9)) is None
+assert gateway.summary_tick(at(2031, 11, 1, 9)) is True and len(FakeSMTP.sent) == n + 1
+assert gateway.summary_tick(at(2031, 11, 1, 10)) is None and len(FakeSMTP.sent) == n + 1
+assert FakeSMTP.sent[-1][0]["Subject"].endswith("אוקטובר 2031") and "2031-10" in adm("summary/settings")[1]["sent"]
+FakeSMTP.fail = True
+assert [gateway.summary_tick(at(2031, 12, 1, h)) for h in (8, 9, 10, 11)] == [False, False, False, None]
+failed = events("summary-failed")
+assert len(failed) == 3 and failed[0]["detail"]["month"] == "2031-11" and "ceo@corp.test" not in json.dumps(failed)
+FakeSMTP.fail = False
+assert adm("summary/settings", {"name": "summary", "recipients": "ceo@corp.test", "enabled": False})[0] == 200
+assert gateway.summary_tick(at(2032, 1, 1, 9)) is None and len(FakeSMTP.sent) == n + 1  # turned off
 
 # one version number: the server's and the one the pages show
 ui_version = re.search(r'const VERSION = "([^"]+)"', open(os.path.join(here, "ui.js"), encoding="utf-8").read()).group(1)

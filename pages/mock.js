@@ -48,9 +48,9 @@
     if (path.startsWith("/admin/api/")) {
       const key = path.slice(11);
       if (method === "GET") {
-        if (key === "report") {
+        if (["report", "chargeback", "summary"].includes(key)) {  // recorded once per month
           const m = u.searchParams.get("month") || D.admin.report_default;
-          return json(D.admin["report?month=" + m] || D.admin["report?month=" + D.admin.report_default]);
+          return json(D.admin[`${key}?month=${m}`] || D.admin[`${key}?month=${D.admin.report_default}`]);
         }
         if (key === "account") {
           const page = D.admin["account?name=" + u.searchParams.get("name")];

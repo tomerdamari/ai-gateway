@@ -116,7 +116,7 @@ window.EN_PATTERNS = [
   [/^שגיאה (\d+)$/, "Error $1"],
   [/^נשאר לך החודש (.+?)( · התקציב עומד להיגמר)?$/, (m, v, low) => `${v} left this month` + (low ? " · budget almost used up" : "")],
   [/^(.+) · צוות (.+)$/, "$1 · Team $2"],
-  [/^צוות (.+)$/, "Team $1"],
+  [/^צוות ([^:.]+)$/, "Team $1"],  // a team's name only: longer admin texts that start with "צוות" have their own patterns
   [/^מחיקת השיחה "(.*)"$/, (m, t) => `Delete chat "${t === "שיחה" ? "Chat" : t}"`],
   [/^העברת השיחה "(.*)" לארכיון$/, (m, t) => `Move chat "${t === "שיחה" ? "Chat" : t}" to the archive`],
   [/^שחזור השיחה "(.*)"$/, (m, t) => `Restore chat "${t === "שיחה" ? "Chat" : t}"`],

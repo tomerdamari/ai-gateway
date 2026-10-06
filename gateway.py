@@ -12,15 +12,20 @@ Apps:     Anthropic SDK -> base_url http://HOST:8080        (POST /v1/messages)
 """
 import base64
 import collections
+import csv
 import hashlib
+import html
 import http.cookies
+import io
 import ipaddress
 import json
 import math
 import os
 import re
 import secrets
+import smtplib
 import sqlite3
+import ssl
 import sys
 import threading
 import time
@@ -28,6 +33,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from cryptography.exceptions import InvalidTag
@@ -191,6 +197,8 @@ def migrate(c):
                            ("logs", "cache_write int not null default 0"), ("logs", "note text"), ("sources", "config text"),
                            ("logs", "request_id text"), ("accounts", "key_expires real"), ("accounts", "key_created real"),
                            ("accounts", "daily_tokens int not null default 0"),
+                           # teams: accounting codes for the chargeback export, and the models the team may use (NULL = no limit)
+                           ("teams", "cost_center text"), ("teams", "gl_account text"), ("teams", "models text"),
                            ("audit", "seq int"), ("audit", "prev_hash text"), ("audit", "hash text"),
                            # archive instead of delete: when the item was archived, NULL = in use
                            *((t, "archived real") for t in ("accounts", "teams", "models", "sources", "docs", "conversations"))):
@@ -688,12 +696,28 @@ def day_start(t=None):
     return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
 
 
+def team_models(c, team):
+    """The models a team may use, or None when the team sets no limit (no list, or no team)."""
+    row = c.execute("select models from teams where name = ?", (team,)).fetchone() if team else None
+    if not row or not row[0]:
+        return None
+    return [m for m in row[0].split(",") if m] or None
+
+
+def effective_models(c, acct):
+    """What the account may really use: its own models, narrowed by its team's list when the team has one."""
+    allowed = team_models(c, acct["team"])
+    return [m for m in acct["models"].split(",") if m and (allowed is None or m in allowed)]
+
+
 def authorize(c, acct, alias):
     """None if the account may call this model now, else (http status, message, reason code)."""
     if alias in ALL_MODELS and alias not in MODELS and alias in acct["models"].split(","):
         return 403, f"model '{alias}' is turned off by the administrator", "model-off"
     if alias not in MODELS or alias not in acct["models"].split(","):
         return 403, f"model '{alias}' not allowed", "model-not-allowed"
+    if alias not in effective_models(c, acct):
+        return 403, f"model '{alias}' not allowed for team", "model-not-allowed-team"
     # ponytail: check-then-charge, concurrent requests can overshoot a budget by one request each
     if acct["spent"] >= acct["budget"]:
         return 402, "personal monthly budget exhausted", "budget"
@@ -847,6 +871,409 @@ def forecast(spent, last_month):
     projected = spent / min(elapsed, 1)
     base = max(projected, last_month)
     return round(projected, 4), (math.ceil(base * 1.2 / 5) * 5 if base > 0 else 0)
+
+
+def put_setting(c, key, value):
+    c.execute("insert into settings values (?, ?) on conflict(key) do update set value = excluded.value", (key, value))
+
+
+# --- one month's numbers: the reports page, the chargeback export and the monthly summary all count the same way ---
+TEST_CALLS = "(בדיקת מודל)"  # connection tests from the models page: logged, but not anyone's usage
+
+
+def month_start(month):
+    """Local midnight on the 1st of a month written like 2026-10."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})", str(month or ""))
+    if not m or not 1 <= int(m[2]) <= 12:
+        raise ValueError("month must look like 2026-10")
+    return time.mktime((int(m[1]), int(m[2]), 1, 0, 0, 0, 0, 0, -1))
+
+
+def month_of(t):
+    return time.strftime("%Y-%m", time.localtime(t))
+
+
+def last_full_month(now=None):
+    return month_of(month_bounds(now)[0] - 1)
+
+
+def month_report(c, month):
+    start = month_start(month)
+    end = month_bounds(start)[1]
+    first = c.execute("select min(ts) from logs").fetchone()[0] or time.time()
+    months, t = [], month_bounds()[0]
+    while t >= month_bounds(first)[0] and len(months) < 36:
+        months.append(month_of(t))
+        t = month_bounds(t - 1)[0]
+
+    def group(col):
+        return [dict(r) for r in c.execute(
+            f"select {col} key, count(*) requests, sum(tokens_in) tokens_in, sum(tokens_out) tokens_out, sum(cost) cost,"
+            f" sum(cache_read) cache_read from logs where ts >= ? and ts < ? and name != ?"
+            f" group by {col} order by cost desc", (start, end, TEST_CALLS))]
+    budgets = {r["name"]: r["budget"] for r in c.execute("select name, budget from accounts")}
+    team_budgets = {r["name"]: r["budget"] for r in c.execute("select name, budget from teams")}
+    by_account = group("name")
+    for r in by_account:
+        r["team"] = (c.execute("select team from logs where name = ? and ts >= ? and ts < ? order by ts desc limit 1",
+                               (r["key"], start, end)).fetchone() or [""])[0]
+        r["budget"] = budgets.get(r["key"])
+    by_team = group("team")
+    for r in by_team:
+        r["budget"] = team_budgets.get(r["key"])
+    totals = c.execute("select count(*) requests, coalesce(sum(cost), 0) cost, count(distinct name) people from logs"
+                       " where ts >= ? and ts < ? and name != ?", (start, end, TEST_CALLS)).fetchone()
+    return {"month": month, "months": months, "totals": dict(totals), "by_team": by_team, "by_account": by_account,
+            "by_model": group("model")}
+
+
+# --- savings recommendations: where the same work could cost less ---
+SIMPLE_TOKENS_IN, SIMPLE_TOKENS_OUT = 2000, 600  # a "short question": at most this many tokens in, and this many out
+STRONG_FACTOR = 2  # a model is "strong" when it is the automatic choice's strong model, or costs (in + out) this many times the cheap one
+CONCENTRATION = 0.8  # a team spending more than this share on its provider's priciest model gets a recommendation
+SAVINGS_MIN = 5.0  # $ a month: a smaller saving isn't worth the admin's attention
+SAVINGS_DAYS = 30
+SAVINGS_ORDER = {"simple-questions": 0, "concentrated": 1, "unused-model": 2}
+
+
+def usd(v):
+    return f"${v:,.0f}" if v >= 10 else f"${v:,.2f}"
+
+
+def model_price(alias):
+    return ALL_MODELS[alias][2] + ALL_MODELS[alias][3]
+
+
+def cheap_for(c, alias):
+    """Where alias's simple questions could go: the automatic choice's cheap model when it is the same provider, else the
+    provider's cheapest model that is on. None when alias isn't a strong model or nothing cheaper is on."""
+    provider = ALL_MODELS[alias][0]
+    auto = setting(c, "auto_cheap", "fast")
+    if auto in MODELS and auto != alias and MODELS[auto][0] == provider:
+        cheap = auto
+    else:
+        cheap = min((a for a, m in MODELS.items() if m[0] == provider and a != alias), key=model_price, default=None)
+    if not cheap or model_price(cheap) >= model_price(alias):
+        return None
+    strong = alias == setting(c, "auto_strong", "smart") or model_price(alias) >= STRONG_FACTOR * model_price(cheap)
+    return cheap if strong else None
+
+
+def savings(c, now=None):
+    """Recommendations from the last 30 days, biggest monthly saving first:
+    simple-questions: short questions (few tokens in and out) a team, or an account without a team, sent to a strong model,
+      re-priced at the same provider's cheap model (cache reads and writes too);
+    concentrated: a team spending over 80% on its provider's priciest model;
+    unused-model: a model that is on but nobody used for 30 days (and that is older than that)."""
+    now = time.time() if now is None else now
+    since = now - SAVINGS_DAYS * 86400
+    labels = {r[0]: r[1] or r[0] for r in c.execute("select alias, label from models")}
+    alias_of = {}  # logs keep the provider's model name; an enabled alias wins over a disabled one with the same name
+    for a, m in [*MODELS.items(), *ALL_MODELS.items()]:
+        alias_of.setdefault(m[1], a)
+    teams = {r[0] for r in c.execute("select name from teams where archived is null")}
+    accounts = {r[0] for r in c.execute("select name from accounts where archived is null and team = ''")}
+    first = c.execute("select min(ts) from logs where ts >= ? and name not like '(%'", (since,)).fetchone()[0]
+    # ponytail: straight scale-up to 30 days; under a week of history counts as a week, so one busy day isn't taken for a month
+    days = min(max((now - first) / 86400 if first else SAVINGS_DAYS, 7), SAVINGS_DAYS)
+    scale = SAVINGS_DAYS / days
+    out = []
+
+    def rec(kind, team, account, src, dst, requests, current, projected, saving, text):
+        out.append({"kind": kind, "team": team, "account": account, "from_model": src, "to_model": dst,
+                    "from_label": labels.get(src, src), "to_label": labels.get(dst, dst) if dst else None, "requests": requests,
+                    "current_cost": round(current, 2), "projected_cost": None if projected is None else round(projected, 2),
+                    "monthly_saving": round(saving, 2), "text_he": text})
+
+    # one pass over the 30 days (the log rows are wide, so each scan is slow): per team, person and model, all usage and,
+    # separately, the usage of the short questions
+    groups, spend, used = {}, {}, set()  # groups: (team, account without a team, model) -> its short questions' usage
+    for r in c.execute("select team, name, model, count(*) n, sum(cost) cost, sum(short) s_n, sum(short * (tokens_in - cache_read - cache_write)) s_in,"
+                       " sum(short * tokens_out) s_out, sum(short * cache_read) s_cr, sum(short * cache_write) s_cw, sum(short * cost) s_cost"
+                       " from (select team, name, model, cost, tokens_in, tokens_out, cache_read, cache_write,"
+                       " (tokens_in <= ? and tokens_out <= ?) short from logs where ts >= ? and name not like '(%') group by team, name, model",
+                       (SIMPLE_TOKENS_IN, SIMPLE_TOKENS_OUT, since)):
+        used.add(r["model"])
+        if (r["team"] not in teams) if r["team"] else (r["name"] not in accounts):
+            continue  # archived teams and people
+        if r["team"]:
+            n, cost = spend.setdefault(r["team"], {}).get(r["model"], (0, 0.0))
+            spend[r["team"]][r["model"]] = (n + r["n"], cost + (r["cost"] or 0))
+        if r["s_n"]:
+            g = groups.setdefault((r["team"], "" if r["team"] else r["name"], r["model"]),
+                                  {"n": 0, "in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "cost": 0.0})
+            for k, v in (("n", r["s_n"]), ("in", r["s_in"]), ("out", r["s_out"]), ("cache_read", r["s_cr"]), ("cache_write", r["s_cw"]),
+                         ("cost", r["s_cost"])):
+                g[k] += v or 0
+    for (team, account, real), g in groups.items():
+        src = alias_of.get(real)
+        dst = cheap_for(c, src) if src else None
+        allowed = team_models(c, team)
+        if not dst or (allowed is not None and dst not in allowed):
+            continue
+        _, _, price_in, price_out = ALL_MODELS[dst]
+        current, projected = g["cost"] * scale, price_usage(price_in, price_out, MODEL_EXTRA[dst]["price_cached"], g) * scale
+        if current - projected < SAVINGS_MIN:
+            continue
+        who = f"צוות {team}" if team else account
+        rec("simple-questions", team, account, src, dst, g["n"], current, projected, current - projected,
+            f"{who} שולח שאלות קצרות למודל החזק {labels[src]}. מעבר ל-{labels[dst]} בשאלות כאלה יחסוך כ-{usd(current - projected)} בחודש.")
+
+    for team, by in spend.items():
+        total = sum(cost for _, cost in by.values())
+        real, (n, top) = max(by.items(), key=lambda kv: kv[1][1])
+        src = alias_of.get(real)
+        if total * scale < SAVINGS_MIN or top <= total * CONCENTRATION or src not in MODELS:
+            continue
+        same = sorted((a for a, m in MODELS.items() if m[0] == MODELS[src][0]), key=model_price)
+        allowed = team_models(c, team)
+        down = [a for a in same if model_price(a) < model_price(src) and (allowed is None or a in allowed)]
+        if same[-1] != src or not down:
+            continue  # not the provider's priciest model, or nothing cheaper the team may use
+        dst = down[-1]  # one step down: the priciest of the cheaper ones
+        rec("concentrated", team, "", src, dst, n, top * scale, None, 0,
+            f"{round(top / total * 100)}% מההוצאה של צוות {team} הולכים ל-{labels[src]}, המודל היקר ביותר של הספק. "
+            f"כדאי לבדוק אם חלק מהעבודה מתאים ל-{labels[dst]}.")
+
+    for r in c.execute("select alias, model, created from models where enabled = 1 and archived is null order by created, alias"):
+        if r["model"] not in used and r["alias"] != setting(c, "default_model") and (r["created"] or now) < since:
+            rec("unused-model", "", "", r["alias"], None, 0, 0, None, 0,
+                f"המודל {labels[r['alias']]} פעיל, אבל אף אחד לא השתמש בו ב-30 הימים האחרונים. כדאי לכבות אותו עד שיהיה בו צורך.")
+    out.sort(key=lambda x: (-x["monthly_saving"], SAVINGS_ORDER[x["kind"]]))
+    return {"recommendations": out, "total_monthly_saving": round(sum(x["monthly_saving"] for x in out), 2), "days": round(days, 1),
+            "simple_tokens_in": SIMPLE_TOKENS_IN, "simple_tokens_out": SIMPLE_TOKENS_OUT}
+
+
+# --- chargeback: each team's month, with its accounting codes, for the finance system ---
+NO_TEAM = "ללא צוות"
+CHARGEBACK_FIELDS = ("month", "team", "cost_center", "gl_account", "requests", "tokens_in", "tokens_out", "cost_usd")
+
+
+def chargeback(c, month):
+    """One row per team that used the gateway in the month (accounts without a team together), plus the total.
+    Counted like the monthly report, so the totals match it."""
+    start = month_start(month)
+    end = month_bounds(start)[1]
+    codes = {r["name"]: r for r in c.execute("select name, cost_center, gl_account from teams")}
+    rows = []
+    for r in c.execute("select team, count(*) requests, coalesce(sum(tokens_in), 0) tokens_in, coalesce(sum(tokens_out), 0) tokens_out,"
+                       " coalesce(sum(cost), 0) cost from logs where ts >= ? and ts < ? and name != ? group by team"
+                       " order by team = '', cost desc", (start, end, TEST_CALLS)):
+        t = codes.get(r["team"]) if r["team"] else None
+        rows.append({"month": month, "team": r["team"] or NO_TEAM, "cost_center": (t["cost_center"] if t else None) or "",
+                     "gl_account": (t["gl_account"] if t else None) or "", "requests": r["requests"], "tokens_in": r["tokens_in"],
+                     "tokens_out": r["tokens_out"], "cost_usd": round(r["cost"], 2)})
+    total = {"month": month, "team": "TOTAL", "cost_center": "", "gl_account": "",
+             **{k: sum(r[k] for r in rows) for k in ("requests", "tokens_in", "tokens_out")},
+             "cost_usd": round(sum(r["cost_usd"] for r in rows), 2)}  # the sum of the rounded rows, so the file adds up
+    return {"month": month, "rows": rows, "total": total}
+
+
+def chargeback_csv(data):
+    """CSV for accounting import: English snake_case headers, UTF-8 with a byte-order mark (Excel then reads Hebrew team
+    names), and a text cell that Excel would run as a formula (= + - @) gets a leading apostrophe."""
+    def cell(k, v):
+        if k == "cost_usd":
+            return f"{v:.2f}"
+        return "'" + v if isinstance(v, str) and v and v[0] in "=+-@\t\r" else v
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\r\n")
+    w.writerow(CHARGEBACK_FIELDS)
+    for r in data["rows"] + [data["total"]]:
+        w.writerow([cell(k, r[k]) for k in CHARGEBACK_FIELDS])
+    return "﻿" + buf.getvalue()
+
+
+# --- monthly summary by email to management ---
+HE_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"]
+SEC_KINDS_HE = {"suspicious-prompt": "שאלות חשודות", "sensitive-data-masked": "מידע רגיש שהוסתר", "sensitive-data-blocked": "שאלות עם מידע רגיש שנחסמו",
+                "sensitive-data-logged": "מידע רגיש שנשלח בלי הסתרה", "dangerous-answer": "תשובות עם פקודה מסוכנת",
+                "cross-site-request": "בקשות מאתר זר", "bad-host": "כתובות לא מוכרות", "account-locked": "חשבונות שננעלו",
+                "admin-denied": "סיסמת מנהל שגויה מבחוץ", "document-refused": "מסמכים חשודים שלא נקלטו", "document-forced": "מסמכים חשודים שהועלו באישור",
+                "document-flagged": "מסמכים חשודים שנשלחו למודל", "answer-masked": "מפתחות שהוסתרו מתשובות", "suspicious-link": "קישורים חשודים בתשובות",
+                "prompt-leak": "תשובות שחשפו את הוראות השער", "mcp-tool-refused": "כלי MCP שלא הופעלו", "cost-spike": "הוצאות חריגות",
+                "login-throttled": "יותר מדי סיסמאות שגויות מכתובת אחת", "summary-failed": "שליחות סיכום שנכשלו"}
+SUMMARY_HOUR, SUMMARY_TRIES = 8, 3  # sent on the 1st after 08:00 local time; a failed send is tried again next hour, 3 times at most
+EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
+
+
+def month_title(month):
+    y, m = map(int, month.split("-"))
+    return f"{HE_MONTHS[m - 1]} {y}"
+
+
+def summary_content(c, month):
+    """The email: subject, an RTL HTML part and a plain-text part, from the same numbers as the reports page. Every name in
+    it (people, teams, models) is escaped: they are typed by admins and could hold markup."""
+    r, before = month_report(c, month), month_report(c, last_full_month(month_start(month)))
+    start = month_start(month)
+    end = month_bounds(start)[1]
+    alias_of = {m[1]: a for a, m in ALL_MODELS.items()}
+    labels = dict(c.execute("select alias, label from models").fetchall())
+    money = lambda v: f"${v or 0:,.2f}"
+    total, prev = r["totals"]["cost"], before["totals"]["cost"]
+    events = c.execute("select kind, count(*) n from security_events where ts >= ? and ts < ? group by kind order by n desc",
+                       (start, end)).fetchall()
+    blocked = c.execute("select count(*) from blocked_requests where ts >= ? and ts < ?", (start, end)).fetchone()[0]
+    over = [[f"צוות {x['key']}", money(x["cost"]), money(x["budget"])] for x in r["by_team"] if x["key"] and x["budget"] and x["cost"] > x["budget"]] + \
+           [[x["key"], money(x["cost"]), money(x["budget"])] for x in r["by_account"] if x["budget"] and x["cost"] > x["budget"]]
+    sv = savings(c)
+    sections = [
+        ("ההוצאה בחודש", None, [
+            ["הוצאה כוללת", money(total)],
+            ["החודש הקודם", money(prev) + (f" ({(total - prev) / prev * 100:+.0f}%)" if prev else "")],
+            ["בקשות", f"{r['totals']['requests']:,}"], ["אנשים ואפליקציות שהשתמשו", str(r["totals"]["people"])]]),
+        ("הצוותים שהוציאו הכי הרבה", ["צוות", "בקשות", "הוצאה"],
+         [[x["key"] or NO_TEAM, f"{x['requests']:,}", money(x["cost"])] for x in r["by_team"][:5]]),
+        ("המשתמשים שהוציאו הכי הרבה", ["שם", "צוות", "הוצאה"],
+         [[x["key"], x["team"] or NO_TEAM, money(x["cost"])] for x in r["by_account"][:5]]),
+        ("הוצאה לפי מודל", ["מודל", "בקשות", "הוצאה"],
+         [[labels.get(alias_of.get(x["key"])) or x["key"], f"{x['requests']:,}", money(x["cost"])] for x in r["by_model"]]),
+        ("המלצות לחיסכון", None,
+         ([[f"אפשר לחסוך עד {usd(sv['total_monthly_saving'])} בחודש", ""]] if sv["total_monthly_saving"] else []) +
+         [[x["text_he"], ""] for x in sv["recommendations"][:3]]),
+        ("אבטחה", None, [[SEC_KINDS_HE.get(e["kind"], e["kind"]), str(e["n"])] for e in events] + [["בקשות שנחסמו", str(blocked)]]),
+        ("חריגות מהתקציב", ["מי", "הוצאה", "תקציב"], over),
+    ]
+    subject = f"FireGate · סיכום חודשי · {month_title(month)}"
+    lead, foot = (f"השימוש בבינה מלאכותית בחברה ב{month_title(month)}.",
+                  "נשלח אוטומטית מהשער. ההמלצות לחיסכון מבוססות על 30 הימים האחרונים, והחריגות על התקציב הנוכחי.")
+    e = html.escape
+    cell = "padding:6px 8px;border-bottom:1px solid #e4e4e7;text-align:right;vertical-align:top"
+    parts = [f'<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>{e(subject)}</title></head>'
+             '<body style="margin:0;padding:24px;background:#f4f4f5;color:#18181b;font-family:Arial,Helvetica,sans-serif;direction:rtl;text-align:right">'
+             '<div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px">'
+             f'<h1 style="font-size:20px;margin:0 0 4px">{e(subject)}</h1><p style="margin:0 0 8px;color:#52525b">{e(lead)}</p>']
+    text = [subject, "", lead]
+    for title, head, rows in sections:
+        parts.append(f'<h2 style="font-size:16px;margin:24px 0 8px">{e(title)}</h2>')
+        text += ["", title, "-" * len(title)]
+        if not rows:
+            parts.append('<p style="margin:0;color:#52525b">אין.</p>')
+            text.append("אין.")
+            continue
+        parts.append('<table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px">')
+        if head:
+            parts.append("<tr>" + "".join(f'<th style="{cell};color:#52525b">{e(h)}</th>' for h in head) + "</tr>")
+            text.append(" | ".join(head))
+        for row in rows:
+            parts.append("<tr>" + "".join(f'<td style="{cell}">{e(str(v))}</td>' for v in row) + "</tr>")
+            text.append(" | ".join(str(v) for v in row if v != ""))
+        parts.append("</table>")
+    parts.append(f'<p style="margin:24px 0 0;font-size:12px;color:#71717a">{e(foot)}</p></div></body></html>')
+    return {"subject": subject, "html": "".join(parts), "text": "\n".join(text + ["", foot]) + "\n"}
+
+
+def smtp_settings():
+    """The mail server for the monthly summary, from the environment only: never stored in the database, never sent to a page."""
+    env = lambda k: os.environ.get(k, "").strip()
+    host, sender = env("SMTP_HOST"), env("SMTP_FROM") or env("SMTP_USER")
+    if not host or not sender:
+        return None
+    return {"host": host, "port": int(env("SMTP_PORT") or 587), "user": env("SMTP_USER"), "password": os.environ.get("SMTP_PASSWORD", ""),
+            "from": sender, "tls": (env("SMTP_TLS") or "1").lower()}
+
+
+def parse_recipients(raw):
+    """Comma-separated email addresses -> list, each checked."""
+    out = list(dict.fromkeys(a for a in re.split(r"[,;\s]+", str(raw or "")) if a))
+    for a in out:
+        if len(a) > 254 or not EMAIL.match(a):
+            raise ValueError(f"not a valid email address: {a[:100]}")
+    if len(out) > 50:
+        raise ValueError("at most 50 recipients")
+    return out
+
+
+def mask_email(addr):
+    """d***@example.com: enough for the server log to tell which address, not enough to collect them."""
+    name, _, domain = addr.partition("@")
+    return name[:1] + "***@" + domain if domain else "***"
+
+
+def mask_emails(text):
+    return _EMAIL.sub(lambda m: mask_email(m[0]), text)
+
+
+def send_summary(c, month):
+    """Email the month's summary to the saved recipients now. Returns the recipients; raises ValueError when there is no mail
+    server or no recipient, smtplib/OS errors when sending fails."""
+    cfg = smtp_settings()
+    if not cfg:
+        raise ValueError("SMTP is not configured")
+    to = parse_recipients(setting(c, "summary_recipients", ""))
+    if not to:
+        raise ValueError("no summary recipients")
+    content = summary_content(c, month)
+    msg = EmailMessage()
+    msg["Subject"], msg["From"], msg["To"] = content["subject"], cfg["from"], ", ".join(to)
+    msg.set_content(content["text"])
+    msg.add_alternative(content["html"], subtype="html")
+    secure = ssl.create_default_context()
+    if cfg["tls"] == "ssl":  # port 465: encrypted from the first byte
+        server = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=30, context=secure)
+    else:
+        server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=30)
+    with server as s:
+        if cfg["tls"] not in ("0", "false", "no", "off", "ssl"):
+            s.starttls(context=secure)
+        if cfg["user"]:
+            s.login(cfg["user"], cfg["password"])
+        s.send_message(msg, from_addr=cfg["from"], to_addrs=to)
+    print(f"monthly summary for {month} sent to {', '.join(mask_email(a) for a in to)}", flush=True)
+    return to
+
+
+def summary_sent(c, month, to, auto):
+    """Remember that the month went out (the scheduler then won't send it again), in settings and in the change log."""
+    put_setting(c, f"summary_sent_{month}", str(time.time()))
+    audit(c, "summary-sent", {"name": "summary", "month": month, "recipients": len(to), "auto": auto})
+
+
+def summary_status(c):
+    sent = sorted((r[0].removeprefix("summary_sent_") for r in c.execute("select key from settings where key like 'summary_sent_%'")),
+                  reverse=True)
+    return {"recipients": setting(c, "summary_recipients", ""), "enabled": setting(c, "summary_enabled", "0") == "1",
+            "smtp_configured": bool(smtp_settings()), "sent": sent[:12]}
+
+
+def summary_tick(now=None):
+    """Hourly: on the 1st after 08:00, send last month's summary once. A failure is recorded as a security event and tried
+    again next hour, 3 times at most. Returns True (sent), False (failed) or None (nothing to do)."""
+    now = time.time() if now is None else now
+    lt = time.localtime(now)
+    if lt.tm_mday != 1 or lt.tm_hour < SUMMARY_HOUR:
+        return None
+    c = db()
+    try:
+        month = last_full_month(now)
+        tries = int(setting(c, f"summary_tries_{month}", "0") or 0)
+        if setting(c, "summary_enabled", "0") != "1" or setting(c, f"summary_sent_{month}") or tries >= SUMMARY_TRIES:
+            return None
+        try:
+            to = send_summary(c, month)
+        except (ValueError, smtplib.SMTPException, OSError) as e:
+            with c:
+                put_setting(c, f"summary_tries_{month}", str(tries + 1))
+                security.event(c, "summary-failed", "", {"month": month, "try": tries + 1,
+                                                         "error": mask_emails(f"{type(e).__name__}: {e}")[:300]})
+            print(f"monthly summary for {month} failed (try {tries + 1} of {SUMMARY_TRIES}): {type(e).__name__}", flush=True)
+            return False
+        with c:
+            summary_sent(c, month, to, True)
+        return True
+    finally:
+        c.close()
+
+
+def summary_loop():
+    # ponytail: assumes one gateway process; with several, two could send the same month at once (move to a DB lock then)
+    while True:
+        try:
+            summary_tick()
+        except Exception as e:  # noqa: BLE001  one bad hour must not stop next month's summary
+            print(f"monthly summary check failed: {type(e).__name__}", flush=True)
+        time.sleep(3600)
 
 
 # --- calling providers ---
@@ -1036,10 +1463,11 @@ def mcp_sync(c, row):
     return len(seen), skipped, flagged, gone
 
 
-def fallback_for(alias, path=None):
-    """The backup model for alias, if it is on and (for app calls) speaks the same request format."""
+def fallback_for(alias, path=None, allowed=None):
+    """The backup model for alias, if it is on, (for app calls) speaks the same request format, and is in allowed (the
+    team's model list; None = no team limit). A backup the team may not use means no backup."""
     fb = MODEL_EXTRA.get(alias, {}).get("fallback")
-    if fb and fb != alias and fb in MODELS and (path is None or PROVIDERS[MODELS[fb][0]][0] == path):
+    if fb and fb != alias and fb in MODELS and (path is None or PROVIDERS[MODELS[fb][0]][0] == path) and (allowed is None or fb in allowed):
         return fb
     return None
 
@@ -1052,7 +1480,7 @@ _HEAVY = __import__("re").compile(
 def route_auto(c, acct, messages):
     """Pick the cheap or the strong model for one question. Returns (alias, reason) or (None, error)."""
     cheap, strong = setting(c, "auto_cheap", "fast"), setting(c, "auto_strong", "smart")
-    allowed = [m for m in acct["models"].split(",") if m in MODELS]
+    allowed = [m for m in effective_models(c, acct) if m in MODELS]
     last = messages[-1]["content"]
     total = sum(len(m["content"]) for m in messages)
     if len(last) > 1200:
@@ -1150,6 +1578,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
+
+    def query(self, key):
+        """One value from the address's query string, or None."""
+        return (urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get(key) or [None])[0]
 
     def json_body(self, path):
         n = int(self.headers.get("content-length") or 0)
@@ -1328,11 +1760,11 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError) as e:
             self.reply(400, {"error": str(e)})
 
-    def call_with_backup(self, alias, build, on_line, started, path=None):
-        """Call alias; if the provider fails before any answer was sent, try its backup model once.
+    def call_with_backup(self, alias, build, on_line, started, path=None, allowed=None):
+        """Call alias; if the provider fails before any answer was sent, try its backup model once (only one the team may use).
         Returns (alias that answered, status, raw data, usage, note)."""
         note, last = "", None
-        for a in (alias, fallback_for(alias, path)):
+        for a in (alias, fallback_for(alias, path, allowed)):
             if not a:
                 continue
             self.current_alias = a
@@ -1406,7 +1838,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(line)
             self.wfile.flush()
 
-        used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, path)
+        used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, path, team_models(c, acct["team"]))
         if status >= 400 and not u["in"] and not u["out"] and b"provider unreachable" in data:
             return self.reply(502, json.loads(data))
         if started:
@@ -1452,7 +1884,7 @@ class Handler(BaseHTTPRequestHandler):
             names = sources.allowed(c, acct["team"])
             readable = [dict(r) for r in c.execute("select name, description from sources order by name") if r["name"] in names]
             labels = dict(c.execute("select alias, label from models").fetchall())
-            mine = [m for m in acct["models"].split(",") if m in MODELS]
+            mine = [m for m in effective_models(c, acct) if m in MODELS]  # the team's model list narrows the person's
             return self.reply(200, {"name": acct["name"], "team": acct["team"], "models": mine,
                                     "model_labels": {m: labels.get(m) or m for m in mine}, "default_model": default_model(c),
                                     "auto": setting(c, "auto_enabled", "1") == "1" and setting(c, "auto_cheap", "fast") in mine,
@@ -1649,7 +2081,7 @@ class Handler(BaseHTTPRequestHandler):
             if piece:
                 write(masker.feed(piece))  # keys in the answer are masked before they reach the employee
 
-        used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started)
+        used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, None, team_models(c, acct["team"]))
         answer = ""
         if started:
             write(masker.flush())
@@ -1718,7 +2150,8 @@ class Handler(BaseHTTPRequestHandler):
                 members = c.execute("select count(*), coalesce(sum(budget), 0) from accounts where team = ? and archived is null", (t["name"],)).fetchone()
                 teams.append({"name": t["name"], "budget": t["budget"], "spent": t["spent"], "members": members[0],
                               "members_budget": members[1], "last_month": last_team.get(t["name"]) or 0,
-                              "projected": projected, "recommended": recommended})
+                              "projected": projected, "recommended": recommended, "cost_center": t["cost_center"] or "",
+                              "gl_account": t["gl_account"] or "", "models": team_models(c, t["name"])})
             model_info = {r["alias"]: {"provider": r["provider"], "model": r["model"], "price_in": r["price_in"], "price_out": r["price_out"],
                                        "label": r["label"], "enabled": bool(r["enabled"])}
                           for r in c.execute("select * from models where archived is null order by created, alias")}
@@ -1810,39 +2243,23 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/admin/api/audit/verify":
             return self.reply(200, verify_audit(c))
         if path == "/admin/api/report":
-            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            month = (q.get("month") or [time.strftime("%Y-%m")])[0]
-            try:
-                y, m = map(int, month.split("-"))
-                start = time.mktime((y, m, 1, 0, 0, 0, 0, 0, -1))
-            except ValueError:
-                raise ValueError("month must look like 2026-10")
-            end = month_bounds(start)[1]
-            first = c.execute("select min(ts) from logs").fetchone()[0] or time.time()
-            months, t = [], month_bounds()[0]
-            while t >= month_bounds(first)[0] and len(months) < 36:
-                months.append(time.strftime("%Y-%m", time.localtime(t)))
-                t = month_bounds(t - 1)[0]
-
-            def group(col):
-                return [dict(r) for r in c.execute(
-                    f"select {col} key, count(*) requests, sum(tokens_in) tokens_in, sum(tokens_out) tokens_out, sum(cost) cost,"
-                    f" sum(cache_read) cache_read from logs where ts >= ? and ts < ? and name != '(בדיקת מודל)'"
-                    f" group by {col} order by cost desc", (start, end))]
-            budgets = {r["name"]: r["budget"] for r in c.execute("select name, budget from accounts")}
-            team_budgets = {r["name"]: r["budget"] for r in c.execute("select name, budget from teams")}
-            by_account = group("name")
-            for r in by_account:
-                r["team"] = (c.execute("select team from logs where name = ? and ts >= ? and ts < ? order by ts desc limit 1",
-                                       (r["key"], start, end)).fetchone() or [""])[0]
-                r["budget"] = budgets.get(r["key"])
-            by_team = group("team")
-            for r in by_team:
-                r["budget"] = team_budgets.get(r["key"])
-            totals = c.execute("select count(*) requests, coalesce(sum(cost), 0) cost, count(distinct name) people from logs"
-                               " where ts >= ? and ts < ? and name != '(בדיקת מודל)'", (start, end)).fetchone()
-            return self.reply(200, {"month": month, "months": months, "totals": dict(totals),
-                                    "by_team": by_team, "by_account": by_account, "by_model": group("model")})
+            return self.reply(200, month_report(c, self.query("month") or time.strftime("%Y-%m")))
+        if path == "/admin/api/savings":
+            return self.reply(200, savings(c))
+        if path == "/admin/api/chargeback":  # ?month=2026-09&format=json|csv
+            month, fmt = self.query("month") or time.strftime("%Y-%m"), self.query("format") or "json"
+            if fmt not in ("json", "csv"):
+                raise ValueError("format must be csv or json")
+            data = chargeback(c, month)  # checks the month, which then goes into the file name
+            if fmt == "json":
+                return self.reply(200, data)
+            return self.send_raw(200, chargeback_csv(data).encode(), "text/csv; charset=utf-8",
+                                 [("content-disposition", f'attachment; filename="firegate-chargeback-{month}.csv"')])
+        if path == "/admin/api/summary":  # preview of the monthly email; default: the last full month
+            month = self.query("month") or last_full_month()
+            return self.reply(200, {"month": month, **summary_content(c, month)})
+        if path == "/admin/api/summary/settings":
+            return self.reply(200, summary_status(c))
         if path == "/admin/api/models/daily":
             rows = c.execute("select date(ts, 'unixepoch', 'localtime') day, model, count(*) requests, sum(cost) cost from logs"
                              " where ts >= ? and name != '(בדיקת מודל)' group by day, model order by day", (time.time() - 30 * 86400,))
@@ -1901,15 +2318,26 @@ class Handler(BaseHTTPRequestHandler):
         """Returns (http status, reply body)."""
         if path in ("/admin/api/archive", "/admin/api/restore"):  # kind + name (a document: name = its source, plus id)
             return set_archived(c, str(body.get("kind")), body, name, path.endswith("restore"))
-        if path == "/admin/api/teams":  # create or update
+        if path == "/admin/api/teams":  # create or update; fields left out of the request keep their value
             not_archived(c, "team", name)
             budget = float(body.get("budget") or 0)
             if budget < 0:
                 raise ValueError("budget must be >= 0")
-            old = c.execute("select budget from teams where name = ?", (name,)).fetchone()
-            c.execute("insert into teams(name, budget, month) values (?,?,?) on conflict(name) do update set budget = excluded.budget",
-                      (name, budget, time.strftime("%Y-%m")))
-            audit(c, "team-save", {"name": name, "budget": budget, **({"old_budget": old[0]} if old else {})})
+            fields = {"budget": budget}
+            for k in ("cost_center", "gl_account"):
+                if k in body:
+                    fields[k] = str(body[k] or "").strip()[:64] or None
+            if "models" in body:  # empty list = the team sets no limit
+                models = [str(m) for m in body.get("models") or []]
+                if any(m not in ALL_MODELS for m in models):
+                    raise ValueError("pick known models for the team")
+                fields["models"] = ",".join(models) or None
+            old = c.execute("select * from teams where name = ?", (name,)).fetchone()
+            c.execute(f"insert into teams(name, month, {', '.join(fields)}) values (?, ?, {', '.join('?' * len(fields))})"
+                      f" on conflict(name) do update set {', '.join(f'{k} = excluded.{k}' for k in fields)}",
+                      (name, time.strftime("%Y-%m"), *fields.values()))
+            changed = {k: v for k, v in fields.items() if k != "budget" and (old[k] if old else None) != v}
+            audit(c, "team-save", {"name": name, "budget": budget, **({"old_budget": old["budget"]} if old else {}), **changed})
             return (200, {"ok": True})
         if path == "/admin/api/sources":  # create or update
             kind = body.get("kind")
@@ -2047,6 +2475,23 @@ class Handler(BaseHTTPRequestHandler):
                 c.execute("insert into settings values (?, ?) on conflict(key) do update set value = excluded.value", (k, v))
             audit(c, "security-policy", {"name": "policy", "injection": inj, "sensitive": sens, "old": list(old)})
             return (200, {"ok": True})
+        if path == "/admin/api/summary/settings":  # monthly summary email; name is "summary"
+            to, enabled = parse_recipients(body.get("recipients")), bool(body.get("enabled"))
+            if enabled and not to:
+                raise ValueError("no summary recipients")
+            put_setting(c, "summary_recipients", ", ".join(to))
+            put_setting(c, "summary_enabled", "1" if enabled else "0")
+            audit(c, "summary-settings", {"name": "summary", "enabled": enabled, "recipients": to})
+            return (200, {"ok": True})
+        if path == "/admin/api/summary/send":  # send now; name is "summary"
+            month = str(body.get("month") or last_full_month())
+            month_start(month)
+            try:
+                to = send_summary(c, month)  # before any write here, so the database isn't held while the mail server talks
+            except (smtplib.SMTPException, OSError) as e:
+                return (502, {"error": "sending failed: " + mask_emails(f"{type(e).__name__}: {e}")[:300]})
+            summary_sent(c, month, to, False)
+            return (200, {"ok": True, "sent": len(to)})
         if path == "/admin/api/models/auto":  # automatic choice settings; name is "auto"
             cheap, strong = str(body.get("cheap", "")), str(body.get("strong", ""))
             if cheap not in ALL_MODELS or strong not in ALL_MODELS:
@@ -2120,6 +2565,7 @@ if __name__ == "__main__":
     if os.environ.get("SEED_DEMO", "").strip().lower() in ("1", "true", "yes", "on"):
         # demo hosting whose disk resets on restart: start every time with sample data
         import seed_demo  # noqa: F401  (fills an empty database; leaves a filled one alone)
+    threading.Thread(target=summary_loop, daemon=True).start()  # the monthly summary email (only sends when turned on)
     port = int(os.environ.get("PORT", 8080))
     print(f"gateway listening on :{port}", flush=True)
     ThreadingHTTPServer(("", port), Handler).serve_forever()

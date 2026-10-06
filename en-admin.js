@@ -502,6 +502,69 @@ window.EN = Object.assign(window.EN || {}, {
   "אין שיחות שמורות": "No saved chats",
   "המשתמש בארכיון: הכניסה לצ'אט והמפתח לא עובדים. כל ההיסטוריה נשמרת, ואפשר לשחזר אותו מעמוד הארכיון.":
     "This user is archived: chat sign-in and the key don't work. All the history is kept, and the user can be restored from the Archive page.",
+
+  // savings recommendations
+  "המלצות לחיסכון": "Savings recommendations",
+  "לכל ההמלצות": "See all recommendations",
+  "השימוש נראה יעיל: אין כרגע המלצות לחיסכון.": "Usage looks efficient: no savings recommendations right now.",
+  "להפעיל בחירה אוטומטית": "Turn on automatic choice",
+  "להגדרות הבחירה האוטומטית": "Automatic choice settings",
+  "לכבות את המודל": "Turn the model off",
+
+  // teams: chargeback codes and the team's model policy
+  "חיוב פנימי": "Chargeback",
+  "מרכז עלות": "Cost center",
+  "חשבון": "GL account",
+  "חשבון בהנהלת החשבונות": "GL account (bookkeeping)",
+  "מודלים מותרים לצוות": "Models the team may use",
+  "בלי סימון, הצוות לא מגביל. עם סימון, חברי הצוות יכולים להשתמש רק במודלים המסומנים, גם אם הותרו להם אישית מודלים נוספים. זה חל גם על הבחירה האוטומטית ועל מודל הגיבוי.":
+    "Nothing checked: the team sets no limit. With models checked, team members can use only those, even if more models were allowed to them personally. This also applies to automatic choice and to the backup model.",
+  "מודל אחד מותר": "1 model allowed",
+  "חסום ע\"י מדיניות הצוות": "Blocked by team policy",
+  "הצוות לא מגביל מודלים": "the team sets no model limit",
+  "בלי מרכז עלות": "no cost center",
+  "בלי חשבון": "no GL account",
+  "מודל שהצוות לא מורשה בו": "Model not allowed for the team",
+  "צריך לבחור מודלים מהרשימה": "Pick models from the list",
+
+  // chargeback export
+  "חיוב פנימי לפי צוות": "Chargeback by team",
+  "הורדה ל-CSV": "Download CSV",
+  "הורדה ל-JSON": "Download JSON",
+  "העלות של כל צוות בחודש שנבחר למעלה, עם מרכז העלות והחשבון בהנהלת החשבונות שלו (קובעים אותם בעריכת הצוות). בקובץ, שמות העמודות באנגלית, כדי שמערכת הנהלת החשבונות תקלוט אותם כמו שהם.":
+    "Each team's cost in the month chosen above, with its cost center and GL account (set them when editing the team). In the file the column names are in English, so the accounting system can import them as they are.",
+  "ללא צוות": "No team",
+
+  // monthly summary by email
+  "סיכום חודשי במייל": "Monthly summary by email",
+  "ב-1 לכל חודש, אחרי 08:00, השער שולח להנהלה סיכום של החודש שעבר: הוצאה מול החודש הקודם, הצוותים והמשתמשים שהוציאו הכי הרבה, הוצאה לפי מודל, המלצות לחיסכון, אירועי אבטחה וחריגות מהתקציב. תצוגה מקדימה ו\"לשלוח עכשיו\" הן לחודש שנבחר למעלה.":
+    "On the 1st of every month, after 08:00, the gateway emails management a summary of the month before: spend against the previous month, the teams and users who spent the most, spend by model, savings recommendations, security events and budget overruns. Preview and \"Send now\" use the month chosen above.",
+  "נמענים (כתובות מייל, מופרדות בפסיק)": "Recipients (email addresses, separated by commas)",
+  "שליחה אוטומטית פעילה": "automatic sending on",
+  "שליחה אוטומטית כבויה": "automatic sending off",
+  "שליחה אוטומטית ב-1 לכל חודש": "Send automatically on the 1st of every month",
+  "תצוגה מקדימה": "Preview",
+  "לשלוח עכשיו": "Send now",
+  "תצוגה מקדימה של המייל": "Email preview",
+  "שרת הדואר מוגדר": "Mail server set up",
+  "שרת הדואר לא מוגדר": "No mail server",
+  "צריך למלא SMTP_HOST ו-SMTP_FROM בהגדרות השרת": "Set SMTP_HOST and SMTP_FROM in the server settings",
+  "עוד לא נשלח סיכום.": "No summary sent yet.",
+  "הגדרות הסיכום החודשי נשמרו.": "Monthly summary settings saved.",
+  "לשלוח את הסיכום עכשיו?": "Send the summary now?",
+  "שליחה": "Send",
+  "אין עדיין נמענים שמורים.": "There are no saved recipients yet.",
+  "הגדרות הסיכום החודשי עודכנו": "Monthly summary settings changed",
+  "הסיכום החודשי נשלח": "Monthly summary sent",
+  "נשלח אוטומטית": "sent automatically",
+  "נשלח ידנית": "sent by hand",
+  "בלי נמענים": "no recipients",
+  "שליחת הסיכום החודשי נכשלה": "Monthly summary failed to send",
+  "שרת הדואר לא מוגדר. צריך למלא SMTP_HOST ו-SMTP_FROM בהגדרות השרת ולהפעיל אותו מחדש.":
+    "No mail server is set up. Set SMTP_HOST and SMTP_FROM in the server settings and restart it.",
+  "אין נמענים שמורים. צריך להוסיף לפחות כתובת מייל אחת ולשמור.": "No saved recipients. Add at least one email address and save.",
+  "אפשר עד 50 נמענים": "Up to 50 recipients",
+  "החודש לא תקין": "Invalid month",
 });
 
 // texts with numbers, money or names inside. Order matters: the " · " splitter first, then specific patterns, generic ones last.
@@ -674,6 +737,31 @@ window.EN = Object.assign(window.EN || {}, {
     [/^הועלו (\d+) קבצים ל"(.+)"\.$/, "Uploaded $1 files to \"$2\"."],
     [/^לא הצלחנו להתחבר: (.*)$/, "Couldn't connect: $1"],
     [/^מחובר( ל-(.+))?: (\d+) כלים, (\d+) מסמכים\.$/, (_, __, s, n, d) => `Connected${s ? ` to ${s}` : ""}: ${n} tools, ${d} documents.`],
+
+    // savings recommendations (the server writes them in Hebrew)
+    [R("(צוות )?(.+) שולח שאלות קצרות למודל החזק (.+)\. מעבר ל-(.+) בשאלות כאלה יחסוך כ-$M בחודש\."), (_, p, n, a, b, m) =>
+      `${p ? "Team " : ""}${n} sends short questions to the strong model ${a}. Moving such questions to ${b} would save about ${m} a month.`],
+    [/^(\d+)% מההוצאה של צוות (.+) הולכים ל-(.+), המודל היקר ביותר של הספק\. כדאי לבדוק אם חלק מהעבודה מתאים ל-(.+)\.$/,
+      "$1% of team $2's spend goes to $3, the provider's most expensive model. Check whether some of the work suits $4."],
+    [/^המודל (.+) פעיל, אבל אף אחד לא השתמש בו ב-30 הימים האחרונים\. כדאי לכבות אותו עד שיהיה בו צורך\.$/,
+      "$1 is on, but nobody has used it in the last 30 days. Turn it off until it's needed."],
+    [R("אפשר לחסוך עד $M בחודש"), "Up to $1 a month could be saved"],
+    [/^לפי 30 הימים האחרונים\. "שאלה קצרה" היא עד ([\d,]+) טוקנים נכנסים ועד ([\d,]+) יוצאים\. .*$/,
+      "Based on the last 30 days. A \"short question\" is up to $1 tokens in and $2 out. The saving is priced at the cheap model's rates, per month."],
+
+    // teams, chargeback, monthly summary
+    [/^(\d+) מודלים מותרים$/, "$1 models allowed"],
+    [/^מרכז עלות (.+)$/, "Cost center $1"],
+    [/^חשבון (.+)$/, "GL account $1"],
+    [/^נמענים: (.+)$/, "Recipients: $1"],
+    [/^(\d+) נמענים$/, "$1 recipients"],
+    [/^נשלח לאחרונה: הסיכום של (.+)$/, "Last sent: the summary for $1"],
+    [/^הסיכום של (.+) יישלח עכשיו לנמענים השמורים: (.+)$/, "The summary for $1 will be sent now to the saved recipients: $2"],
+    [/^הסיכום של (.+) נשלח\.$/, "The summary for $1 was sent."],
+    [/^הסיכום של (.+)$/, "Summary for $1"],
+    [/^ניסיון (\d+) מתוך (\d+)$/, "try $1 of $2"],
+    [/^כתובת מייל לא תקינה: (.*)$/, "Not a valid email address: $1"],
+    [/^השליחה נכשלה: (.*)$/, "Sending failed: $1"],
 
     // generic, kept late so the specific ones above win
     [/^צוות (.+)$/, "Team $1"],

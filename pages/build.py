@@ -42,10 +42,12 @@ def post(path, body, opener):
 
 
 admin = {k: get("/admin/api/" + k) for k in ("overview", "usage", "daily", "logs", "audit", "sources", "security", "models",
-                                              "models/daily", "sources/status", "activity", "audit/verify", "archive")}
+                                              "models/daily", "sources/status", "activity", "audit/verify", "archive",
+                                              "savings", "summary/settings")}
 months = get("/admin/api/report")["months"]
-for m in months:
-    admin["report?month=" + m] = get("/admin/api/report?month=" + m)
+for m in months:  # the pages ask these per month: the report, the chargeback table, the summary email preview
+    for key in ("report", "chargeback", "summary"):
+        admin[f"{key}?month={m}"] = get(f"/admin/api/{key}?month={m}")
 admin["report_default"] = months[0]
 # one page per person, archived people too; the demo keeps their 30 latest requests to hold data.js down
 for name in [a["name"] for a in admin["overview"]["accounts"]] + [a["name"] for a in admin["archive"].get("accounts", [])]:

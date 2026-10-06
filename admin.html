@@ -134,6 +134,13 @@
   .chat-list li { display: flex; justify-content: space-between; gap: 12px; padding: .7rem 0; border-top: 1px solid var(--line); }
   .chat-list li:first-child { border-top: 0; }
   @media (max-width: 767px) { table.stack-mobile td:has(> details.qa) { display: block; } .qa summary { max-width: none; } .tabs { flex-wrap: wrap; row-gap: 0; } }
+  .model-option { flex-wrap: wrap; }
+  .rec-list .alert .icon { color: var(--muted); }
+  .rec-list .alert .actions { flex: none; }
+  #summaryDialog { width: min(760px, calc(100vw - 32px)); }
+  #summaryFrame { display: block; width: 100%; height: min(70vh, 680px); border: 1px solid var(--line); border-radius: 8px; background: #f4f4f5; }
+  tfoot td { font-weight: 700; color: var(--ink); border-top: 2px solid var(--line); }
+  @media (max-width: 767px) { table.stack-mobile tfoot { display: block; width: 100%; } .rec-list .alert { flex-wrap: wrap; } .rec-list .alert .actions { flex-basis: 100%; } }
   @media (max-width: 1199px) { .wide-narrow { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 991px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 520px) { .kpis { grid-template-columns: minmax(0, 1fr); } .greet h1 { font-size: 1.625rem; } .navbar-end .who-name { display: none; } }
@@ -233,6 +240,11 @@
         </form>
         <div id="loadState"></div>
         <div class="grid kpis" id="kpis"></div>
+        <div class="card" id="savingsCard" hidden>
+          <header><h2>המלצות לחיסכון</h2><span class="muted small" id="savingsTotal"></span></header>
+          <div class="rec-list" id="savingsTop"></div>
+          <button class="link small" id="savingsAll" style="margin-top:8px">לכל ההמלצות</button>
+        </div>
         <div class="grid wide-narrow">
           <div class="card">
             <header><h2>הוצאה יומית</h2><span class="muted small">30 הימים האחרונים</span></header>
@@ -289,6 +301,11 @@
       <div class="grid">
         <div class="card" id="startCard" hidden><header><h2>צעדים ראשונים</h2><span class="muted small" id="startProgress"></span></header><ol class="steps" id="startSteps"></ol></div>
         <div class="card" id="alertsCard" hidden><header><h2>דורש טיפול</h2><span class="muted small" id="alertsCount"></span></header><div id="alerts"></div></div>
+        <div class="card" id="savingsTodo" hidden>
+          <header><h2>המלצות לחיסכון</h2><span class="muted small" id="savingsTodoTotal"></span></header>
+          <p class="muted small" id="savingsNote" style="margin:-.5rem 0 .5rem"></p>
+          <div class="rec-list" id="savingsList"></div>
+        </div>
       </div>
     </section>
 
@@ -417,6 +434,25 @@
         <div class="card"><header><h2>לפי צוות</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>צוות</th><th class="num">בקשות</th><th class="num">הוצאה</th><th class="num">תקציב</th><th class="num">ניצול</th></tr></thead><tbody id="reportTeams"></tbody></table></div></div>
         <div class="card"><header><h2>לפי משתמש</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>שם</th><th>צוות</th><th class="num">בקשות</th><th class="num">טוקנים</th><th class="num">הוצאה</th><th class="num">תקציב</th></tr></thead><tbody id="reportAccounts"></tbody></table></div></div>
         <div class="card"><header><h2>לפי מודל</h2></header><div class="table-wrap"><table class="stack-mobile"><thead><tr><th>מודל</th><th class="num">בקשות</th><th class="num">טוקנים</th><th class="num">מתוכם מהמטמון</th><th class="num">הוצאה</th></tr></thead><tbody id="reportModels"></tbody></table></div></div>
+        <div class="card">
+          <header><h2>חיוב פנימי לפי צוות</h2>
+            <div class="row"><button class="ghost" id="cbCsv"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>הורדה ל-CSV</button><button class="ghost" id="cbJson"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>הורדה ל-JSON</button></div></header>
+          <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">העלות של כל צוות בחודש שנבחר למעלה, עם מרכז העלות והחשבון בהנהלת החשבונות שלו (קובעים אותם בעריכת הצוות). בקובץ, שמות העמודות באנגלית, כדי שמערכת הנהלת החשבונות תקלוט אותם כמו שהם.</p>
+          <div class="table-wrap"><table class="stack-mobile">
+            <thead><tr><th>צוות</th><th>מרכז עלות</th><th>חשבון</th><th class="num">בקשות</th><th class="num">טוקנים נכנסים</th><th class="num">טוקנים יוצאים</th><th class="num">עלות</th></tr></thead>
+            <tbody id="cbRows"></tbody><tfoot id="cbTotal"></tfoot>
+          </table></div>
+        </div>
+        <div class="card">
+          <header><h2>סיכום חודשי במייל</h2><span id="smtpStatus"></span></header>
+          <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">ב-1 לכל חודש, אחרי 08:00, השער שולח להנהלה סיכום של החודש שעבר: הוצאה מול החודש הקודם, הצוותים והמשתמשים שהוציאו הכי הרבה, הוצאה לפי מודל, המלצות לחיסכון, אירועי אבטחה וחריגות מהתקציב. תצוגה מקדימה ו"לשלוח עכשיו" הן לחודש שנבחר למעלה.</p>
+          <form id="summaryForm" class="grid" style="gap:12px">
+            <label class="field">נמענים (כתובות מייל, מופרדות בפסיק)<input type="text" id="sumRecipients" class="ltr" placeholder="ceo@example.com, cfo@example.com" autocomplete="off"></label>
+            <label class="check"><button type="button" class="switch" role="switch" id="sumEnabled" aria-checked="false" aria-label="שליחה אוטומטית פעילה"></button> שליחה אוטומטית ב-1 לכל חודש</label>
+            <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" id="sumPreview">תצוגה מקדימה</button><button type="button" class="ghost" id="sumSend"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>לשלוח עכשיו</button></div>
+            <p class="muted small" id="sumSent" style="margin:0"></p>
+          </form>
+        </div>
       </div>
     </section>
 
@@ -548,6 +584,18 @@
     <h2 id="teamTitle"></h2>
     <label class="field" id="tNameField">שם הצוות<input type="text" id="tName" required></label>
     <label class="field">תקציב חודשי לצוות ($, 0 = ללא תקרה)<input type="number" id="tBudget" min="0" step="0.01" required></label>
+    <fieldset>
+      <legend>חיוב פנימי</legend>
+      <div class="grid two" style="gap:12px">
+        <label class="field">מרכז עלות<input type="text" id="tCostCenter" class="ltr" maxlength="64"></label>
+        <label class="field">חשבון בהנהלת החשבונות<input type="text" id="tGlAccount" class="ltr" maxlength="64"></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>מודלים מותרים לצוות</legend>
+      <p class="muted small" style="margin:0">בלי סימון, הצוות לא מגביל. עם סימון, חברי הצוות יכולים להשתמש רק במודלים המסומנים, גם אם הותרו להם אישית מודלים נוספים. זה חל גם על הבחירה האוטומטית ועל מודל הגיבוי.</p>
+      <div id="tModels"></div>
+    </fieldset>
     <p class="error" id="teamError" role="alert"></p>
     <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
   </form>
@@ -618,6 +666,13 @@
     <p class="error" id="sourceError" role="alert"></p>
     <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>
   </form>
+</dialog>
+<dialog id="summaryDialog">
+  <div class="grid" style="gap:14px">
+    <h2 id="summarySubject"></h2>
+    <iframe id="summaryFrame" sandbox="" referrerpolicy="no-referrer" title="תצוגה מקדימה של המייל"></iframe>
+    <div class="row"><button type="button" class="ghost" data-close>סגירה</button></div>
+  </div>
 </dialog>
 <input type="file" id="fileInput" multiple hidden accept=".txt,.md,.csv,.json,.html,.htm,.log,.xml,.yaml,.yml,.pdf,.docx">
 

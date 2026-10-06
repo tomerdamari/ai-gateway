@@ -27,7 +27,8 @@ const actionNames = { create: "חשבון נוצר", update: "חשבון עוד�
   "key-revoke": "מפתח בוטל", "team-save": "צוות נשמר", "team-delete": "צוות נמחק", "source-save": "מקור מידע נשמר",
   "source-delete": "מקור מידע נמחק", "source-upload": "הועלו מסמכים", "source-sync": "תיקייה סונכרנה",
   "model-save": "מודל נשמר", "model-delete": "מודל נמחק", "model-default": "נקבע מודל ברירת מחדל", "model-auto": "בחירה אוטומטית עודכנה",
-  "security-policy": "מדיניות האבטחה עודכנה", archive: "הועבר לארכיון", restore: "שוחזר מהארכיון" };
+  "security-policy": "מדיניות האבטחה עודכנה", archive: "הועבר לארכיון", restore: "שוחזר מהארכיון",
+  "summary-settings": "הגדרות הסיכום החודשי עודכנו", "summary-sent": "הסיכום החודשי נשלח" };
 // what can be archived (nothing is ever deleted) and restored from the archive page
 const ARCHIVE_KINDS = { account: "משתמש", team: "צוות", model: "מודל", source: "מקור מידע", doc: "מסמך", chat: "שיחה" };
 // archive one item after a confirm; the item leaves the lists and stops working, and stays restorable
@@ -209,15 +210,25 @@ async function applyBudget(kind, item, budget) {
   } catch (e) { fail(e); }
 }
 const PROVIDER_NAMES = { anthropic: "Claude", openai: "GPT", gemini: "Gemini" };
-function modelChecks(container, checked) {
+// teamModels: the team's model list (null = no limit); a checked model outside it gets a badge, since the team blocks it
+function modelChecks(container, checked, teamModels = null) {
   container.replaceChildren(...state.models.map(m => {
     const info = (state.model_info || {})[m] || {};
     return el("label", { className: "model-option" }, el("input", { type: "checkbox", value: m, checked: checked.includes(m) }),
       el("span", { textContent: info.label || m }),
       el("small", { className: "ltr", textContent: `${m} · $${info.price_in} / $${info.price_out}` }),
-      info.enabled === false ? el("span", { className: "badge", textContent: "כבוי" }) : null);
+      info.enabled === false ? el("span", { className: "badge", textContent: "כבוי" }) : null,
+      el("span", { className: "badge warn team-block", textContent: "חסום ע\"י מדיניות הצוות", hidden: true }));
   }));
+  markTeamBlocked(container, teamModels);
 }
+function markTeamBlocked(container, teamModels) {
+  container.querySelectorAll(".model-option").forEach(o => {
+    const box = o.querySelector("input");
+    o.querySelector(".team-block").hidden = !(teamModels && box.checked && !teamModels.includes(box.value));
+  });
+}
+const teamModelsOf = name => (state.teams.find(t => t.name === name) || {}).models || null;
 const checkedModels = c => [...c.querySelectorAll("input:checked")].map(i => i.value);
 function showKey(key) {
   $("keyValue").textContent = key;
@@ -248,7 +259,10 @@ const ERRORS = { ...MODEL_ERRORS, "nothing to update": "אין מה לעדכן",
   "folder path must be absolute": "צריך נתיב מלא לתיקייה בשרת (למשל /data/docs)",
   "folder is outside the allowed source folders (SOURCE_ROOTS)": "התיקייה מחוץ לתיקיות שמותר לקרוא מהן (ההגדרה SOURCE_ROOTS בשרת)",
   "MCP tool and argument names may use only letters, digits and . _ - : /": "שם הכלי או הפרמטר של שרת ה-MCP לא תקין",
-  "unknown security policy": "מדיניות לא מוכרת",
+  "unknown security policy": "מדיניות לא מוכרת", "pick known models for the team": "צריך לבחור מודלים מהרשימה",
+  "SMTP is not configured": "שרת הדואר לא מוגדר. צריך למלא SMTP_HOST ו-SMTP_FROM בהגדרות השרת ולהפעיל אותו מחדש.",
+  "no summary recipients": "אין נמענים שמורים. צריך להוסיף לפחות כתובת מייל אחת ולשמור.", "at most 50 recipients": "אפשר עד 50 נמענים",
+  "month must look like 2026-10": "החודש לא תקין",
   "the team still has people; move them to another team first": "יש עדיין אנשים בצוות. קודם מעבירים אותם לצוות אחר, ואז אפשר להעביר את הצוות לארכיון." };
 const hebrew = msg => ERRORS[msg] || (/already exists/.test(msg) ? "השם הזה כבר קיים" : /folder not found/.test(msg) ? "התיקייה לא נמצאה בשרת"
   : /^MCP server: /.test(msg) ? "שרת ה-MCP: " + msg.slice(12)
@@ -257,6 +271,8 @@ const hebrew = msg => ERRORS[msg] || (/already exists/.test(msg) ? "השם הז�
   : /accounts still use this model/.test(msg) ? `${parseInt(msg)} משתמשים עדיין מורשים להשתמש במודל. אפשר לכבות אותו, או להסיר אותו מהמשתמשים קודם`
   : /is in the archive; restore it instead/.test(msg) ? "השם הזה שייך לפריט שנמצא בארכיון. אפשר לשחזר אותו מעמוד הארכיון."
   : /restore the team first/.test(msg) ? "הצוות של המשתמש נמצא בארכיון. קודם משחזרים את הצוות, ואז את המשתמש."
+  : /^not a valid email address: /.test(msg) ? "כתובת מייל לא תקינה: " + msg.replace(/^not a valid email address: /, "")
+  : /^sending failed: /.test(msg) ? "השליחה נכשלה: " + msg.slice(16)
   : msg);
 const fail = e => { if (e.message !== "unauthorized") UI.toast(hebrew(e.message), { kind: "bad", timeout: 9000 }); };
 const run = (fn, done) => async () => { try { const r = await fn(); if (r === false) return; await load(); if (done) UI.toast(done); } catch (e) { fail(e); } };
@@ -480,7 +496,7 @@ async function load() {
   if (!loadedOnce) $("loadState").replaceChildren(el("div", { className: "grid kpis" }, ...[1, 2, 3, 4].map(() => el("div", { className: "skeleton" }))));
   let data;
   try {
-    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity"), api("audit/verify"), api("archive")]);
+    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity"), api("audit/verify"), api("archive"), api("savings")]);
   } catch (e) {
     if (e.message !== "unauthorized") {
       showTab(tab);
@@ -496,7 +512,8 @@ async function load() {
   }
   loadedOnce = true;
   $("loadState").replaceChildren();
-  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act, verify, archived] = data;
+  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act, verify, archived, sav] = data;
+  savingsData = sav;
   activity = act;
   sourceStatus = sstat;
   modelsData = mdl;
@@ -566,7 +583,7 @@ async function load() {
   $("alertsCard").hidden = false;
   $("alertsCount").textContent = alerts.length ? `${alerts.length} פריטים` : "";
   // the menu shows how many things wait on the "to handle" page
-  const waiting = alerts.length + steps.length - doneCount;
+  const waiting = alerts.length + steps.length - doneCount + sav.recommendations.length;
   $("todoCount").hidden = !waiting;
   $("todoCount").textContent = waiting;
   $("alerts").replaceChildren(...alerts.map(([lv, text, page, who]) => el("div", { className: "alert " + lv }, icon("alert"),
@@ -575,6 +592,7 @@ async function load() {
       : who ? el("button", { className: "link small", textContent: "לפרטים", onclick: () => { location.hash = userHash(who); } }) : null)));
   if (!alerts.length) $("alerts").append(el("div", { className: "alert good" }, icon("check"), el("span", { textContent: "הכל תקין: אין חריגות תקציב ואין הערות אבטחה פתוחות." })));
 
+  renderSavings();
   drawDaily();
   teamBudgetTotal = ov.teams.reduce((t, x) => t + (x.budget || 0), 0);
   drawBurn();
@@ -610,7 +628,11 @@ async function load() {
 
   // teams
   $("teams").replaceChildren(...ov.teams.map(t => el("tr", {},
-    el("td", { className: "name" }, el("b", { textContent: t.name })),
+    el("td", { className: "name" }, el("div", { className: "stack" }, el("b", { textContent: t.name }),
+      t.cost_center || t.gl_account ? el("span", { className: "muted small", style: "white-space:normal", textContent: [t.cost_center && `מרכז עלות ${t.cost_center}`,
+        t.gl_account && `חשבון ${t.gl_account}`].filter(Boolean).join(" · ") }) : null,
+      t.models ? el("span", { className: "small", style: "white-space:normal", title: t.models.map(modelName).join(", "),
+        textContent: t.models.length === 1 ? "מודל אחד מותר" : `${t.models.length} מודלים מותרים` }) : null)),
     el("td", { className: "num", dataset: { label: "חברים" } }, num(String(t.members))),
     el("td", { dataset: { label: "הוצאה החודש" } }, meter(t.spent, t.budget)),
     el("td", { className: "num", dataset: { label: "צפי" } }, num(money(t.projected))),
@@ -630,6 +652,38 @@ async function load() {
     el("td", { className: "small" }, describe(a.detail)))));
   if (!audit.length) $("audit").append(el("tr", {}, el("td", { colSpan: 3, className: "empty", textContent: "אין שינויים עדיין" })));
 }
+
+// ---------- savings recommendations: the top three on the dashboard, all of them on the "to handle" page ----------
+let savingsData = { recommendations: [], total_monthly_saving: 0 };
+function goAuto() {
+  showTab("models");
+  $("autoForm").closest(".card").scrollIntoView({ block: "center" });
+  $("autoEnabled").focus();
+}
+function savingsAction(r) {
+  if (r.kind === "unused-model") {
+    const m = modelsData.models.find(x => x.alias === r.from_model);
+    return m && m.enabled ? el("button", { className: "ghost sm", textContent: "לכבות את המודל", onclick: () => toggleModel(m) }) : null;
+  }
+  return el("button", { className: "ghost sm", onclick: goAuto,
+    textContent: modelsData.auto && modelsData.auto.enabled ? "להגדרות הבחירה האוטומטית" : "להפעיל בחירה אוטומטית" });
+}
+function renderSavings() {
+  const recs = savingsData.recommendations, total = savingsData.total_monthly_saving;
+  const item = (r, withAction) => el("div", { className: "alert" }, icon(r.kind === "unused-model" ? "cpu" : "dollar"),
+    el("span", { className: "grow", textContent: r.text_he }), withAction ? el("div", { className: "actions" }, savingsAction(r)) : null);
+  const totalText = total ? `אפשר לחסוך עד ${money(total)} בחודש` : "";
+  $("savingsCard").hidden = false;
+  $("savingsTotal").textContent = totalText;
+  $("savingsTop").replaceChildren(...recs.slice(0, 3).map(r => item(r, false)));
+  if (!recs.length) $("savingsTop").append(el("div", { className: "alert good" }, icon("check"), el("span", { textContent: "השימוש נראה יעיל: אין כרגע המלצות לחיסכון." })));
+  $("savingsAll").hidden = !recs.length;
+  $("savingsTodo").hidden = !recs.length;
+  $("savingsTodoTotal").textContent = totalText;
+  $("savingsNote").textContent = `לפי 30 הימים האחרונים. "שאלה קצרה" היא עד ${savingsData.simple_tokens_in.toLocaleString("en-US")} טוקנים נכנסים ועד ${savingsData.simple_tokens_out.toLocaleString("en-US")} יוצאים. החיסכון מחושב לפי המחירים של המודל הזול, לחודש.`;
+  $("savingsList").replaceChildren(...recs.map(r => item(r, true)));
+}
+$("savingsAll").onclick = () => showTab("todo");
 
 let accountSort = { key: "spent", dir: -1 };
 function renderAccounts() {
@@ -675,6 +729,13 @@ function describe(d) {
   if ("budget" in d) parts.push("old_budget" in d ? `תקציב ${money(d.old_budget)} ← ${money(d.budget)}` : `תקציב ${money(d.budget)}`);
   if (d.team) parts.push(`צוות ${d.team}`);
   if (d.models) parts.push(`מודלים: ${String(d.models).replaceAll(",", ", ")}`);
+  else if ("models" in d) parts.push("הצוות לא מגביל מודלים");
+  if ("cost_center" in d) parts.push(d.cost_center ? `מרכז עלות ${d.cost_center}` : "בלי מרכז עלות");
+  if ("gl_account" in d) parts.push(d.gl_account ? `חשבון ${d.gl_account}` : "בלי חשבון");
+  if (Array.isArray(d.recipients)) parts.push(d.recipients.length ? `נמענים: ${d.recipients.join(", ")}` : "בלי נמענים");
+  if (typeof d.recipients === "number") parts.push(`${d.recipients} נמענים`);
+  if (typeof d.enabled === "boolean" && d.name === "summary") parts.push(d.enabled ? "שליחה אוטומטית פעילה" : "שליחה אוטומטית כבויה");
+  if (d.month && d.name === "summary") parts.push(`הסיכום של ${monthName(d.month)}`, d.auto ? "נשלח אוטומטית" : "נשלח ידנית");
   if (typeof d.model === "string" && d.provider) parts.push(`${PROVIDER_FULL[d.provider] || d.provider} · ${d.model}`);
   if (d.rpm) parts.push(`${d.rpm} בקשות לדקה`);
   if (d.daily_tokens) parts.push(`${d.daily_tokens} טוקנים ליום`);
@@ -871,7 +932,7 @@ function openAccount(a) {
   $("aDaily").value = a ? a.daily_tokens || 0 : 0;
   const ymd = ts => { const d = new Date(ts * 1000), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
   $("aKeyExpires").value = $("aKeyExpires").dataset.was = a && a.key_expires ? ymd(a.key_expires) : "";
-  modelChecks($("aModels"), a ? a.models : [state.default_model || state.models[0]]);
+  modelChecks($("aModels"), a ? a.models : [state.default_model || state.models[0]], teamModelsOf($("aTeam").value));
   $("pwLabel").textContent = a ? "סיסמה חדשה לצ'אט (ריק = בלי שינוי; גם משחרר נעילה)" : "סיסמה לכניסה לצ'אט (לפחות 8 תווים; ריק = בלי צ'אט)";
   $("aPassword").value = "";
   $("keyField").hidden = !!a;
@@ -896,6 +957,7 @@ function openAccount(a) {
   $("accountDialog").showModal();
 }
 $("newAccount").onclick = () => openAccount(null);
+$("aTeam").onchange = $("aModels").onchange = () => markTeamBlocked($("aModels"), teamModelsOf($("aTeam").value));
 $("accountForm").onsubmit = async e => {
   e.preventDefault();
   const body = { team: $("aTeam").value, budget: Number($("aBudget").value), rpm: Number($("aRpm").value || 0), models: checkedModels($("aModels")),
@@ -924,6 +986,9 @@ function openTeam(t) {
   $("tName").required = !t;
   $("tName").value = "";
   $("tBudget").value = t ? t.budget : 0;
+  $("tCostCenter").value = t ? t.cost_center : "";
+  $("tGlAccount").value = t ? t.gl_account : "";
+  modelChecks($("tModels"), t && t.models ? t.models : []);
   $("teamError").textContent = "";
   $("teamDialog").showModal();
 }
@@ -931,7 +996,8 @@ $("newTeam").onclick = () => openTeam(null);
 $("teamForm").onsubmit = async e => {
   e.preventDefault();
   try {
-    await api("teams", { name: editingTeam || $("tName").value, budget: Number($("tBudget").value) });
+    await api("teams", { name: editingTeam || $("tName").value, budget: Number($("tBudget").value), cost_center: $("tCostCenter").value,
+      gl_account: $("tGlAccount").value, models: checkedModels($("tModels")) });
     $("teamDialog").close();
     UI.toast(editingTeam ? `צוות ${editingTeam} עודכן.` : "הצוות נוצר.");
     load();
@@ -1031,8 +1097,92 @@ async function loadReport() {
     el("td", { className: "num", dataset: { label: "מתוכם מהמטמון" } }, num((r.cache_read || 0).toLocaleString(I18N.locale))),
     el("td", { className: "num", dataset: { label: "הוצאה" } }, num(money(r.cost))))));
   empty($("reportModels"), 5);
+  loadChargeback(report.month);
+  loadSummary();
 }
 $("reportMonth").onchange = loadReport;
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = el("a", { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- chargeback: each team's month with its accounting codes ----------
+// the file is built here from the JSON (the same columns and rules as the server's CSV), so it works in the static demo too
+let chargeback = null;
+const CB_FIELDS = ["month", "team", "cost_center", "gl_account", "requests", "tokens_in", "tokens_out", "cost_usd"];
+async function loadChargeback(month) {
+  try { chargeback = await api("chargeback?month=" + month); } catch (e) { return fail(e); }
+  const row = (r, total) => el("tr", {},
+    el("td", { className: "name" }, el("b", { textContent: total ? "סה\"כ" : r.team })),
+    el("td", { className: "ltr", dataset: { label: "מרכז עלות" }, textContent: r.cost_center || "—" }),
+    el("td", { className: "ltr", dataset: { label: "חשבון" }, textContent: r.gl_account || "—" }),
+    el("td", { className: "num", dataset: { label: "בקשות" } }, num(r.requests.toLocaleString(I18N.locale))),
+    el("td", { className: "num", dataset: { label: "טוקנים נכנסים" } }, num(r.tokens_in.toLocaleString(I18N.locale))),
+    el("td", { className: "num", dataset: { label: "טוקנים יוצאים" } }, num(r.tokens_out.toLocaleString(I18N.locale))),
+    el("td", { className: "num", dataset: { label: "עלות" } }, num("$" + r.cost_usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }))));
+  $("cbRows").replaceChildren(...chargeback.rows.map(r => row(r, false)));
+  $("cbTotal").replaceChildren(chargeback.rows.length ? row(chargeback.total, true)
+    : el("tr", {}, el("td", { colSpan: 7, className: "empty", textContent: "אין שימוש בחודש הזה" })));
+}
+$("cbCsv").onclick = () => {
+  if (!chargeback) return;
+  // a text cell starting with = + - @ would run as a formula in Excel: it gets a leading apostrophe
+  const cell = (k, v) => k === "cost_usd" ? v.toFixed(2) : typeof v === "string" && /^[=+\-@\t\r]/.test(v) ? "'" + v : String(v);
+  const q = v => /[",\r\n]/.test(v) ? `"${v.replaceAll('"', '""')}"` : v;
+  const lines = [CB_FIELDS.join(","), ...[...chargeback.rows, chargeback.total].map(r => CB_FIELDS.map(k => q(cell(k, r[k]))).join(","))];
+  download(`firegate-chargeback-${chargeback.month}.csv`, "﻿" + lines.join("\r\n") + "\r\n", "text/csv;charset=utf-8");
+};
+$("cbJson").onclick = () => { if (chargeback) download(`firegate-chargeback-${chargeback.month}.json`, JSON.stringify(chargeback, null, 2), "application/json"); };
+
+// ---------- monthly summary by email ----------
+let summary = null;
+async function loadSummary() {
+  try { summary = await api("summary/settings"); } catch (e) { return fail(e); }
+  if (document.activeElement?.closest("#summaryForm") == null) {
+    $("sumRecipients").value = summary.recipients;
+    $("sumEnabled").setAttribute("aria-checked", String(summary.enabled));
+  }
+  $("smtpStatus").replaceChildren(el("span", { className: "badge " + (summary.smtp_configured ? "good" : "warn"),
+    title: summary.smtp_configured ? "" : "צריך למלא SMTP_HOST ו-SMTP_FROM בהגדרות השרת",
+    textContent: summary.smtp_configured ? "שרת הדואר מוגדר" : "שרת הדואר לא מוגדר" }));
+  $("sumSent").textContent = summary.sent.length ? `נשלח לאחרונה: הסיכום של ${monthName(summary.sent[0])}` : "עוד לא נשלח סיכום.";
+}
+$("sumEnabled").onclick = () => $("sumEnabled").setAttribute("aria-checked", String($("sumEnabled").getAttribute("aria-checked") !== "true"));
+$("summaryForm").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    await api("summary/settings", { name: "summary", recipients: $("sumRecipients").value, enabled: $("sumEnabled").getAttribute("aria-checked") === "true" });
+    document.activeElement.blur();
+    await loadSummary();
+    UI.toast("הגדרות הסיכום החודשי נשמרו.");
+  } catch (err) { fail(err); }
+};
+// the email is our own HTML, but it carries names people typed: it is shown only inside a sandboxed frame (no scripts, no
+// access to this page), never inserted into the admin page itself
+// building the summary reads two months of logs: on a large log that takes a while, so the button shows it is working
+const busy = async (btn, fn) => {
+  btn.classList.add("busy");
+  btn.setAttribute("aria-busy", "true");
+  try { await fn(); } catch (e) { fail(e); } finally { btn.classList.remove("busy"); btn.removeAttribute("aria-busy"); }
+};
+$("sumPreview").onclick = () => busy($("sumPreview"), async () => {
+  const p = await api("summary?month=" + $("reportMonth").value);
+  $("summarySubject").textContent = p.subject;
+  $("summaryFrame").srcdoc = p.html;
+  $("summaryDialog").showModal();
+});
+$("sumSend").onclick = async () => {
+  const month = $("reportMonth").value, to = (summary && summary.recipients) || "";
+  if (!await UI.confirm({ title: "לשלוח את הסיכום עכשיו?", ok: "שליחה",
+    body: to ? `הסיכום של ${monthName(month)} יישלח עכשיו לנמענים השמורים: ${to}` : "אין עדיין נמענים שמורים." })) return;
+  await busy($("sumSend"), async () => {
+    await api("summary/send", { name: "summary", month });
+    await loadSummary();
+    UI.toast(`הסיכום של ${monthName(month)} נשלח.`);
+  });
+};
 // one file with three sections; the byte-order mark makes Excel read the Hebrew correctly
 $("reportCsv").onclick = () => {
   if (!report) return;
@@ -1046,10 +1196,7 @@ $("reportCsv").onclick = () => {
     row(["לפי מודל"]), row(["מודל", "בקשות", "טוקנים נכנסים", "טוקנים יוצאים", "טוקנים מהמטמון", "הוצאה ($)"]),
     ...report.by_model.map(r => row([r.key, r.requests, r.tokens_in, r.tokens_out, r.cache_read || 0, r.cost.toFixed(4)])), "",
     row(["סה\"כ", report.totals.requests, report.totals.cost.toFixed(4)])];
-  const url = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
-  const a = el("a", { href: url, download: `ai-usage-${report.month}.csv` });
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  download(`ai-usage-${report.month}.csv`, "\ufeff" + lines.join("\r\n"), "text/csv;charset=utf-8");
 };
 
 // ---------- models charts ----------
@@ -1250,13 +1397,14 @@ const secLabels = {
     "admin-denied": "סיסמת מנהל שגויה מבחוץ", "document-refused": "מסמך חשוד לא נקלט", "document-forced": "מסמך חשוד הועלה באישור",
     "document-flagged": "מסמך חשוד נשלח למודל", "answer-masked": "מפתח גישה הוסתר מתשובה", "suspicious-link": "קישור חשוד בתשובה",
     "prompt-leak": "התשובה חשפה את ההוראות של השער", "mcp-tool-refused": "כלי MCP שמשנה מידע לא הופעל",
-    "cost-spike": "הוצאה חריגה", "login-throttled": "יותר מדי סיסמאות שגויות מאותה כתובת" },
+    "cost-spike": "הוצאה חריגה", "login-throttled": "יותר מדי סיסמאות שגויות מאותה כתובת", "summary-failed": "שליחת הסיכום החודשי נכשלה" },
   found: { "prompt-injection": "ניסיון לעקוף הוראות", "jailbreak": "ניסיון לשחרר את המודל מהכללים", "script": "קוד דפדפן", "dangerous-command": "פקודה מסוכנת" },
   bad: new Set(["cross-site-request", "bad-host", "admin-denied", "account-locked", "document-forced", "sensitive-data-blocked",
-    "cost-spike", "login-throttled", "prompt-leak", "mcp-tool-refused"]),
+    "cost-spike", "login-throttled", "prompt-leak", "mcp-tool-refused", "summary-failed"]),
   reasons: { "budget": "התקציב האישי נגמר", "team-budget": "תקציב הצוות נגמר", "rate-limit": "יותר מדי בקשות בדקה",
     "daily-quota": "נגמרו הטוקנים להיום", "concurrency": "יותר מדי שאלות במקביל", "policy-injection": "ניסיון לעקוף הוראות",
-    "policy-sensitive": "מידע רגיש", "model-not-allowed": "מודל לא מורשה", "model-off": "המודל כבוי", "key-expired": "מפתח שפג תוקפו",
+    "policy-sensitive": "מידע רגיש", "model-not-allowed": "מודל לא מורשה", "model-not-allowed-team": "מודל שהצוות לא מורשה בו",
+    "model-off": "המודל כבוי", "key-expired": "מפתח שפג תוקפו",
     "too-many-messages": "יותר מדי הודעות בבקשה אחת" },
 };
 function secDetail(e) {
@@ -1275,6 +1423,7 @@ function secDetail(e) {
   if (Array.isArray(d.links)) parts.push(`קישורים: ${d.links.join(", ")}`);
   if (e.kind === "cost-spike") parts.push(`שעה אחרונה ${money(d.hour)}, בדרך כלל ${money(d.average)} לשעה`);
   if (d.action === "blocked") parts.push("נחסמה");
+  if (e.kind === "summary-failed") parts.push(`הסיכום של ${monthName(d.month)}`, `ניסיון ${d.try} מתוך 3`, d.error);
   const box = el("div", { className: "stack" }, el("span", { textContent: parts.join(" · ") }));
   if (d.excerpt) box.append(el("span", { className: "muted small", dir: "auto", textContent: "“" + d.excerpt + "”" }));
   return box;
