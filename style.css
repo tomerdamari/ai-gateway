@@ -438,3 +438,17 @@ legend { padding: 0 .4rem; font-weight: 700; color: var(--ink); font-size: .8125
 
 /* dashboard sections as in Slate: no fill of their own (the page's grey shows through), a 2px border and the soft shadow */
 [data-page="overview"] .card { background: transparent; border: 2px solid var(--line); }
+
+/* on computers the content area scrolls, not the page: browsers keep the page's own scrollbar on the right even in
+   Hebrew, but an inner area's scrollbar follows the language (left in Hebrew, right in English).
+   Phones keep normal page scrolling so the browser's address bar can still hide. */
+@media (min-width: 992px) {
+  body.scroll-main { height: 100vh; height: 100dvh; overflow: hidden; }
+  body.scroll-main .wrapper { height: 100vh; height: 100dvh; min-height: 0; }
+  body.scroll-main .main { height: 100%; overflow-y: auto; }
+}
+
+/* top bar: refresh and language as plain clickable text with an icon, not framed buttons */
+.navbar-end button.ghost { background: transparent; border-color: transparent; box-shadow: none; padding-inline: .5rem; color: var(--muted); font-weight: 600; }
+.navbar-end button.ghost:hover { background: transparent; border-color: transparent; box-shadow: none; color: var(--ink); }
+.navbar-end button.ghost:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

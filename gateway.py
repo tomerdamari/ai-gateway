@@ -57,7 +57,7 @@ if os.path.exists(_env):
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip())
 
-VERSION = "1.2.2"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
+VERSION = "1.2.3"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
 DB =os.environ.get("GATEWAY_DB", "gateway.db")
 # Every adjustable value (admin password, open access, allowed host names, limits, thresholds, provider keys...) is a
 # setting: settings.py lists them all, cfg() reads one. The server's environment / .env wins over the settings screen.

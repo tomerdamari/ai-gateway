@@ -1,7 +1,7 @@
 // Shared page pieces for the admin and chat screens: in-page confirmation dialog and short notices.
 // Replaces the browser's own alert/confirm boxes, which look foreign and can't carry formatting.
 const UI = (() => {
-  const VERSION = "1.2.2";  // same as VERSION in gateway.py
+  const VERSION = "1.2.3";  // same as VERSION in gateway.py
   addEventListener("DOMContentLoaded", () => document.querySelectorAll("[data-version]").forEach(e => { e.textContent = "v" + VERSION; }));
   const make = (tag, props = {}, ...kids) => {
     const e = Object.assign(document.createElement(tag), props);

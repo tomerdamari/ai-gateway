@@ -77,6 +77,8 @@ addEventListener("hashchange", () => {
 // a person's page gets its own history entry, so Back returns to the list it was opened from
 const userHash = name => "#user=" + encodeURIComponent(name);
 const userLink = name => el("a", { className: "user-link", href: userHash(name), textContent: name });
+// back to the top of the page, whichever part scrolls (the content area on computers, the page on phones)
+const toTop = () => { scrollTo(0, 0); document.querySelector(".main")?.scrollTo(0, 0); };
 function showTab(name) {
   tab = name;
   if (name !== "user") try { sessionStorage.setItem("tab", name); } catch {}
@@ -84,7 +86,7 @@ function showTab(name) {
   document.querySelectorAll(".sidebar [data-tab]").forEach(b => b.dataset.tab === menu ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   const changed = document.querySelector(`[data-page="${name}"]`)?.hidden;
   document.querySelectorAll("[data-page]").forEach(s => s.hidden = s.dataset.page !== name);
-  if (changed) scrollTo(0, 0);
+  if (changed) toTop();
   renderCrumbs(name);
   const want = name === "user" ? userHash(userName) : "#" + name;
   if (location.hash !== want) history.replaceState(null, "", want);
@@ -1936,7 +1938,7 @@ function renderSettings() {
   const name = s => lang2(s.he, s.en);
   const changedIn = id => setData.settings.filter(s => s.section === id && s.changed).length;
   $("setSections").replaceChildren(...setData.sections.map(sec => el("li", {}, el("button", { type: "button",
-    ariaCurrent: !q && sec.id === setSection ? "page" : null, onclick: () => { $("setSearch").value = ""; setSection = sec.id; renderSettings(); scrollTo(0, 0); } },
+    ariaCurrent: !q && sec.id === setSection ? "page" : null, onclick: () => { $("setSearch").value = ""; setSection = sec.id; renderSettings(); toTop(); } },
     el("span", { textContent: name(sec) }), changedIn(sec.id) ? el("span", { className: "badge", title: "הגדרות ששונו מברירת המחדל", textContent: String(changedIn(sec.id)) }) : null))));
   $("setSectionSelect").replaceChildren(...setData.sections.map(sec => el("option", { value: sec.id, textContent: name(sec) })));
   $("setSectionSelect").value = setSection;

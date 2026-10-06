@@ -1,5 +1,15 @@
 # שינויים / Changelog
 
+## 1.2.3 — 2026-10-06
+
+- פס הגלילה בצד של השפה: בעברית משמאל, באנגלית מימין (במחשב; בטלפון הגלילה רגילה).
+- "רענון" ומעבר השפה בפס העליון נראים כטקסט לחיץ עם אייקון, בלי מסגרת של כפתור.
+
+---
+
+- The scrollbar sits on the language's side: left in Hebrew, right in English (on computers; phones scroll as usual).
+- "Refresh" and the language switch in the top bar look like clickable text with an icon, without a button frame.
+
 ## 1.2.2 — 2026-10-06
 
 - בצ'אט, במצב כניסה בלי סיסמה, המשתמש "מנהל" נבחר אוטומטית כשעוד לא נבחר שם. הוא נוצר בפעם הראשונה בלי תקרת תקציב ועם כל המודלים. אפשר לעבור לשם אחר מהרשימה, ולשנות או לבטל את הבחירה האוטומטית במסך ההגדרות ("משתמש שנבחר אוטומטית בצ'אט").
