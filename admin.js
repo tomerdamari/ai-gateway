@@ -28,7 +28,8 @@ const actionNames = { create: "חשבון נוצר", update: "חשבון עוד�
   "source-delete": "מקור מידע נמחק", "source-upload": "הועלו מסמכים", "source-sync": "תיקייה סונכרנה",
   "model-save": "מודל נשמר", "model-delete": "מודל נמחק", "model-default": "נקבע מודל ברירת מחדל", "model-auto": "בחירה אוטומטית עודכנה",
   "security-policy": "מדיניות האבטחה עודכנה", archive: "הועבר לארכיון", restore: "שוחזר מהארכיון",
-  "summary-settings": "הגדרות הסיכום החודשי עודכנו", "summary-sent": "הסיכום החודשי נשלח", "local-server": "כתובת שרת המודלים המקומי עודכנה" };
+  "summary-settings": "הגדרות הסיכום החודשי עודכנו", "summary-sent": "הסיכום החודשי נשלח", "local-server": "כתובת שרת המודלים המקומי עודכנה",
+  setting: "הגדרה שונתה", "team-setting": "הגדרה מיוחדת לצוות", "settings-import": "הגדרות יובאו", backup: "גיבוי" };
 // what can be archived (nothing is ever deleted) and restored from the archive page
 const ARCHIVE_KINDS = { account: "משתמש", team: "צוות", model: "מודל", source: "מקור מידע", doc: "מסמך", chat: "שיחה" };
 // archive one item after a confirm; the item leaves the lists and stops working, and stays restorable
@@ -46,7 +47,7 @@ async function api(path, body) {
   });
   const data = await r.json();
   if (r.status === 401) { showLogin(pw ? "סיסמה שגויה" : ""); throw new Error("unauthorized"); }
-  if (!r.ok) throw new Error(data.error || r.status);
+  if (!r.ok) throw Object.assign(new Error(data.error || r.status), { errors: data.errors });
   return data;
 }
 
@@ -63,10 +64,15 @@ if (tab === "user") tab = "accounts";  // a person's page comes back only throug
 const hashTab = () => location.hash.slice(1);
 const hashUser = () => { const h = hashTab(); try { return h.startsWith("user=") ? decodeURIComponent(h.slice(5)) : null; } catch { return null; } };
 const isPage = h => /^[a-z]+$/.test(h) && h !== "user" && !!document.querySelector(`[data-page="${h}"]`);
+// #settings=<key>: the settings page, scrolled to that setting
+const hashSetting = () => { const h = hashTab(); return h.startsWith("settings=") ? decodeURIComponent(h.slice(9)) : null; };
+let setFocus = null;
 // links like /#models from the docs page, and #user=<name> for one person
-if (hashUser()) { tab = "user"; userName = hashUser(); } else if (isPage(hashTab())) tab = hashTab();
+if (hashUser()) { tab = "user"; userName = hashUser(); } else if (hashSetting()) { tab = "settings"; setFocus = hashSetting(); } else if (isPage(hashTab())) tab = hashTab();
 addEventListener("hashchange", () => {
-  if (hashUser()) { userName = hashUser(); showTab("user"); } else if (isPage(hashTab())) showTab(hashTab());
+  if (hashUser()) { userName = hashUser(); showTab("user"); }
+  else if (hashSetting()) { setFocus = hashSetting(); showTab("settings"); }
+  else if (isPage(hashTab())) showTab(hashTab());
 });
 // a person's page gets its own history entry, so Back returns to the list it was opened from
 const userHash = name => "#user=" + encodeURIComponent(name);
@@ -86,6 +92,7 @@ function showTab(name) {
   if (name === "models") { drawModelCharts(); drawSpeedChart(); }
   if (name === "reports") loadReport();
   if (name === "user") loadUser();
+  if (name === "settings" && setFocus) openSetting(setFocus);
 }
 // breadcrumbs from the side menu itself: FireGate › section › page (› person, on a person's page)
 function renderCrumbs(name) {
@@ -252,7 +259,9 @@ const MODEL_ERRORS = {
   "only folder sources and MCP sources in sync mode can be synced": "אפשר לסנכרן רק תיקייה או שרת MCP במצב סנכרון",
   "turn the model on before making it the default": "קודם מדליקים את המודל, ואז אפשר לקבוע אותו כברירת מחדל",
   "local model server address must look like http://server:11434/v1": "כתובת השרת צריכה להיראות כך: http://server:11434/v1",
-  "no address set for the local model server": "עוד לא נשמרה כתובת לשרת המודלים המקומי" };
+  "no address set for the local model server": "עוד לא נשמרה כתובת לשרת המודלים המקומי",
+  "no model for this provider": "אין ברשימת המודלים מודל של הספק הזה, ולכן אין מה לבדוק",
+  "invalid settings": "חלק מהערכים לא תקינים", "no changes": "אין שינויים לשמור", "not a settings file": "הקובץ הוא לא קובץ הגדרות של FireGate" };
 const ERRORS = { ...MODEL_ERRORS, "nothing to update": "אין מה לעדכן", "pick at least one known model": "צריך לבחור לפחות מודל אחד",
   "password must be at least 8 characters": "הסיסמה צריכה להיות באורך 8 תווים לפחות", "budget must be >= 0": "התקציב לא יכול להיות שלילי",
   "name is required": "צריך למלא שם", "give a password (chat login) or an API key, or both": "צריך סיסמה לצ'אט, מפתח API, או את שניהם",
@@ -499,7 +508,7 @@ async function load() {
   if (!loadedOnce) $("loadState").replaceChildren(el("div", { className: "grid kpis" }, ...[1, 2, 3, 4].map(() => el("div", { className: "skeleton" }))));
   let data;
   try {
-    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity"), api("audit/verify"), api("archive"), api("savings"), api("latency")]);
+    data = await Promise.all([api("overview"), api("usage"), api("daily"), api("logs"), api("audit"), api("sources"), api("security"), api("models"), api("models/daily"), api("sources/status"), api("activity"), api("audit/verify"), api("archive"), api("savings"), api("latency"), api("settings"), api("teams/settings")]);
   } catch (e) {
     if (e.message !== "unauthorized") {
       showTab(tab);
@@ -515,7 +524,11 @@ async function load() {
   }
   loadedOnce = true;
   $("loadState").replaceChildren();
-  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act, verify, archived, sav, lat] = data;
+  const [ov, usage, d, lg, audit, src, sec, mdl, mdaily, sstat, act, verify, archived, sav, lat, sets, teamSets] = data;
+  setData = sets;
+  setByKey = Object.fromEntries(sets.settings.map(s => [s.key, s]));
+  teamOverrides = teamSets.teams || {};
+  renderSettings();
   savingsData = sav;
   speedData = lat;
   activity = act;
@@ -564,14 +577,14 @@ async function load() {
   const alerts = [];
   for (const a of ov.accounts) {
     const lv = level(a.spent, a.budget);
-    if (lv) alerts.push([lv, lv === "bad" ? `${a.name}: התקציב האישי נגמר (${money(a.spent)} מתוך ${money(a.budget)}). חסום עד 1 לחודש או עד הגדלת תקציב.`
+    if (lv) alerts.push([lv, lv === "bad" ? `${a.name}: התקציב האישי נגמר (${money(a.spent)} מתוך ${money(a.budget)}). חסום עד ה-${S("budget_reset_day")} לחודש או עד הגדלת תקציב.`
       : `${a.name}: עבר ${Math.round(a.spent / a.budget * 100)}% מהתקציב האישי.`, null, a.name]);
-    if (a.locked) alerts.push(["warn", `${a.name}: החשבון נעול אחרי 5 סיסמאות שגויות. איפוס סיסמה משחרר אותו.`, null, a.name]);
-    // API keys: replace before the expiry date (14 days ahead), and every 90 days in any case
+    if (a.locked) alerts.push(["warn", `${a.name}: החשבון נעול אחרי ${S("lock_after")} סיסמאות שגויות. איפוס סיסמה משחרר אותו.`, null, a.name]);
+    // API keys: replace before the expiry date (key_expiry_warn_days ahead), and every key_max_age_days in any case
     const now = Date.now() / 1000, days = s => Math.max(Math.round(s / 86400), 0);
     if (a.key_expires && a.key_expires < now) alerts.push(["bad", `${a.name}: המפתח לאפליקציות פג תוקף, ולכן הבקשות שלו נחסמות. צריך להנפיק מפתח חדש.`, null, a.name]);
-    else if (a.key_expires && a.key_expires - now < 14 * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות יפוג בעוד ${days(a.key_expires - now)} ימים. כדאי להנפיק מפתח חדש ולהעביר אותו לאפליקציה.`, null, a.name]);
-    else if (a.key_created && now - a.key_created > 90 * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות בשימוש כבר ${days(now - a.key_created)} ימים. מומלץ להחליף מפתח כל 90 יום.`, null, a.name]);
+    else if (a.key_expires && a.key_expires - now < S("key_expiry_warn_days") * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות יפוג בעוד ${days(a.key_expires - now)} ימים. כדאי להנפיק מפתח חדש ולהעביר אותו לאפליקציה.`, null, a.name]);
+    else if (a.key_created && now - a.key_created > S("key_max_age_days") * 86400) alerts.push(["warn", `${a.name}: המפתח לאפליקציות בשימוש כבר ${days(now - a.key_created)} ימים. מומלץ להחליף מפתח כל ${S("key_max_age_days")} יום.`, null, a.name]);
   }
   for (const s of security.spikes || []) alerts.push(["bad", `${s.name}: הוצאה חריגה בשעה האחרונה (${money(s.hour)}, בדרך כלל ${money(s.average)} לשעה). כדאי לבדוק שהמפתח לא דלף.`, null, s.name]);
   if (auditCheck && !auditCheck.ok) alerts.push(["bad", "מישהו שינה או מחק שורות ביומן השינויים מחוץ למערכת.", "security"]);
@@ -664,11 +677,7 @@ async function load() {
 
 // ---------- savings recommendations: the top three on the dashboard, all of them on the "to handle" page ----------
 let savingsData = { recommendations: [], total_monthly_saving: 0 };
-function goAuto() {
-  showTab("models");
-  $("autoForm").closest(".card").scrollIntoView({ block: "center" });
-  $("autoEnabled").focus();
-}
+function goAuto() { location.hash = "#settings=auto_enabled"; }
 function savingsAction(r) {
   if (r.kind === "unused-model") {
     const m = modelsData.models.find(x => x.alias === r.from_model);
@@ -731,6 +740,13 @@ document.querySelectorAll("button.sort").forEach(b => b.onclick = () => {
 });
 
 function describe(d) {
+  const arrow = I18N.lang === "en" ? " → " : " ← ";
+  const st = setByKey[d.key || d.name];
+  if (st && "new" in d && !d.key) return [sLabel(st), st.type === "secret" ? (d.new === "cleared" ? "הוסר מהמסך" : "הוחלף")
+    : fmtValue(st, d.old) + arrow + fmtValue(st, d.new)].join(" · ");
+  if (st && d.key) return [`צוות ${d.name}`, sLabel(st), d.new === null ? "כמו ההגדרה הכללית" : fmtValue(st, d.new)].join(" · ");
+  if (d.name === "backup" && d.file) return [d.file, d.auto ? "גיבוי אוטומטי" : "גיבוי ידני"].join(" · ");
+  if (d.name === "settings" && "changed" in d) return `${d.changed} הגדרות שונו`;
   const parts = [];
   if (d.kind) parts.push(ARCHIVE_KINDS[d.kind] || d.kind);
   if (d.name) parts.push(d.name);
@@ -998,6 +1014,7 @@ function openTeam(t) {
   $("tCostCenter").value = t ? t.cost_center : "";
   $("tGlAccount").value = t ? t.gl_account : "";
   modelChecks($("tModels"), t && t.models ? t.models : []);
+  renderTeamSettings(t ? t.name : null);
   $("teamError").textContent = "";
   $("teamDialog").showModal();
 }
@@ -1007,10 +1024,11 @@ $("teamForm").onsubmit = async e => {
   try {
     await api("teams", { name: editingTeam || $("tName").value, budget: Number($("tBudget").value), cost_center: $("tCostCenter").value,
       gl_account: $("tGlAccount").value, models: checkedModels($("tModels")) });
+    if (editingTeam) await saveTeamSettings(editingTeam);
     $("teamDialog").close();
     UI.toast(editingTeam ? `צוות ${editingTeam} עודכן.` : "הצוות נוצר.");
     load();
-  } catch (err) { $("teamError").textContent = hebrew(err.message); }
+  } catch (err) { $("teamError").textContent = err.errors ? Object.entries(err.errors).map(([k, e]) => `${setByKey[k] ? sLabel(setByKey[k]) : k}: ${errText(e)}`).join("; ") : hebrew(err.message); }
 };
 
 // ---------- models ----------
@@ -1048,23 +1066,17 @@ async function testModel(m, btn) {
   } catch (e) { fail(e); }
   finally { btn.classList.remove("busy"); btn.removeAttribute("aria-busy"); }
 }
-// ---------- automatic choice ----------
+// ---------- automatic choice: the current values; they are changed on the settings page ----------
 function renderAuto() {
-  const a = modelsData.auto, on = modelsData.models.filter(m => m.enabled);
-  $("autoEnabled").setAttribute("aria-checked", String(a.enabled));
-  for (const [id, val] of [["autoCheap", a.cheap], ["autoStrong", a.strong]]) {
-    $(id).replaceChildren(...on.map(m => el("option", { value: m.alias, textContent: `${m.label || m.alias} ($${m.price_in} / $${m.price_out})` })));
-    $(id).value = val;
-  }
+  const a = modelsData.auto;
+  $("autoLine").replaceChildren(...[
+    el("span", { className: "badge " + (a.enabled ? "good" : ""), textContent: a.enabled ? "פעילה" : "כבויה" }),
+    el("span", {}, "מודל זול: ", el("b", { textContent: modelName(a.cheap) })),
+    el("span", {}, "מודל חזק: ", el("b", { textContent: modelName(a.strong) })),
+    a.prefer_fast ? el("span", { textContent: "מעדיפה את המודל המהיר" }) : null,
+    settingLink("auto_enabled")].filter(Boolean));
   $("autoCount").textContent = a.count ? `${a.count.toLocaleString(I18N.locale)} שאלות נותבו החודש` : "";
-  $("autoFast").checked = !!a.prefer_fast;
 }
-$("autoEnabled").onclick = () => $("autoEnabled").setAttribute("aria-checked", String($("autoEnabled").getAttribute("aria-checked") !== "true"));
-$("autoForm").onsubmit = run(async () => {
-  await api("models/auto", { name: "auto", enabled: $("autoEnabled").getAttribute("aria-checked") === "true",
-    cheap: $("autoCheap").value, strong: $("autoStrong").value, prefer_fast: $("autoFast").checked });
-}, "הגדרות הבחירה האוטומטית נשמרו.");
-$("autoForm").addEventListener("submit", e => e.preventDefault(), true);
 
 // ---------- reports ----------
 let report = null;
@@ -1150,25 +1162,17 @@ $("cbJson").onclick = () => { if (chargeback) download(`firegate-chargeback-${ch
 let summary = null;
 async function loadSummary() {
   try { summary = await api("summary/settings"); } catch (e) { return fail(e); }
-  if (document.activeElement?.closest("#summaryForm") == null) {
-    $("sumRecipients").value = summary.recipients;
-    $("sumEnabled").setAttribute("aria-checked", String(summary.enabled));
-  }
+  $("sumLine").replaceChildren(
+    el("span", { className: "badge " + (summary.enabled ? "good" : ""), textContent: summary.enabled ? "שליחה אוטומטית פעילה" : "שליחה אוטומטית כבויה" }),
+    el("span", { textContent: summary.recipients ? `נמענים: ${summary.recipients}` : "אין נמענים" }),
+    el("span", { textContent: `ב-${summary.day} לכל חודש, ${String(summary.hour).padStart(2, "0")}:00` }),
+    settingLink("summary_enabled"));
   $("smtpStatus").replaceChildren(el("span", { className: "badge " + (summary.smtp_configured ? "good" : "warn"),
     title: summary.smtp_configured ? "" : "צריך למלא SMTP_HOST ו-SMTP_FROM בהגדרות השרת",
     textContent: summary.smtp_configured ? "שרת הדואר מוגדר" : "שרת הדואר לא מוגדר" }));
   $("sumSent").textContent = summary.sent.length ? `נשלח לאחרונה: הסיכום של ${monthName(summary.sent[0])}` : "עוד לא נשלח סיכום.";
 }
-$("sumEnabled").onclick = () => $("sumEnabled").setAttribute("aria-checked", String($("sumEnabled").getAttribute("aria-checked") !== "true"));
-$("summaryForm").onsubmit = async e => {
-  e.preventDefault();
-  try {
-    await api("summary/settings", { name: "summary", recipients: $("sumRecipients").value, enabled: $("sumEnabled").getAttribute("aria-checked") === "true" });
-    document.activeElement.blur();
-    await loadSummary();
-    UI.toast("הגדרות הסיכום החודשי נשמרו.");
-  } catch (err) { fail(err); }
-};
+
 // the email is our own HTML, but it carries names people typed: it is shown only inside a sandboxed frame (no scripts, no
 // access to this page), never inserted into the admin page itself
 // building the summary reads two months of logs: on a large log that takes a while, so the button shows it is working
@@ -1406,7 +1410,9 @@ $("modelForm").onsubmit = async e => {
 let localOffered = [];  // model ids the server listed at the last connection check
 function renderLocal() {
   const local = modelsData.local || { url: "" };
-  if (document.activeElement !== $("localUrl")) $("localUrl").value = local.url;
+  $("localLine").replaceChildren(el("span", {}, "כתובת השרת: ", local.url ? el("b", { className: "ltr", textContent: local.url }) : el("span", { className: "muted", textContent: "לא נקבעה" })),
+    settingLink("local_base_url"));
+  $("localTest").disabled = !local.url;
   $("localStatus").replaceChildren(local.url ? el("span", { className: "badge good", textContent: "כתובת שמורה" })
     : el("span", { className: "badge", textContent: "לא מוגדר" }));
   renderLocalOffered();
@@ -1426,13 +1432,8 @@ function renderLocalOffered() {
         await api("models", { name: alias, label: localLabel(id) + " (מקומי)", provider: "local", model: id, price_in: 0, price_out: 0, enabled: true });
       }, `${localLabel(id)} נוסף לרשימת המודלים, במחיר 0. אפשר לשנות מחיר בעריכה, ולהתיר אותו למשתמשים.`) }))));
 }
-$("localForm").onsubmit = run(async () => {
-  await api("local", { name: "local", url: $("localUrl").value });
-  document.activeElement.blur();
-}, "כתובת השרת נשמרה.");
-$("localForm").addEventListener("submit", e => e.preventDefault(), true);
 $("localTest").onclick = () => busy($("localTest"), async () => {
-  const r = await api("local/test", { name: "local", url: $("localUrl").value });
+  const r = await api("local/test", { name: "local" });
   if (!r.ok) { localOffered = []; renderLocalOffered(); return UI.toast(`השרת לא עונה: ${hebrew(r.error)}`, { kind: "bad", timeout: 12000 }); }
   localOffered = r.models;
   renderLocalOffered();
@@ -1572,15 +1573,15 @@ function renderSecurity() {
 
   // "send to the local model" needs a local model that is on; without one the gateway masks instead
   const hasLocal = modelsData.models.some(m => m.provider === "local" && m.enabled);
-  $("pSensitiveLocal").disabled = !hasLocal && security.policy.sensitive !== "local";
-  $("pSensitiveNote").textContent = hasLocal
-    ? "\"לשלוח למודל המקומי\": שאלה עם מידע רגיש נענית בלי הסתרה במודל שרץ על שרת החברה, אם העובד מורשה להשתמש בו. אחרת המידע מוסתר."
-    : security.policy.sensitive === "local" ? "אין מודל מקומי פעיל, ולכן המידע מוסתר בינתיים."
-    : "\"לשלוח למודל המקומי\" נפתח אחרי שמוסיפים מודל משרת החברה בעמוד המודלים.";
-  if (security.policy && security.policy.injection && document.activeElement?.closest("#policyForm") == null) {
-    $("pInjection").value = security.policy.injection;
-    $("pSensitive").value = security.policy.sensitive;
-  }
+  $("pSensitiveNote").textContent = security.policy.sensitive !== "local" ? ""
+    : hasLocal ? "\"לשלוח למודל המקומי\": שאלה עם מידע רגיש נענית בלי הסתרה במודל שרץ על שרת החברה, אם העובד מורשה להשתמש בו. אחרת המידע מוסתר."
+    : "אין מודל מקומי פעיל, ולכן המידע מוסתר בינתיים.";
+  const teamsWith = Object.values(teamOverrides).filter(t => "policy_injection" in t || "policy_sensitive" in t).length;
+  $("policyLine").replaceChildren(...[
+    el("span", {}, "עקיפת הוראות: ", el("b", { textContent: optLabel("policy_injection", security.policy.injection) })),
+    el("span", {}, "מידע רגיש: ", el("b", { textContent: optLabel("policy_sensitive", security.policy.sensitive) })),
+    teamsWith ? el("span", { className: "badge", textContent: teamsWith === 1 ? "צוות אחד עם חריג" : `${teamsWith} צוותים עם חריג` }) : null,
+    settingLink("policy_injection")].filter(Boolean));
   const v = auditCheck;
   $("auditCheck").replaceChildren(!v ? "" : v.ok
     ? el("div", { className: "alert good" }, icon("check"), el("span", { textContent: `כל ${v.rows} השורות ביומן השינויים שלמות: אף אחת לא נערכה או נמחקה מחוץ למערכת.` }))
@@ -1597,14 +1598,7 @@ function renderSecurity() {
   if (!(security.blocked || []).length) $("secBlocked").append(el("tr", {}, el("td", { colSpan: 5, className: "empty", textContent: "לא נחסמו בקשות" })));
 }
 $("eventFilter").onchange = renderSecurity;
-$("policyForm").onsubmit = async e => {
-  e.preventDefault();
-  try {
-    await api("security/policy", { name: "policy", injection: $("pInjection").value, sensitive: $("pSensitive").value });
-    await load();
-    UI.toast("המדיניות נשמרה.");
-  } catch (err) { fail(err); }
-};
+
 
 // ---------- knowledge sources ----------
 let sourceList = [], uploadTarget = null, editingSource = null, sourceStatus = { embeddings: null, vectors: {}, pdf: false };
@@ -1702,8 +1696,8 @@ $("fileInput").onchange = run(async () => {
   const files = [...$("fileInput").files];
   $("fileInput").value = "";
   if (!files.length || !uploadTarget) return;
-  const tooBig = files.filter(f => f.size > 5 * 1024 * 1024);
-  if (tooBig.length) throw new Error("אפשר להעלות קבצים עד 5MB. גדולים מדי: " + tooBig.map(f => f.name).join(", "));
+  const most = S("max_file_mb"), tooBig = files.filter(f => f.size > most * 1024 * 1024);
+  if (tooBig.length) throw new Error(`אפשר להעלות קבצים עד ${most}MB. גדולים מדי: ` + tooBig.map(f => f.name).join(", "));
   // PDF and Word travel as base64 and are read on the server; text files as text
   const toB64 = async f => {
     const bytes = new Uint8Array(await f.arrayBuffer());
@@ -1800,6 +1794,365 @@ $("sourceForm").onsubmit = async e => {
     load();
   } catch (err) { $("sourceError").textContent = hebrew(err.message); }
 };
+
+// ---------- settings: one page built from the server's list (settings.py); each row the same way ----------
+let setData = null, setByKey = {}, teamOverrides = {}, setSection = "general", setPending = {}, setErrors = {};
+const lang2 = (he, en) => I18N.lang === "en" ? en : he;
+const S = key => (setByKey[key] || {}).value;  // a setting's value in effect
+const sLabel = s => lang2(s.label_he, s.label_en);
+const optLabel = (key, v) => { const o = ((setByKey[key] || {}).options || []).find(x => x.value === v); return o ? lang2(o.he, o.en) : String(v ?? ""); };
+const settingLink = (key, text = "שינוי בהגדרות") => el("a", { className: "small", href: "#settings=" + encodeURIComponent(key), textContent: text });
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const TESTABLE = new Set(["anthropic_api_key", "anthropic_url", "openai_api_key", "openai_url", "gemini_api_key", "gemini_url",
+  "local_base_url", "local_api_key", "smtp_host", "smtp_password"]);
+
+// a value as words, for the confirm dialog and the change log
+function fmtValue(s, v) {
+  if (s.type === "secret") return v && v.set === false ? "לא מוגדר" : "מוגדר";
+  if (v === null || v === undefined || v === "") return "ריק";
+  if (s.type === "bool") return v ? "פעיל" : "כבוי";
+  if (["choice", "model", "timezone"].includes(s.type)) return optLabel(s.key, v);
+  if (Array.isArray(v)) return v.length ? v.map(x => optLabel(s.key, x)).join(", ") : "ריק";
+  const unit = lang2(s.unit_he || "", s.unit_en || "");
+  return unit === "$" ? "$" + v : unit && unit !== "%" ? `${v} ${unit}` : unit === "%" ? `${v}%` : String(v);
+}
+const ERR = {
+  min: e => `לפחות ${e.min}`, max: e => `לכל היותר ${e.max}`, number: () => "צריך מספר", integer: () => "צריך מספר שלם",
+  choice: () => "בחירה לא מוכרת", email: e => `כתובת מייל לא תקינה: ${e.item}`, url: () => "הכתובת צריכה להתחיל ב-http:// או https://",
+  host: e => `שם שרת לא תקין: ${e.item}`, network: e => `כתובת או טווח לא תקינים: ${e.item}`, absolute: e => `צריך נתיב מלא: ${e.item}`,
+  timezone: () => "אזור זמן לא מוכר", pattern: () => "מותרים רק אותיות באנגלית, ספרות, נקודה, מקף וקו תחתון",
+  length: e => `עד ${e.max} תווים`, short: e => `לפחות ${e.min} תווים`, required: () => "צריך למלא ערך", too_many: e => `עד ${e.max} פריטים`,
+  too_long: () => "פריט ארוך מדי", env: () => "הערך נקבע בקובץ ההגדרות בשרת", enabled_model: () => "המודל כבוי או לא קיים",
+  model: () => "מודל לא מוכר", local_url: e => hebrew(e.message), unknown: () => "הגדרה לא מוכרת", soon: () => "עוד לא זמין",
+  not_team: () => "אי אפשר לקבוע את ההגדרה הזו לצוות", type: () => "ערך לא תקין", list: () => "ערך לא תקין" };
+const errText = e => (ERR[e.code] || (() => e.code))(e);
+
+// the right control for the setting's type; onChange(value) with the new value
+function control(s, v, locked, onChange, id = "in-" + s.key) {
+  const unit = s.unit_he ? el("span", { className: "muted small", textContent: lang2(s.unit_he, s.unit_en) }) : null;
+  if (s.type === "bool") {
+    const sw = el("button", { type: "button", className: "switch", role: "switch", id, ariaChecked: String(!!v), disabled: locked, ariaLabel: sLabel(s),
+      onclick: () => { const on = sw.getAttribute("aria-checked") !== "true"; sw.setAttribute("aria-checked", String(on)); onChange(on); } });
+    return sw;
+  }
+  if (s.type === "int" || s.type === "float") {
+    const inp = el("input", { type: "number", id, value: v ?? "", min: s.min ?? "", max: s.max ?? "", step: s.type === "int" ? 1 : "any", disabled: locked,
+      className: "ltr", oninput: () => onChange(inp.value === "" ? (s.optional ? null : "") : Number(inp.value)) });
+    return el("div", { className: "unit" }, inp, unit);
+  }
+  if (["choice", "model", "timezone"].includes(s.type)) {
+    const opts = s.options || [];
+    const sel = el("select", { id, disabled: locked, onchange: () => onChange(sel.value) },
+      ...opts.map(o => el("option", { value: o.value, disabled: !!o.soon, textContent: lang2(o.he, o.en) + (o.soon ? " · " + I18N.t("בקרוב") : "") })));
+    if (!opts.some(o => o.value === v)) sel.prepend(el("option", { value: v ?? "", textContent: String(v ?? "") }));
+    sel.value = v ?? "";
+    return sel;
+  }
+  if (s.type === "multi" || s.type === "models") {
+    const box = el("div", { className: "checks", id, role: "group", ariaLabel: sLabel(s) });
+    const read = () => [...box.querySelectorAll("input:checked")].map(i => i.value);
+    box.append(...(s.options || []).map(o => el("label", { className: "check" },
+      el("input", { type: "checkbox", value: o.value, checked: (v || []).includes(o.value), disabled: locked, onchange: () => onChange(read()) }), lang2(o.he, o.en))));
+    return box;
+  }
+  if (s.type === "list") {
+    const ta = el("textarea", { id, value: (v || []).join("\n"), disabled: locked, dir: "auto", spellcheck: false,
+      oninput: () => onChange(ta.value.split("\n").map(x => x.trim()).filter(Boolean)) });
+    return ta;
+  }
+  if (s.type === "emails") {
+    const inp = el("input", { type: "text", id, className: "ltr", value: (v || []).join(", "), disabled: locked, placeholder: "ceo@example.com, cfo@example.com",
+      oninput: () => onChange(inp.value.split(/[,;\s]+/).map(x => x.trim()).filter(Boolean)) });
+    return inp;
+  }
+  if (s.type === "secret") {
+    const status = v.source === "env" ? "מוגדר בקובץ ההגדרות בשרת" : v.set ? "מוגדר" : "לא מוגדר";
+    const tested = v.tested ? ` · נבדק לאחרונה ב-${when(v.tested.ts)}${v.tested.ok ? "" : " (נכשל)"}` : "";
+    const wrap = el("div", { className: "set-secret" }, el("span", { className: "badge " + (v.set ? "good" : ""), textContent: status }),
+      tested ? el("span", { className: "muted small", textContent: tested.slice(3) }) : null);
+    if (!locked) {
+      const inp = el("input", { type: "password", id, autocomplete: "new-password", className: "ltr", hidden: true, placeholder: "הערך החדש",
+        oninput: () => onChange(inp.value || undefined) });
+      wrap.append(el("button", { type: "button", className: "ghost sm", textContent: v.set ? "החלפה" : "הגדרה",
+        onclick: e => { inp.hidden = false; e.currentTarget.hidden = true; inp.focus(); } }), inp);
+    }
+    return wrap;
+  }
+  return el("input", { type: "text", id, className: s.type === "url" || s.key.startsWith("smtp_") || s.key === "backup_folder" ? "ltr" : "",
+    value: v ?? "", disabled: locked, maxLength: s.max || 2048, spellcheck: false, oninput: e => onChange(e.target.value) });
+}
+
+function setChange(key) {
+  return v => {
+    if (v === undefined || same(v, setByKey[key].value)) delete setPending[key]; else setPending[key] = v;
+    delete setErrors[key];
+    const row = $("set-" + key);
+    if (row) { row.classList.toggle("pending", key in setPending); row.querySelector(".error").textContent = ""; }
+    updateBar();
+  };
+}
+function updateBar() {
+  const n = Object.keys(setPending).length;
+  $("setBar").hidden = !n;
+  $("setBarCount").textContent = n === 1 ? "(שינוי אחד)" : `(${n} שינויים)`;
+}
+
+// search: the matching part of a label or help line is marked
+function marked(text, q) {
+  const i = q ? text.toLowerCase().indexOf(q) : -1;
+  return i < 0 ? [text] : [text.slice(0, i), el("mark", { textContent: text.slice(i, i + q.length) }), text.slice(i + q.length)];
+}
+const matches = (s, q) => [s.label_he, s.label_en, s.help_he, s.help_en, s.card_he, s.card_en, s.key, s.env || ""].join(" ").toLowerCase().includes(q);
+
+function settingRow(s, q) {
+  const locked = s.source === "env" || s.soon, pending = s.key in setPending;
+  const v = pending ? setPending[s.key] : s.value, n = setData.team_overrides[s.key] || 0;
+  const meta = el("div", { className: "set-meta" },
+    s.soon ? el("span", { className: "badge", textContent: "בקרוב" }) : null,
+    s.source === "env" ? el("span", { className: "badge", tabIndex: 0,
+      title: `הערך נקבע בקובץ ההגדרות של השרת (${s.env}). כדי לשנות אותו כאן, מוחקים אותו משם ומפעילים את השער מחדש.` },
+      icon("lock"), "מקובץ ההגדרות בשרת") : null,
+    s.changed ? el("span", { className: "badge warn", textContent: "שונה מברירת המחדל" }) : null,
+    s.changed ? el("button", { type: "button", className: "link small", textContent: "חזרה לברירת מחדל", onclick: () => resetSetting(s) }) : null,
+    n ? el("a", { className: "badge", href: "#teams", textContent: n === 1 ? "צוות אחד עם חריג" : `${n} צוותים עם חריג` }) : null,
+    s.soon ? null : el("span", { textContent: s.applies === "restart" ? "אחרי הפעלה מחדש" : "חל מיד" }),
+    TESTABLE.has(s.key) && !s.soon ? el("button", { type: "button", className: "link small", textContent: "בדיקה", onclick: e => testSetting(s, e.currentTarget) }) : null);
+  return el("div", { className: "set-row" + (pending ? " pending" : "") + (s.soon ? " soon" : ""), id: "set-" + s.key },
+    el("div", {},
+      el("label", { className: "set-label", htmlFor: "in-" + s.key }, ...marked(sLabel(s), q)),
+      el("p", { className: "set-help" }, ...marked(lang2(s.help_he, s.help_en), q)),
+      meta,
+      el("p", { className: "error", role: "alert", textContent: setErrors[s.key] ? errText(setErrors[s.key]) : "" })),
+    el("div", { className: "set-control" }, control(s, v, locked, setChange(s.key))));
+}
+
+function cardOf(title, rows, extra) {
+  return el("div", { className: "card" }, el("header", {}, el("h2", { textContent: title })), ...rows, ...(extra || []));
+}
+
+function renderSettings() {
+  if (!setData) return;
+  const q = $("setSearch").value.trim().toLowerCase();
+  const name = s => lang2(s.he, s.en);
+  const changedIn = id => setData.settings.filter(s => s.section === id && s.changed).length;
+  $("setSections").replaceChildren(...setData.sections.map(sec => el("li", {}, el("button", { type: "button",
+    ariaCurrent: !q && sec.id === setSection ? "page" : null, onclick: () => { $("setSearch").value = ""; setSection = sec.id; renderSettings(); scrollTo(0, 0); } },
+    el("span", { textContent: name(sec) }), changedIn(sec.id) ? el("span", { className: "badge", title: "הגדרות ששונו מברירת המחדל", textContent: String(changedIn(sec.id)) }) : null))));
+  $("setSectionSelect").replaceChildren(...setData.sections.map(sec => el("option", { value: sec.id, textContent: name(sec) })));
+  $("setSectionSelect").value = setSection;
+  const restart = setData.restart_pending || [];
+  $("setRestart").hidden = !restart.length;
+  $("setRestart").textContent = restart.length ? "נדרשת הפעלה מחדש: " + restart.map(k => sLabel(setByKey[k])).join(", ") : "";
+
+  const body = [];
+  if (q) {
+    for (const sec of setData.sections) {
+      const rows = setData.settings.filter(s => s.section === sec.id && matches(s, q));
+      if (rows.length) body.push(cardOf(name(sec), rows.map(s => settingRow(s, q))));
+    }
+    if (!body.length) body.push(el("div", { className: "card empty", textContent: "אין הגדרה שמתאימה לחיפוש." }));
+  } else {
+    const sec = setData.sections.find(x => x.id === setSection);
+    body.push(el("div", { className: "set-head" }, el("h2", { textContent: name(sec) })));
+    const items = setData.settings.filter(s => s.section === setSection);
+    if (items.length && items.every(s => s.soon))
+      body.push(el("div", { className: "alert" }, icon("clock"), el("span", { textContent: "ההגדרות בפרק הזה יגיעו בשלב הבא של השער. בינתיים הן מוצגות כבויות." })));
+    const cards = [...new Set(items.map(s => s.card))];
+    for (const c of cards) {
+      const rows = items.filter(s => s.card === c);
+      body.push(cardOf(lang2(rows[0].card_he, rows[0].card_en), rows.map(s => settingRow(s, "")), c === "backup" ? [backupNow()] : null));
+    }
+    if (setSection === "data") body.push(dataInfo());
+    if (setSection === "system") body.push(...systemCards());
+  }
+  $("setBody").replaceChildren(...body);
+  updateBar();
+}
+
+function backupNow() {
+  return el("div", { className: "row", style: "margin-top:12px" }, el("button", { type: "button", className: "ghost", textContent: "גיבוי עכשיו",
+    onclick: e => busy(e.currentTarget, async () => { const r = await api("backup", {}); await load(); UI.toast(`הגיבוי נשמר: ${r.file}`); }) }),
+    el("span", { className: "muted small", textContent: setData.system.last_backup ? `גיבוי אחרון: ${when(setData.system.last_backup)}` : "עוד אין גיבויים" }));
+}
+const info = rows => el("dl", { className: "set-info" }, ...rows.filter(Boolean).flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", {}, v)]));
+function dataInfo() {
+  const sys = setData.system;
+  return cardOf("מחיקה והצפנה", [info([
+    ["מחיקה", el("span", {}, el("span", { className: "badge" }, icon("lock"), "קבוע"), " ", "שום מידע לא נמחק, רק עובר לארכיון.")],
+    ["מצב ההצפנה", "השאלות, התשובות, השיחות והסודות שמורים מוצפנים."],
+    ["מפתח ההצפנה", sys.key_source === "env" ? "בהגדרות השרת (FIREGATE_DATA_KEY)" : el("span", { className: "ltr", textContent: sys.key_file })],
+    sys.key_source === "env" ? null : ["תזכורת", "כדאי לשמור עותק של קובץ המפתח במקום אחר: בלעדיו אי אפשר לקרוא את המידע המוצפן."]])]);
+}
+let updateResult = null;
+function systemCards() {
+  const sys = setData.system, mb = n => (n / 1024 / 1024).toFixed(1) + " MB";
+  const upd = updateResult;
+  return [
+    cardOf("מצב המערכת", [info([
+      ["גרסה", el("span", { className: "ltr", textContent: "v" + sys.version })],
+      ["מסד הנתונים", el("span", { className: "ltr", textContent: sys.db_path })],
+      ["גודל המסד", el("span", { className: "ltr", textContent: mb(sys.db_size) })],
+      ["פורט", el("span", { className: "ltr", textContent: String(sys.port) })],
+      ["הצפנה", sys.key_source === "env" ? "מוצפן · המפתח בהגדרות השרת" : "מוצפן · המפתח בקובץ ליד המסד"],
+      ["גיבויים", el("span", {}, `${sys.backups} בתיקייה `, el("span", { className: "ltr", textContent: sys.backup_folder }))],
+      sys.timezone_ok ? null : ["אזור זמן", "אין בשרת נתוני אזורי זמן, ולכן נעשה שימוש בשעון של השרת."]]),
+      el("p", { className: "muted small", style: "margin:12px 0 0" }, "פורט ומיקום המסד נקבעים בהגדרות השרת (PORT, GATEWAY_DB). ", el("a", { href: "#security", textContent: "בדיקת מצב" }))]),
+    cardOf("פעולות", [el("div", { className: "row" },
+      el("button", { type: "button", className: "ghost", textContent: "ייצוא הגדרות", onclick: exportSettings }),
+      el("button", { type: "button", className: "ghost", textContent: "ייבוא הגדרות", onclick: () => $("setImportFile").click() }),
+      el("button", { type: "button", className: "ghost", textContent: "גיבוי עכשיו",
+        onclick: e => busy(e.currentTarget, async () => { const r = await api("backup", {}); await load(); UI.toast(`הגיבוי נשמר: ${r.file}`); }) }),
+      el("button", { type: "button", className: "ghost", textContent: "בדיקת עדכונים",
+        onclick: e => busy(e.currentTarget, async () => { updateResult = await api("update-check"); renderSettings(); }) })),
+      el("p", { className: "muted small", style: "margin:12px 0 0" }, "ייצוא: קובץ בלי סודות, להעברה בין שרתים או לפני שינוי גדול. בדיקת עדכונים פונה ל-GitHub רק כשלוחצים."),
+      upd ? el("div", { className: "alert " + (!upd.ok ? "warn" : upd.newer ? "warn" : "good"), style: "margin-top:12px" }, icon(upd.ok && !upd.newer ? "check" : "alert"),
+        el("span", { className: "grow", textContent: !upd.ok ? (upd.error === "offline" ? "אין חיבור ל-GitHub כרגע. אפשר לנסות שוב מאוחר יותר." : `הבדיקה נכשלה (${upd.error}).`)
+          : upd.newer ? `יש גרסה חדשה: ${upd.latest} (מותקנת ${upd.current}).` : `הגרסה המותקנת (${upd.current}) היא העדכנית.` }),
+        upd.newer && upd.url ? el("a", { href: upd.url, target: "_blank", rel: "noopener noreferrer", textContent: "מה חדש" }) : null) : null])];
+}
+
+function openSetting(key) {
+  setFocus = null;
+  const s = setByKey[key];
+  if (!s) return;
+  $("setSearch").value = "";
+  setSection = s.section;
+  renderSettings();
+  setTimeout(() => {  // after the page is shown
+    const row = $("set-" + key);
+    if (!row) return;
+    row.scrollIntoView({ block: "center" });
+    row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash");
+    const ctl = row.querySelector(".set-control input, .set-control select, .set-control button, .set-control textarea");
+    if (ctl) ctl.focus({ preventScroll: true });
+  }, 0);
+}
+
+async function saveSettings() {
+  const keys = Object.keys(setPending);
+  if (!keys.length) return;
+  const sens = keys.filter(k => setByKey[k].sensitive);
+  if (sens.length) {
+    const arrow = I18N.lang === "en" ? "→" : "←";
+    const body = el("div", { className: "grid", style: "gap:10px" },
+      el("p", { className: "small", style: "margin:0", textContent: "השינויים האלה משפיעים על האבטחה. כל שינוי נרשם ביומן השינויים." }),
+      ...sens.map(k => { const s = setByKey[k]; return el("div", {}, el("b", { textContent: sLabel(s) }), el("div", { className: "change-line" },
+        el("span", { className: "old", textContent: fmtValue(s, s.value) }), el("span", { textContent: ` ${arrow} ` }),
+        el("b", { textContent: s.type === "secret" ? "ערך חדש" : fmtValue(s, setPending[k]) }))); }));
+    if (!await UI.confirm({ title: "לשמור שינויים רגישים?", body, ok: "שמירה" })) return;
+  }
+  try {
+    const r = await api("settings", { changes: setPending });
+    setPending = {}; setErrors = {};
+    await load();
+    UI.toast(r.changed.length === 1 ? "ההגדרה נשמרה." : `${r.changed.length} הגדרות נשמרו.`);
+  } catch (e) {
+    if (!e.errors) return fail(e);
+    setErrors = e.errors;
+    renderSettings();
+    UI.toast("חלק מהערכים לא תקינים. הפרטים מסומנים ליד כל הגדרה.", { kind: "bad" });
+    const first = Object.keys(e.errors)[0];
+    if (setByKey[first] && !$("set-" + first)) { setSection = setByKey[first].section; renderSettings(); }
+    $("set-" + first)?.scrollIntoView({ block: "center" });
+  }
+}
+async function resetSetting(s) {
+  const arrow = I18N.lang === "en" ? "→" : "←";
+  if (!await UI.confirm({ title: `להחזיר את "${sLabel(s)}" לברירת המחדל?`, ok: "חזרה לברירת מחדל",
+    body: s.type === "secret" ? "הערך שנשמר במסך יפסיק לחול." : `${fmtValue(s, s.value)} ${arrow} ${fmtValue(s, s.default)}` })) return;
+  try {
+    await api("settings/reset", { key: s.key });
+    delete setPending[s.key];
+    await load();
+    UI.toast("ההגדרה חזרה לברירת המחדל.");
+  } catch (e) { fail(e); }
+}
+async function testSetting(s, btn) {
+  if (s.key in setPending) return UI.toast("קודם שומרים את השינוי, ואז בודקים.", { kind: "bad" });
+  let to;
+  if (s.key.startsWith("smtp_")) {
+    const inp = el("input", { type: "email", className: "ltr", placeholder: "it@example.com", autocomplete: "email" });
+    if (!await UI.confirm({ title: "שליחת מייל ניסיון", body: el("label", { className: "field" }, "לאיזו כתובת לשלוח?", inp), ok: "שליחה" })) return;
+    to = inp.value.trim();
+  }
+  await busy(btn, async () => {
+    const r = await api("settings/test", { key: s.key, to });
+    UI.toast(r.ok ? (to ? `מייל ניסיון נשלח ל-${to}.` : "הבדיקה עברה: החיבור תקין.") : `הבדיקה נכשלה: ${hebrew(r.error)}`,
+      { kind: r.ok ? "good" : "bad", timeout: r.ok ? 6000 : 12000 });
+    await load();
+  });
+}
+async function exportSettings() {
+  try {
+    const r = await api("settings/export");
+    download(`firegate-settings-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(r, null, 2), "application/json");
+  } catch (e) { fail(e); }
+}
+$("setImportFile").onchange = async () => {
+  const f = $("setImportFile").files[0];
+  $("setImportFile").value = "";
+  if (!f) return;
+  let data;
+  try { data = JSON.parse(await f.text()); } catch { return UI.toast("הקובץ לא קריא: צריך קובץ JSON שיוצא מהמסך הזה.", { kind: "bad" }); }
+  try {
+    const r = await api("settings/import", { settings: data, dry_run: true });
+    const errs = Object.entries(r.errors || {}), skipped = Object.entries(r.skipped || {});
+    if (!r.diff.length && !errs.length) return UI.toast(skipped.length ? `אין מה לשנות. ${skipped.length} הגדרות בקובץ דולגו.` : "אין מה לשנות: ההגדרות בקובץ זהות לקיימות.");
+    const arrow = I18N.lang === "en" ? "→" : "←";
+    const reasons = { unknown: "לא מוכרת", secret: "סוד (לא מיובא)", soon: "עוד לא זמינה", env: "נקבעת בקובץ ההגדרות בשרת" };
+    const body = el("div", { className: "grid", style: "gap:10px" },
+      r.diff.length ? el("div", { className: "table-wrap" }, el("table", { id: "importDiff" }, el("tbody", {}, ...r.diff.map(x => {
+        const s = setByKey[x.key];
+        return el("tr", {}, el("td", { textContent: s ? sLabel(s) : x.key }), el("td", { className: "muted", textContent: s ? fmtValue(s, x.old) : "" }),
+          el("td", { textContent: arrow }), el("td", {}, el("b", { textContent: s ? fmtValue(s, x.new) : "" })));
+      })))) : null,
+      errs.length ? el("p", { className: "error", style: "margin:0", textContent: "ערכים לא תקינים, ולכן אי אפשר לייבא: " +
+        errs.map(([k, e]) => `${setByKey[k] ? sLabel(setByKey[k]) : k}: ${errText(e)}`).join("; ") }) : null,
+      skipped.length ? el("p", { className: "muted small", style: "margin:0", textContent: "דולגו: " + skipped.map(([k, why]) => `${setByKey[k] ? sLabel(setByKey[k]) : k} (${reasons[why] || why})`).join(", ") }) : null);
+    if (errs.length) return UI.confirm({ title: "הקובץ לא יובא", body, ok: "סגירה" });
+    if (!await UI.confirm({ title: r.diff.length === 1 ? "לייבא שינוי אחד?" : `לייבא ${r.diff.length} שינויים?`, body, ok: "ייבוא" })) return;
+    await api("settings/import", { settings: data });
+    await load();
+    UI.toast("ההגדרות יובאו.");
+  } catch (e) { fail(e); }
+};
+$("setSearch").oninput = renderSettings;
+$("setSectionSelect").onchange = () => { setSection = $("setSectionSelect").value; $("setSearch").value = ""; renderSettings(); };
+$("setSave").onclick = saveSettings;
+$("setCancel").onclick = () => { setPending = {}; setErrors = {}; renderSettings(); };
+addEventListener("beforeunload", e => { if (Object.keys(setPending).length) e.preventDefault(); });
+
+// a team's own values for the settings that allow them: "like the global setting" unless switched on
+let teamSetDraft = {};
+function renderTeamSettings(team) {
+  teamSetDraft = {};
+  if (!setData) return;
+  if (!team) return $("tSettings").replaceChildren(el("p", { className: "muted small", style: "margin:0", textContent: "אחרי שיוצרים את הצוות אפשר לקבוע לו הגדרות מיוחדות." }));
+  const own = teamOverrides[team] || {};
+  $("tSettings").replaceChildren(...setData.settings.filter(s => s.team).map(s => {
+    const has = s.key in own, slot = el("div", { className: "set-control", hidden: !has });
+    const fill = v => slot.replaceChildren(control(s, v, s.soon, x => { teamSetDraft[s.key] = x; }, "tin-" + s.key));
+    fill(has ? own[s.key] : s.value);
+    const sw = el("button", { type: "button", className: "switch", role: "switch", ariaChecked: String(has), disabled: s.soon,
+      ariaLabel: `הגדרה מיוחדת לצוות: ${sLabel(s)}`, onclick: () => {
+        const on = sw.getAttribute("aria-checked") !== "true";
+        sw.setAttribute("aria-checked", String(on));
+        slot.hidden = !on;
+        teamSetDraft[s.key] = on ? (own[s.key] ?? s.value) : null;
+        if (on) fill(teamSetDraft[s.key]);
+      } });
+    return el("div", { className: "set-row" + (s.soon ? " soon" : "") },
+      el("div", {}, el("span", { className: "set-label", textContent: sLabel(s) }),
+        el("div", { className: "set-meta" }, s.soon ? el("span", { className: "badge", textContent: "בקרוב" }) : null,
+          el("label", { className: "check" }, sw, has ? "מיוחד לצוות" : `כמו הכללי (${fmtValue(s, s.value)})`))),
+      slot);
+  }));
+}
+async function saveTeamSettings(team) {
+  const own = teamOverrides[team] || {};
+  const changes = Object.fromEntries(Object.entries(teamSetDraft).filter(([k, v]) => !same(v, own[k] ?? null)));
+  if (Object.keys(changes).length) await api("teams/settings", { name: team, settings: changes });
+}
 
 $("loginForm").onsubmit = e => {
   e.preventDefault();

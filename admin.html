@@ -141,6 +141,56 @@
   #summaryFrame { display: block; width: 100%; height: min(70vh, 680px); border: 1px solid var(--line); border-radius: 8px; background: #f4f4f5; }
   tfoot td { font-weight: 700; color: var(--ink); border-top: 2px solid var(--line); }
   @media (max-width: 767px) { table.stack-mobile tfoot { display: block; width: 100%; } .rec-list .alert { flex-wrap: wrap; } .rec-list .alert .actions { flex-basis: 100%; } }
+  /* settings: sections on the side, cards of rows, a bar for unsaved changes */
+  .set-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+  .set-nav { position: sticky; top: 84px; }
+  .set-nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .set-nav button { width: 100%; justify-content: flex-start; background: none; border: 0; box-shadow: none; color: var(--body); font-weight: 500; border-radius: var(--radius-sm); min-height: 40px; padding: 0 12px; }
+  .set-nav button:hover { background: var(--surface-2); color: var(--ink); }
+  .set-nav button[aria-current="page"] { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: var(--shadow); }
+  .set-nav button .badge { margin-inline-start: auto; }
+  .set-nav select { display: none; width: 100%; }
+  .set-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 .25rem; }
+  .set-head h2 { font-size: 1.25rem; font-weight: 700; color: var(--ink); margin: 0; }
+  .set-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 320px); gap: 8px 24px; padding: 14px 0; border-top: 1px solid var(--line); align-items: start; }
+  .set-row:first-of-type { border-top: 0; padding-top: 0; }
+  .set-row.flash { animation: setflash 2.4s var(--ease); border-radius: var(--radius-sm); }
+  @keyframes setflash { 0%, 40% { background: var(--accent-soft); box-shadow: 0 0 0 8px var(--accent-soft); } 100% { background: transparent; box-shadow: none; } }
+  .set-label { font-weight: 600; color: var(--ink); display: block; }
+  .set-help { margin: 4px 0 0; font-size: .8125rem; color: var(--muted); max-width: 62ch; }
+  .set-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 8px; font-size: .75rem; color: var(--muted); }
+  .set-meta .badge { font-weight: 500; }
+  .set-row.pending .set-label::after { content: "•"; margin-inline-start: 6px; color: var(--warning); }
+  .set-control { display: grid; gap: 8px; justify-items: stretch; }
+  .set-control .unit { display: flex; align-items: center; gap: 8px; }
+  .set-control .unit input { flex: 1; min-width: 0; }
+  .set-control textarea { min-height: 84px; resize: vertical; font: inherit; }
+  .set-control .checks { display: grid; gap: 6px; }
+  .set-control .checks label { margin: 0; }
+  .set-control .switch { justify-self: start; }
+  .switch:disabled { opacity: .55; cursor: not-allowed; }
+  .set-row .error { margin: 6px 0 0; font-size: .8125rem; }
+  .set-row.soon { opacity: .62; }
+  .set-row mark { background: var(--warning-soft); color: inherit; border-radius: 3px; padding: 0 1px; }
+  .set-secret { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .set-bar { position: sticky; bottom: 16px; z-index: 20; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--accent); color: var(--accent-ink); border-radius: var(--radius); padding: 12px 16px 12px 20px; margin-top: 1.5rem; box-shadow: var(--shadow-elevated); }
+  .set-bar .grow { flex: 1; font-weight: 600; }
+  .set-bar button { background: var(--accent-ink); color: var(--accent); border-color: var(--accent-ink); }
+  .set-bar button.ghost { background: transparent; color: var(--accent-ink); border-color: currentColor; }
+  .set-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 20px; margin: 0; font-size: .875rem; }
+  .set-info dt { color: var(--muted); }
+  .set-info dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+  .set-line { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: .875rem; }
+  .set-line b { color: var(--ink); }
+  .team-set .set-row { grid-template-columns: minmax(0, 1fr); }
+  #importDiff td, #importDiff th { padding: .4rem .25rem; font-size: .8125rem; }
+  @media (max-width: 991px) {
+    .set-layout { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+    .set-nav { position: static; }
+    .set-nav ul { display: none; }
+    .set-nav select { display: block; }
+    .set-row { grid-template-columns: minmax(0, 1fr); }
+  }
   @media (max-width: 1199px) { .wide-narrow { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 991px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .two { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 520px) { .kpis { grid-template-columns: minmax(0, 1fr); } .greet h1 { font-size: 1.625rem; } .navbar-end .who-name { display: none; } }
@@ -179,6 +229,8 @@
   <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
 </svg>
 <div class="wrapper">
   <nav class="sidebar" id="sidebar" aria-label="ניווט">
@@ -201,6 +253,8 @@
       <li class="sidebar-header">עובדים</li>
       <li><a class="sidebar-link" href="/chat"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg><span>מסך הצ'אט</span></a></li>
       <li><a class="sidebar-link" href="/docs"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span>תיעוד</span></a></li>
+      <li class="sidebar-header">מערכת</li>
+      <li><button class="sidebar-link" data-tab="settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg><span>הגדרות</span></button></li>
     </ul>
   </nav>
 
@@ -377,16 +431,10 @@
       </div>
       <p class="muted" style="margin:0 0 1rem;max-width:75ch">כל מודל שעובדים ואפליקציות יכולים להשתמש בו. מודל כבוי נחסם אצל כולם מיד, גם אם הותר להם. המחיר קובע איך מחושבת העלות של כל שאלה, אז כדאי לעדכן אותו כשהספק משנה מחיר.</p>
       <div class="row" id="providerStatus" style="margin-bottom:1.5rem"></div>
-      <div class="card" style="margin-bottom:1.5rem">
+      <div class="card" style="margin-bottom:1.5rem" id="autoCard">
         <header><h2>בחירה אוטומטית של מודל</h2><span class="muted small" id="autoCount"></span></header>
-        <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">כשעובד בוחר "אוטומטי" בצ'אט, השער שולח שאלות קצרות ופשוטות למודל הזול, וקוד, ניתוח, השוואה, טקסט ארוך או שיחה ארוכה למודל החזק. הסיבה לבחירה מוצגת לעובד ונרשמת ביומן.</p>
-        <form class="row" id="autoForm" style="align-items:flex-end;gap:16px">
-          <label class="check"><button type="button" class="switch" role="switch" id="autoEnabled" aria-checked="true" aria-label="בחירה אוטומטית פעילה"></button> פעיל</label>
-          <label class="field">מודל זול<select id="autoCheap"></select></label>
-          <label class="field">מודל חזק<select id="autoStrong"></select></label>
-          <label class="check" title="בין המודלים שמתאימים לשאלה ובמחיר דומה (עד פי 2 לכאן או לכאן), אצל כל ספק שמותר לעובד: זה שענה הכי מהר ב-24 השעות האחרונות. נחשבים רק מודלים עם 20 תשובות לפחות."><input type="checkbox" id="autoFast"> להעדיף את המודל המהיר מבין המתאימים</label>
-          <button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button>
-        </form>
+        <p class="muted small" style="margin:-.5rem 0 .75rem;max-width:80ch">כשעובד בוחר "אוטומטי" בצ'אט, השער שולח שאלות קצרות ופשוטות למודל הזול, וקוד, ניתוח, השוואה, טקסט ארוך או שיחה ארוכה למודל החזק. הסיבה לבחירה מוצגת לעובד ונרשמת ביומן.</p>
+        <div class="set-line" id="autoLine"></div>
       </div>
       <div class="grid wide-narrow" style="margin-bottom:1.5rem">
         <div class="card">
@@ -429,12 +477,11 @@
       </div>
       <div class="card" style="margin-top:1.5rem" id="localCard">
         <header><h2>שרת מודלים מקומי</h2><span id="localStatus"></span></header>
-        <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">מודלים שרצים על שרת של החברה עם Ollama או vLLM. השאלות לא יוצאות מהרשת של החברה, ואין תשלום לפי טוקנים (אפשר לקבוע מחיר פנימי בעריכת המודל). כותבים את כתובת השרת, בודקים חיבור, ומוסיפים את המודלים שהוא מציע. מפתח גישה לשרת, אם צריך, נכנס רק להגדרות השרת (LOCAL_API_KEY).</p>
-        <form class="row" id="localForm" style="align-items:flex-end;gap:16px">
-          <label class="field" style="flex:1;min-width:min(100%,280px)">כתובת השרת<input type="text" id="localUrl" class="ltr" placeholder="http://ollama:11434/v1" autocomplete="off" spellcheck="false"></label>
-          <button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button>
+        <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">מודלים שרצים על שרת של החברה עם Ollama או vLLM. השאלות לא יוצאות מהרשת של החברה, ואין תשלום לפי טוקנים (אפשר לקבוע מחיר פנימי בעריכת המודל). את כתובת השרת והמפתח קובעים בהגדרות; כאן בודקים חיבור ומוסיפים את המודלים שהוא מציע.</p>
+        <div class="row" style="gap:16px">
+          <div class="set-line" id="localLine" style="flex:1"></div>
           <button type="button" class="ghost" id="localTest"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg>בדיקת חיבור</button>
-        </form>
+        </div>
         <div id="localModels" style="margin-top:12px"></div>
       </div>
     </section>
@@ -475,13 +522,12 @@
         </div>
         <div class="card">
           <header><h2>סיכום חודשי במייל</h2><span id="smtpStatus"></span></header>
-          <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">ב-1 לכל חודש, אחרי 08:00, השער שולח להנהלה סיכום של החודש שעבר: הוצאה מול החודש הקודם, הצוותים והמשתמשים שהוציאו הכי הרבה, הוצאה לפי מודל, המלצות לחיסכון, אירועי אבטחה וחריגות מהתקציב. תצוגה מקדימה ו"לשלוח עכשיו" הן לחודש שנבחר למעלה.</p>
-          <form id="summaryForm" class="grid" style="gap:12px">
-            <label class="field">נמענים (כתובות מייל, מופרדות בפסיק)<input type="text" id="sumRecipients" class="ltr" placeholder="ceo@example.com, cfo@example.com" autocomplete="off"></label>
-            <label class="check"><button type="button" class="switch" role="switch" id="sumEnabled" aria-checked="false" aria-label="שליחה אוטומטית פעילה"></button> שליחה אוטומטית ב-1 לכל חודש</label>
-            <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" id="sumPreview">תצוגה מקדימה</button><button type="button" class="ghost" id="sumSend"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>לשלוח עכשיו</button></div>
+          <p class="muted small" style="margin:-.5rem 0 1rem;max-width:80ch">פעם בחודש השער שולח להנהלה סיכום של החודש שעבר: הוצאה מול החודש הקודם, הצוותים והמשתמשים שהוציאו הכי הרבה, הוצאה לפי מודל, המלצות לחיסכון, אירועי אבטחה וחריגות מהתקציב. תצוגה מקדימה ו"לשלוח עכשיו" הן לחודש שנבחר למעלה.</p>
+          <div class="grid" style="gap:12px">
+            <div class="set-line" id="sumLine"></div>
+            <div class="row"><button type="button" class="ghost" id="sumPreview">תצוגה מקדימה</button><button type="button" class="ghost" id="sumSend"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>לשלוח עכשיו</button></div>
             <p class="muted small" id="sumSent" style="margin:0"></p>
-          </form>
+          </div>
         </div>
       </div>
     </section>
@@ -497,26 +543,10 @@
         <div class="card"><header><h2>בדיקת מצב</h2></header><div class="grid" style="gap:10px" id="secChecks"></div></div>
         <div class="card">
           <header><h2>מדיניות</h2></header>
-          <form id="policyForm" class="grid" style="gap:12px">
-            <div class="grid two" style="gap:12px">
-              <label class="field">ניסיון לעקוף את ההוראות של המודל
-                <select id="pInjection">
-                  <option value="block">לחסום את השאלה</option>
-                  <option value="log">לשלוח ולרשום ביומן</option>
-                </select>
-              </label>
-              <label class="field">מידע רגיש (תעודת זהות, כרטיס אשראי, טלפון, אימייל, מפתחות)
-                <select id="pSensitive">
-                  <option value="mask">להסתיר את המידע ולשלוח</option>
-                  <option value="block">לחסום את השאלה</option>
-                  <option value="log">לשלוח בלי להסתיר ולרשום ביומן</option>
-                  <option value="local" id="pSensitiveLocal">לשלוח למודל המקומי</option>
-                </select>
-                <span class="muted small" id="pSensitiveNote" style="font-weight:400"></span>
-              </label>
-            </div>
-            <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירת המדיניות</button></div>
-          </form>
+          <div class="grid" style="gap:8px">
+            <div class="set-line" id="policyLine"></div>
+            <span class="muted small" id="pSensitiveNote"></span>
+          </div>
         </div>
         <div class="card"><header><h2>יומן השינויים לא שונה</h2></header><div id="auditCheck"></div></div>
         <div class="card">
@@ -566,6 +596,30 @@
     </section>
 
     <!-- archive -->
+    <!-- settings: everything adjustable, from settings.py; #settings=<key> opens one setting -->
+    <section data-page="settings" hidden>
+      <div class="page-head">
+        <h1>הגדרות</h1>
+        <div class="filters">
+          <input type="search" id="setSearch" placeholder="חיפוש הגדרה, למשל תקציב או מייל" aria-label="חיפוש בכל ההגדרות">
+        </div>
+      </div>
+      <div class="alert warn" id="setRestart" role="status" hidden></div>
+      <div class="set-layout">
+        <nav class="set-nav" aria-label="פרקי ההגדרות">
+          <ul id="setSections"></ul>
+          <select id="setSectionSelect" aria-label="פרק"></select>
+        </nav>
+        <div class="grid" id="setBody"></div>
+      </div>
+      <div class="set-bar" id="setBar" role="region" aria-label="שינויים שלא נשמרו" hidden>
+        <span class="grow">יש שינויים שלא נשמרו <span id="setBarCount" class="small" style="font-weight:400"></span></span>
+        <button type="button" id="setSave"><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button>
+        <button type="button" class="ghost" id="setCancel">ביטול</button>
+      </div>
+      <input type="file" id="setImportFile" accept=".json,application/json" hidden>
+    </section>
+
     <section data-page="archive" hidden>
       <div class="page-head"><h1>ארכיון</h1></div>
       <p class="muted" style="margin:0 0 1.5rem;max-width:75ch">שום מידע לא נמחק. משתמש, צוות, מודל, מקור מידע או מסמך שהועברו לארכיון לא מופיעים במסכים ולא עובדים, אבל נשמרים עם כל ההיסטוריה שלהם, ואפשר לשחזר אותם. ההוצאה שלהם נשארת ביומן ובדוחות.</p>
@@ -627,6 +681,11 @@
       <legend>מודלים מותרים לצוות</legend>
       <p class="muted small" style="margin:0">בלי סימון, הצוות לא מגביל. עם סימון, חברי הצוות יכולים להשתמש רק במודלים המסומנים, גם אם הותרו להם אישית מודלים נוספים. זה חל גם על הבחירה האוטומטית ועל מודל הגיבוי.</p>
       <div id="tModels"></div>
+    </fieldset>
+    <fieldset class="team-set">
+      <legend>הגדרות מיוחדות</legend>
+      <p class="muted small" style="margin:0">ברירת המחדל היא "כמו ההגדרה הכללית". הגדרה מיוחדת חלה רק על חברי הצוות.</p>
+      <div id="tSettings"></div>
     </fieldset>
     <p class="error" id="teamError" role="alert"></p>
     <div class="row"><button><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>שמירה</button><button type="button" class="ghost" data-close>ביטול</button></div>

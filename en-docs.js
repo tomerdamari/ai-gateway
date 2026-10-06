@@ -60,7 +60,7 @@ window.EN_HTML = Object.assign(window.EN_HTML || {}, {
             <li class="sub"><a href="#security-settings">Server security settings</a></li>
             <li class="sub"><a href="#operator">Server operator checklist</a></li>
             <li><a href="#api">Connecting apps</a></li>
-            <li><a href="#settings">Server settings</a></li>
+            <li><a href="#settings">Settings screen</a></li>
             <li><a href="#limits">Known limitations</a></li>
           </ul></div>
         </div>`,
@@ -170,7 +170,7 @@ python gateway.py</pre>
         <ul>
           <li>"New team" opens a window with a name, a monthly team budget (<b>0 = no cap</b>), a <a href="#cost-center">cost center</a> and the <a href="#team-models">models the team may use</a>.</li>
           <li>A question is blocked when the personal budget <b>or</b> the team budget runs out. When the team budget runs out, every team member is blocked, even those with personal budget left.</li>
-          <li>On the 1st of each month spending resets to zero; the history stays in the log.</li>
+          <li>At the start of each month (the 1st, or the "Budget reset day" set on the settings screen) spending resets to zero; the history stays in the log.</li>
           <li>The teams table shows, for each team, the number of members, spend this month, forecast, suggested budget (with "Apply", as for users), and the total of the members' budgets, so you can see whether the team cap fits them.</li>
           <li><b>Moving to the archive:</b> only for a team with no people in it, so nobody is suddenly left without a team. The team leaves the lists and the choices, and its budget and history are kept. An archived user whose team is archived comes back only after the team does.</li>
         </ul>
@@ -200,7 +200,7 @@ python gateway.py</pre>
         <h3 id="local">Models on the company server</h3>
         <p>A model running on the company's own server, with Ollama or vLLM (two programs that run open models such as Llama and Qwen and speak the same language as OpenAI). Questions never leave the company network, and there is no per-token charge.</p>
         <ul>
-          <li><b>Connecting:</b> in the "Local model server" card at the bottom of the Models page, type the server's address, for example <code>http://ollama:11434/v1</code> or <code>http://10.0.0.5:8000/v1</code>, and click "Save". "Test connection" asks the server which models it has and lists them.</li>
+          <li><b>Connecting:</b> on the <a href="#settings-providers">settings screen</a>, under "Providers and keys", type the server's address, for example <code>http://ollama:11434/v1</code> or <code>http://10.0.0.5:8000/v1</code>, and save. "Test connection" in the "Local model server" card at the bottom of the Models page asks the server which models it has and lists them.</li>
           <li><b>Adding:</b> every model in the list has "Add model". It joins the model list with the provider "Company server", at price 0 (you can set an internal price under Edit), and from there you allow it for users and teams like any model. You can also create it by hand with "New model" and the provider "Company server".</li>
           <li><b>Use:</b> in the chat, and for apps through <code>/v1/chat/completions</code> (the OpenAI format), streaming included. Token counts come from the server's answer; a server that doesn't return them gets an estimate, about one token for every four characters, and the log says "estimated".</li>
           <li><b>Access key:</b> if the server needs a key, it goes only into the <code>LOCAL_API_KEY</code> server setting. It isn't stored in the database and isn't shown on screen.</li>
@@ -218,7 +218,7 @@ python gateway.py</pre>
         <h3 id="backup">Backup model</h3>
         <p>When editing a model, under "When the provider is down", choose a "Backup model". If the provider is overloaded or not responding (errors 429, 5xx, 529), the question moves to the backup on its own and is charged at the backup's price. The chat notes next to the answer that the backup answered, the log records it, and the models table shows "Backup:" with the model's name and how many times it answered this month. For apps, the backup only works between models with the same format: Claude with Claude, or GPT with Gemini.</p>
         <h3 id="auto">Automatic choice</h3>
-        <p>In the "Automatic model choice" card, pick a "Cheap model" and a "Strong model", turn on the "On" switch and save. From then on the chat offers "Automatic". A long question (over 1,200 characters), code, analysis, comparison, planning, a contract, a legal matter, "why" or "step by step", and also a long conversation (more than 12 messages or more than 8,000 characters) go to the strong one; everything else to the cheap one. The employee sees next to the answer which model answered and why. If the matching model isn't allowed for the employee, the other one is chosen, and the reason says "(the right model isn't available to you)". The card shows how many questions were routed this month.</p>
+        <p>On the <a href="#settings-models">settings screen</a>, under "Models and routing", pick a "Cheap model" and a "Strong model" and turn on "Automatic choice". The card on the Models page shows the values with a link to change them. From then on the chat offers "Automatic". A long question (over 1,200 characters), code, analysis, comparison, planning, a contract, a legal matter, "why" or "step by step", and also a long conversation (more than 12 messages or more than 8,000 characters) go to the strong one; everything else to the cheap one. The employee sees next to the answer which model answered and why. If the matching model isn't allowed for the employee, the other one is chosen, and the reason says "(the right model isn't available to you)". The card shows how many questions were routed this month.</p>
         <p><b>"Prefer the fastest suitable model"</b> (off at first): once the cheap or the strong model is picked, the gateway also looks at the models the employee may use whose price (input plus output) is close: at most 2 times more expensive or 2 times cheaper, at any provider. Of those, it picks the one with the lowest median answer time over the last 24 hours. Only models that answered at least 20 times in those 24 hours count; if there are none, the usual choice stays. When a different model is picked for this reason, the employee sees "(the fastest suitable one)" next to the reason.</p>
         <h3 id="cache">Provider-side cache</h3>
         <p>A cache is a copy the provider keeps for a short while. In conversations with Claude, the gateway asks the provider to keep the start of the conversation, and on the next turn it is read at about a tenth of the price. OpenAI and Gemini do this on their own. The cost is calculated using each model's cache price. The top of the Models page shows "Cache savings this month", and the table shows how much each model saved.</p>`,
@@ -256,10 +256,10 @@ python gateway.py</pre>
         <h2>Reports</h2>
         <p>Pick a month in the list at the top of the screen to see summary numbers (spend, requests, tokens, and how many people and apps used it), followed by "By team" (including budget and usage), "By user" and "By model" (including tokens from the cache). "Download for Excel" saves a CSV file (a table in a text file that Excel opens) that opens in Excel with Hebrew displayed correctly. Connection tests from the Models page aren't counted.</p>
         <h3 id="summary">Monthly summary by email</h3>
-        <p>An email to management on the 1st of every month, after 08:00 (server time), about the month before: total spend against the previous month, the five teams and five users who spent the most, spend by model, the savings total and the three biggest recommendations, security events by kind, how many requests were blocked, and who went over budget. The recommendations are worked out from the 30 days before sending, and the overruns against the budgets set at that moment. The email is in Hebrew, right to left, with a plain-text version for mail readers without HTML.</p>
+        <p>An email to management once a month (on the 1st after 08:00, or the day and hour set on the settings screen), about the month before: total spend against the previous month, the five teams and five users who spent the most, spend by model, the savings total and the three biggest recommendations, security events by kind, how many requests were blocked, and who went over budget. The recommendations are worked out from the 30 days before sending, and the overruns against the budgets set at that moment. The email is in Hebrew, right to left, with a plain-text version for mail readers without HTML.</p>
         <ul>
-          <li>On the "Monthly summary by email" card on the reports screen: "Recipients" (email addresses separated by commas, up to 50), the "Send automatically on the 1st of every month" switch, "Save", "Preview" and "Send now" (both for the month chosen at the top of the screen), and a line saying whether a mail server is set up.</li>
-          <li>The mail server is set only in the server settings (see <a href="#settings">Server settings</a>). It needs both <code>SMTP_HOST</code> and a sender address (<code>SMTP_FROM</code>, or <code>SMTP_USER</code> when that is empty); without either, nothing is sent. The mail server's password is never stored in the database or sent to the browser; the screen only shows whether one is set up.</li>
+          <li>The recipients (up to 50), automatic sending, the day and the hour are set on the <a href="#settings-alerts">settings screen</a>, under "Alerts and reports". On the "Monthly summary by email" card on the reports screen: a line with the current values, "Preview" and "Send now" (both for the month chosen at the top of the screen), and a line saying whether a mail server is set up.</li>
+          <li>The mail server is set on the settings screen or in the server's settings file, which wins (see <a href="#settings">Settings screen</a>). It needs both <code>SMTP_HOST</code> and a sender address (<code>SMTP_FROM</code>, or <code>SMTP_USER</code> when that is empty); without either, nothing is sent. The mail server's password is stored encrypted (if entered on the screen) and never sent to the browser; the screen only shows whether one is set.</li>
           <li>Each month is sent once. Every sending (manual too) is recorded in the change log, and a month already sent isn't sent again automatically. If sending fails, an event is recorded on the "Security" page and the gateway tries again the next hour, up to 3 times.</li>
           <li>The preview is shown inside a closed frame without scripts, and people's and teams' names appear as plain text only.</li>
         </ul>
@@ -292,7 +292,7 @@ python gateway.py</pre>
         <p>Counts for the last 7 days, a "Health check" (an encrypted connection with a domain, an outside admin password of at least 16 characters, keys with no rate limit, open mode, connected providers, and where the encryption key is kept), "Policy", "Change log is intact", "Blocked requests" (the last 200, with the reason and a masked excerpt of the question), and "Security events" (the last 200) that can be filtered by type.</p>
 
         <h3 id="policy">Blocking policy</h3>
-        <p>In the "Policy" card of the "Security" page you choose what happens to a question that was caught. The setting applies to all accounts at once, and every change to it is recorded in the change log.</p>
+        <p>On the <a href="#settings-security">settings screen</a>, under "Security and policy", you choose what happens to a question that was caught (the "Policy" card on the "Security" page shows the values with a link to change them). The setting applies to all accounts, except a team given a special setting when editing the team, and every change to it is recorded in the change log.</p>
         <table>
           <thead><tr><th>What was caught</th><th>The options</th></tr></thead>
           <tbody>
@@ -472,35 +472,205 @@ client.chat.completions.create(model="gemini-fast", messages=[...])</pre>
         </ul>`,
 
   "#settings": `
-        <h2>Server settings</h2>
-        <p>In the <code>.env</code> file next to the gateway's files (or as the server's environment variables, which win over the file). Restart the gateway after a change. For on/off settings, <code>1</code>, <code>true</code>, <code>yes</code> or <code>on</code> turn it on; anything else turns it off.</p>
+        <h2>Settings screen</h2>
+        <p>Everything that can be adjusted in the gateway is on the admin screen, under "System" &gt; "Settings". At the top there is a search: type "budget" or "email" and see every related setting, from every section. The sections are listed on the side (a drop-down on a phone).</p>
+        <ul>
+          <li><b>Where a value comes from:</b> a value in the server's settings file (<code>.env</code> or an environment variable) always wins, and is shown locked with an explanation. Next comes the value saved on the screen, then the default. The defaults are how the gateway behaved before the screen existed, so if you change nothing, nothing changes.</li>
+          <li><b>Saving:</b> a change marks the setting, and a bar at the bottom says there are unsaved changes. Saving is all or nothing: if one value is invalid nothing is saved and the error shows next to that setting. A sensitive setting (such as turning off the hiding of sensitive data) asks for confirmation with the old and new value. Most settings apply at once.</li>
+          <li><b>Log:</b> every change is recorded in the <a href="#audit">change log</a> with the old and new value. Secrets are recorded only as "changed".</li>
+          <li><b>Secrets</b> (provider keys, the admin password, the mail password): keep them in the settings file, or enter them on the screen. There they are stored encrypted and never shown again, only "set" and when they were last checked. "Check" sends a short question to the provider, or a test email to an address you type.</li>
+          <li><b>Per-team values:</b> the sensitive-data policy, attempts to get around instructions, the kinds of sensitive data and the organization's words can differ for one team. Set them when editing the team, under "Special settings". The screen shows how many teams have their own value.</li>
+          <li><b>Export and import:</b> under "System". The export is a JSON file without secrets; the import shows what would change before it applies. There are also "Back up now" (a full copy of the database to a folder next to it; old backups are never deleted) and "Check for updates" (compares with the latest version on GitHub, only when clicked).</li>
+          <li>Every screen whose setting moved here (automatic choice, security policy, local server, monthly email) keeps a line with the current value and a "Change in settings" link that opens this screen right at that setting.</li>
+        </ul>
+        <h3 id="settings-general">General</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Organization name</td><td>Empty</td><td>—</td><td>Shown at the top of the chat screen and in the monthly email's subject. Empty = FireGate only.</td></tr>
+            <tr><td>Default language for new visitors</td><td>Hebrew</td><td>—</td><td>The language the screens open in for someone who hasn't picked one in their browser yet.</td></tr>
+            <tr><td>Time zone</td><td>Empty</td><td>—</td><td>Sets when a day and a month begin in reports, budgets, the monthly email and backups. Empty = the server's clock.</td></tr>
+            <tr><td>Home page of the main address</td><td>Admin screen</td><td>—</td><td>What opens at the gateway's address without a path. The admin screen is always at /admin too.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-access">Sign-in and access</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Chat without a password on the office network <span class="muted">(Asks for confirmation)</span></td><td>Off</td><td><code>OPEN_ACCESS</code></td><td>Anyone on the office network picks their name and goes in. Handy at first, but anyone can use someone else's budget.</td></tr>
+            <tr><td>Sign in with the company account <span class="muted">(Coming soon)</span></td><td>Off</td><td>—</td><td>Chat sign-in with the company account (Microsoft or Google), with no separate password.</td></tr>
+            <tr><td>Admin password from outside <span class="muted">(Asks for confirmation)</span></td><td>Empty</td><td><code>ADMIN_PASSWORD</code></td><td>From the office network the admin screen opens without a password. From outside it needs this one. Without it the screen is closed from outside. At least 16 characters is recommended.</td></tr>
+            <tr><td>Exposure to the internet <span class="muted">(Coming soon)</span></td><td>Office network only</td><td>—</td><td>Where the gateway can be reached from. Needed for Cursor and Copilot for business.</td></tr>
+            <tr><td>Hosted in the cloud (no office network) <span class="muted">(Asks for confirmation)</span></td><td>Off</td><td><code>PUBLIC_DEPLOY</code></td><td>When the gateway can't tell the office from outside: the admin screen always needs the password and password-free chat is off.</td></tr>
+            <tr><td>Allowed host names</td><td>Empty</td><td><code>ALLOWED_HOSTS</code></td><td>Extra names the gateway answers to (one per line). IP addresses and localhost always work. Stops a hostile site posing as the gateway.</td></tr>
+            <tr><td>Trusted proxies <span class="muted">(Asks for confirmation)</span></td><td>127.0.0.1, ::1</td><td><code>TRUSTED_PROXIES</code></td><td>Addresses (or ranges) of servers that pass on the user's address, such as Caddy. Anyone else's claim is ignored.</td></tr>
+            <tr><td>Chat sign-in lasts</td><td>12 hours</td><td>—</td><td>How long until an employee has to sign in again.</td></tr>
+            <tr><td>Lock an account after</td><td>5 tries</td><td>—</td><td>Wrong passwords in a row before the account locks.</td></tr>
+            <tr><td>Lock lasts</td><td>15 minutes</td><td>—</td><td>How long a locked account stays locked.</td></tr>
+            <tr><td>Block an address after</td><td>10 failures</td><td>—</td><td>Wrong passwords from one address, across all names (admin password included), before that address is blocked.</td></tr>
+            <tr><td>Counting window and block time</td><td>15 minutes</td><td>—</td><td>Over how many minutes failures count, and how long the address waits.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-providers">Providers and keys</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Anthropic key <span class="muted">(Asks for confirmation)</span></td><td>Empty</td><td><code>ANTHROPIC_API_KEY</code></td><td>Stored encrypted and never shown again. A provider without a key doesn't work.</td></tr>
+            <tr><td>Address</td><td><code>https://api.anthropic.com/v1/messages</code></td><td><code>ANTHROPIC_URL</code></td><td>Where the gateway sends questions. Change it only when the company routes traffic through its own intermediate server.</td></tr>
+            <tr><td>OpenAI key <span class="muted">(Asks for confirmation)</span></td><td>Empty</td><td><code>OPENAI_API_KEY</code></td><td>Stored encrypted and never shown again. A provider without a key doesn't work.</td></tr>
+            <tr><td>Address</td><td><code>https://api.openai.com/v1/chat/completions</code></td><td><code>OPENAI_URL</code></td><td>Where the gateway sends questions. Change it only when the company routes traffic through its own intermediate server.</td></tr>
+            <tr><td>Google key <span class="muted">(Asks for confirmation)</span></td><td>Empty</td><td><code>GEMINI_API_KEY</code></td><td>Stored encrypted and never shown again. A provider without a key doesn't work.</td></tr>
+            <tr><td>Address</td><td><code>https://generativelanguage.googleapis.com/v1beta/openai/chat/completions</code></td><td><code>GEMINI_URL</code></td><td>Where the gateway sends questions. Change it only when the company routes traffic through its own intermediate server.</td></tr>
+            <tr><td>Server address</td><td>Empty</td><td>—</td><td>The company's Ollama or vLLM server, e.g. http://ollama:11434/v1. Empty = none. After a check, add its models on the Models page.</td></tr>
+            <tr><td>Server key <span class="muted">(Asks for confirmation)</span></td><td>Empty</td><td><code>LOCAL_API_KEY</code></td><td>Only if the server needs a key.</td></tr>
+            <tr><td>May connect to this machine itself <span class="muted">(Asks for confirmation)</span></td><td>Off</td><td><code>ALLOW_LOCAL_LOOPBACK</code></td><td>When the local server runs on the gateway's own machine (localhost).</td></tr>
+            <tr><td>More providers <span class="muted">(Coming soon)</span></td><td>Empty</td><td>—</td><td>Azure, Bedrock, Vertex, Mistral, DeepSeek, Groq, xAI, OpenRouter, or any OpenAI-compatible server with an address and key.</td></tr>
+            <tr><td>Refresh the model list from the provider <span class="muted">(Coming soon)</span></td><td>Manual</td><td>—</td><td>Read which models the provider offers.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-models">Models and routing</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Default chat model</td><td>fast</td><td>—</td><td>The model the chat uses when an employee picked none, and that a new user gets.</td></tr>
+            <tr><td>Longest answer</td><td>8,192 tokens</td><td><code>MAX_OUTPUT_TOKENS</code></td><td>An app asking for more gets this number. 0 = by model: no limit (chat with Claude sends 32,000, because Claude needs a number).</td></tr>
+            <tr><td>Provider cache in chat</td><td>5 minutes</td><td>—</td><td>Claude re-reads the conversation from its cache at a tenth of the price. An hour costs more to write; worth it for chats with long pauses.</td></tr>
+            <tr><td>Backup model when a provider fails</td><td>On</td><td>—</td><td>Off = no model falls back to its backup, even if one is set on the Models page.</td></tr>
+            <tr><td>Automatic choice</td><td>On</td><td>—</td><td>An employee who picks "Automatic" in chat: short simple questions go to the cheap model; code, analysis, long text or a long chat to the strong one.</td></tr>
+            <tr><td>Cheap model</td><td>fast</td><td>—</td><td>For short simple questions.</td></tr>
+            <tr><td>Strong model</td><td>smart</td><td>—</td><td>For code, analysis, comparisons and long text.</td></tr>
+            <tr><td>Prefer the fast model</td><td>Off</td><td>—</td><td>Among suitable models at a similar price, at any provider the employee may use: the one that answered fastest lately.</td></tr>
+            <tr><td>Similar-price range</td><td>2 times</td><td>—</td><td>How many times higher or lower still counts as a similar price.</td></tr>
+            <tr><td>Minimum answers</td><td>20 answers</td><td>—</td><td>A model counts only with at least this many answers in the window.</td></tr>
+            <tr><td>Measuring window</td><td>24 hours</td><td>—</td><td>How many hours back speed is measured.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-budgets">Budgets and quotas</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Early warning</td><td>80%</td><td>—</td><td>At what share of the budget a warning shows on the dashboard and on "To handle".</td></tr>
+            <tr><td>When the budget runs out <span class="muted">(Asks for confirmation)</span></td><td>Block</td><td>—</td><td>Block: requests are refused. Alert only: requests go through and an event is recorded. Switch to the cheap model: requests go to the automatic choice's cheap model, if allowed; otherwise blocked.</td></tr>
+            <tr><td>Budget reset day</td><td>1 of the month</td><td>—</td><td>The day of the month a new budget month starts. Reports and chargeback count from this day too. A change recalculates this month's spending from the log.</td></tr>
+            <tr><td>Monthly budget</td><td>Empty</td><td>—</td><td>Prefilled for a new user. Empty = the field starts empty and must be filled.</td></tr>
+            <tr><td>Requests per minute</td><td>0</td><td>—</td><td>0 = no limit.</td></tr>
+            <tr><td>Tokens per day</td><td>0</td><td>—</td><td>0 = no limit.</td></tr>
+            <tr><td>Allowed models</td><td>Empty</td><td>—</td><td>None ticked = the default model only.</td></tr>
+            <tr><td>Questions at once per person</td><td>4</td><td><code>MAX_CONCURRENT</code></td><td>More than this at once is refused. Stops a stuck app from draining a budget.</td></tr>
+            <tr><td>Most messages in one request</td><td>500</td><td><code>MAX_MESSAGES</code></td><td>A request with more messages is refused.</td></tr>
+            <tr><td>Largest request: uploads and apps</td><td>40 MB</td><td><code>MAX_BODY</code></td><td>Uploaded documents, and app requests (which may carry images and PDFs).</td></tr>
+            <tr><td>Largest request: everything else</td><td>1 MB</td><td><code>MAX_REQUEST_BODY</code></td><td>Chat questions and admin changes.</td></tr>
+            <tr><td>Cost spike: times the usual</td><td>5 times</td><td>—</td><td>Alert when a person's last hour cost this many times their average hour that week.</td></tr>
+            <tr><td>Cost spike: minimum</td><td>5 $</td><td>—</td><td>An hour cheaper than this never alerts, even if unusual.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-security">Security and policy</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Attempts to get around the model's instructions <span class="muted">(Can differ per team, Asks for confirmation)</span></td><td>Block</td><td>—</td><td>What happens to a question trying to free the model from its rules.</td></tr>
+            <tr><td>Sensitive data in a question <span class="muted">(Can differ per team, Asks for confirmation)</span></td><td>Hide</td><td>—</td><td>Hide: the data is replaced before the question leaves. Local model: answered unmasked on the company's server, if the person has such a model; otherwise hidden.</td></tr>
+            <tr><td>Kinds of sensitive data <span class="muted">(Can differ per team, Asks for confirmation)</span></td><td>ID number, Credit card, Secrets and keys, Phone, Email, IBAN, Bank account, Passport</td><td>—</td><td>What is hidden in questions before they leave for the provider, and in the log.</td></tr>
+            <tr><td>The organization's words and phrases <span class="muted">(Can differ per team)</span></td><td>Empty</td><td>—</td><td>Project names, customers or codes that must not leave. One per line; hidden like sensitive data.</td></tr>
+            <tr><td>What is scanned <span class="muted">(Coming soon)</span></td><td>The whole context</td><td>—</td><td>Only the last message, or the whole context: instructions, tool results and earlier messages.</td></tr>
+            <tr><td>Files in a request (images, PDF, audio) <span class="muted">(Coming soon, Can differ per team)</span></td><td>Allow and check PDF text</td><td>—</td><td>What happens to files an employee or app sends to a model.</td></tr>
+            <tr><td>Warn about dangerous commands in answers <span class="muted">(Asks for confirmation)</span></td><td>On</td><td>—</td><td>A command that wipes data or runs code from the internet gets a warning for the employee. The event is recorded either way.</td></tr>
+            <tr><td>Warn about suspicious links in answers <span class="muted">(Asks for confirmation)</span></td><td>On</td><td>—</td><td>A link to a numeric address, a link shortener or a look-alike name gets a warning. The event is recorded either way.</td></tr>
+            <tr><td>Hide keys in answers <span class="muted">(Asks for confirmation)</span></td><td>On</td><td>—</td><td>An access key or password in an answer is hidden before it reaches the employee, the app and the log.</td></tr>
+            <tr><td>Internal addresses for MCP servers <span class="muted">(Asks for confirmation)</span></td><td>On</td><td><code>ALLOW_PRIVATE_MCP</code></td><td>MCP servers on the company network may be connected. Off = only servers on the internet.</td></tr>
+            <tr><td>Folders allowed for knowledge sources <span class="muted">(Asks for confirmation)</span></td><td>Empty</td><td><code>SOURCE_ROOTS</code></td><td>A server folder connected as a knowledge source must be inside one of these (one per line). Empty = any folder.</td></tr>
+            <tr><td>Warn before a key expires</td><td>14 days</td><td>—</td><td>How many days before the expiry date a warning shows.</td></tr>
+            <tr><td>Warn about an old key</td><td>90 days</td><td>—</td><td>A key in use longer than this gets a replace recommendation.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-data">Content, storage and encryption</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>What the log keeps</td><td>Question and answer (masked)</td><td>—</td><td>Question and answer (with sensitive data hidden), or data only: who, when, model, tokens and cost, without the text. Applies from now on.</td></tr>
+            <tr><td>Files in the log <span class="muted">(Coming soon)</span></td><td>Description only (type, size, fingerprint)</td><td>—</td><td>What is kept about a file sent to a model.</td></tr>
+            <tr><td>Automatic backup</td><td>Off</td><td>—</td><td>A full copy of the database. Old backups are never deleted.</td></tr>
+            <tr><td>Backup folder</td><td>backups</td><td>—</td><td>A folder name next to the database (letters, digits, dot, dash).</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-sources">Knowledge sources</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Searching documents</td><td>Both</td><td>—</td><td>By meaning needs an OpenAI or Google key; without one, search by words remains.</td></tr>
+            <tr><td>Provider for search by meaning</td><td>Automatic</td><td><code>EMBEDDINGS</code></td><td>Who turns text into the numbers that make search by meaning work. Automatic = the first one with a key.</td></tr>
+            <tr><td>Largest file</td><td>5 MB</td><td>—</td><td>A larger file isn't taken in.</td></tr>
+            <tr><td>Passages sent to the model</td><td>6 passages</td><td>—</td><td>At most how many document passages go with each question.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-alerts">Alerts and reports</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Send automatically</td><td>Off</td><td>—</td><td>A summary of last month: spending, teams, users, models, savings recommendations and security.</td></tr>
+            <tr><td>Recipients</td><td>Empty</td><td>—</td><td>Email addresses, separated by commas. Up to 50.</td></tr>
+            <tr><td>Sending day</td><td>1 of the month</td><td>—</td><td>The day of the month the summary goes out.</td></tr>
+            <tr><td>Sending hour</td><td>8:00</td><td>—</td><td>From this hour on, in the chosen time zone.</td></tr>
+            <tr><td>Mail server address</td><td>Empty</td><td><code>SMTP_HOST</code></td><td>Empty = no email is sent.</td></tr>
+            <tr><td>Port</td><td>587</td><td><code>SMTP_PORT</code></td><td>587 with STARTTLS, 465 with SSL.</td></tr>
+            <tr><td>User name</td><td>Empty</td><td><code>SMTP_USER</code></td><td>If the server needs a sign-in.</td></tr>
+            <tr><td>Password <span class="muted">(Asks for confirmation)</span></td><td>Empty</td><td><code>SMTP_PASSWORD</code></td><td>Stored encrypted and never shown again.</td></tr>
+            <tr><td>Sender address</td><td>Empty</td><td><code>SMTP_FROM</code></td><td>Empty = the user name.</td></tr>
+            <tr><td>Encryption</td><td>STARTTLS (port 587)</td><td><code>SMTP_TLS</code></td><td>No encryption only for a mail server inside the network.</td></tr>
+            <tr><td>Alert channels <span class="muted">(Coming soon)</span></td><td>Empty</td><td>—</td><td>Email, Slack or Teams: an address the gateway sends a message to.</td></tr>
+            <tr><td>Which alerts go out <span class="muted">(Coming soon)</span></td><td>Budget, Security</td><td>—</td><td>What is sent to the channels.</td></tr>
+            <tr><td>Slower than usual by</td><td>2 times</td><td>—</td><td>Alert when the last hour's answer time (95% of answers) is this many times the week before.</td></tr>
+            <tr><td>Minimum answers in the hour</td><td>10 answers</td><td>—</td><td>Fewer answers than this never alert.</td></tr>
+            <tr><td>Short question: tokens in</td><td>2,000 tokens</td><td>—</td><td>Up to how many tokens in a question counts as short.</td></tr>
+            <tr><td>Short question: tokens out</td><td>600 tokens</td><td>—</td><td>Up to how many tokens in the answer.</td></tr>
+            <tr><td>Smallest saving shown</td><td>5 $</td><td>—</td><td>A recommendation saving less a month isn't shown.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-capabilities">Provider capabilities</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Allowed capabilities <span class="muted">(Coming soon, Can differ per team)</span></td><td>Images, Audio, Files, Batch, Embeddings, Video</td><td>—</td><td>What may be sent to providers.</td></tr>
+            <tr><td>Providers' built-in tools <span class="muted">(Coming soon)</span></td><td>Web search, File search, Code execution, MCP</td><td>—</td><td>Tools the model runs by itself.</td></tr>
+            <tr><td>Real-time voice <span class="muted">(Coming soon)</span></td><td>Off</td><td>—</td><td>Voice conversation with a model, with minute and connection limits.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-devtools">Developer tools</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Allowed tools <span class="muted">(Coming soon)</span></td><td>Claude Code, Codex, Cursor, Copilot, Gemini CLI</td><td>—</td><td>Developer tools allowed through the gateway.</td></tr>
+            <tr><td>Record the tool in the log <span class="muted">(Coming soon)</span></td><td>On</td><td>—</td><td>Which tool made each request.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-browser">Browser</h3>
+        <table>
+          <thead><tr><th>Setting</th><th>Default</th><th>In the server file</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Browser extension <span class="muted">(Coming soon)</span></td><td>Off</td><td>—</td><td>Watches public AI sites from employees' browsers.</td></tr>
+            <tr><td>Watched sites <span class="muted">(Coming soon)</span></td><td>chatgpt.com, claude.ai, gemini.google.com, copilot.microsoft.com, perplexity.ai, chat.deepseek.com</td><td>—</td><td>One per line.</td></tr>
+            <tr><td>When sensitive data is found <span class="muted">(Coming soon)</span></td><td>Follow the security policy</td><td>—</td><td>What the extension does.</td></tr>
+            <tr><td>What is reported to the gateway <span class="muted">(Coming soon)</span></td><td>Only what was found and done</td><td>—</td><td>How much the extension sends.</td></tr>
+            <tr><td>Unapproved sites <span class="muted">(Coming soon)</span></td><td>Empty</td><td>—</td><td>Redirected to the company chat.</td></tr>
+            <tr><td>Tell the employee monitoring is on <span class="muted">(Coming soon)</span></td><td>On</td><td>—</td><td>Locked on, as the law requires.</td></tr>
+          </tbody>
+        </table>
+        <h3 id="settings-file">Only in the settings file</h3>
+        <p>These are set only in the <code>.env</code> file or as environment variables, and need a restart.</p>
         <table>
           <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
           <tbody>
-            <tr><td><code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code></td><td>Empty</td><td>The provider keys. A provider without a key simply won't work.</td></tr>
-            <tr><td><code>LOCAL_API_KEY</code></td><td>Empty</td><td>A key for the company's model server (Ollama or vLLM), if it needs one. The server's address is set on the Models page. See <a href="#local">Models on the company server</a>.</td></tr>
-            <tr><td><code>ALLOW_LOCAL_LOOPBACK</code></td><td>Off</td><td><code>1</code> = the company's model server may be the gateway's own machine.</td></tr>
-            <tr><td><code>ADMIN_PASSWORD</code></td><td>Empty</td><td>Password for the admin screen from outside. Empty = completely closed from outside. At least 16 characters is recommended.</td></tr>
-            <tr><td><code>SITE_ADDRESS</code></td><td>Empty (with Docker: <code>:80</code>, unencrypted)</td><td>Domain for an automatically encrypted connection. The gateway answers to this name.</td></tr>
-            <tr><td><code>ALLOWED_HOSTS</code></td><td>Empty</td><td>Extra server names the gateway will answer to, separated by commas.</td></tr>
-            <tr><td><code>OPEN_ACCESS</code></td><td>Off</td><td><code>1</code> = chat without signing in on the office network.</td></tr>
-            <tr><td><code>PUBLIC_DEPLOY</code></td><td>Off</td><td><code>1</code> = the admin screen always asks for the password, and open mode is off. See <a href="#security-settings">Server security settings</a>.</td></tr>
-            <tr><td><code>EMBEDDINGS</code></td><td>The first one with a key: OpenAI, then Google</td><td>The provider for search by meaning: <code>openai</code>, <code>gemini</code> or <code>off</code>.</td></tr>
-            <tr><td><code>OPENAI_EMBED_MODEL</code>, <code>GEMINI_EMBED_MODEL</code></td><td><code>text-embedding-3-small</code>, <code>gemini-embedding-001</code></td><td>The model that works out the documents' "meaning fingerprints", at each provider.</td></tr>
             <tr><td><code>PORT</code></td><td><code>8080</code></td><td>The port the gateway listens on.</td></tr>
             <tr><td><code>GATEWAY_DB</code></td><td><code>gateway.db</code> in the folder it is started from (with Docker: <code>/data/gateway.db</code>)</td><td>Where the data file lives. The encryption key file and the backups are kept next to it.</td></tr>
-            <tr><td><code>SMTP_HOST</code></td><td>Empty</td><td>The mail server that sends the <a href="#summary">monthly summary</a>. Empty = no summary is sent.</td></tr>
-            <tr><td><code>SMTP_PORT</code></td><td><code>587</code></td><td>The mail server's port.</td></tr>
-            <tr><td><code>SMTP_USER</code>, <code>SMTP_PASSWORD</code></td><td>Empty</td><td>User name and password for the mail server, if it needs them. The password stays in the server settings only.</td></tr>
-            <tr><td><code>SMTP_FROM</code></td><td>Empty = <code>SMTP_USER</code></td><td>The address the email is sent from. If both it and <code>SMTP_USER</code> are empty, no email is sent.</td></tr>
-            <tr><td><code>SMTP_TLS</code></td><td><code>1</code></td><td><code>1</code> = encryption after connecting (STARTTLS, port 587); <code>ssl</code> = encrypted from the start (port 465); <code>0</code> = no encryption, only for a mail server inside the network.</td></tr>
-            <tr><td><code>ANTHROPIC_URL</code>, <code>OPENAI_URL</code>, <code>GEMINI_URL</code></td><td>The providers' official addresses</td><td>Where the gateway sends questions. Change them only for testing, or when the company routes traffic through its own intermediate server.</td></tr>
+            <tr><td><code>FIREGATE_DATA_KEY</code></td><td>Empty = the key file next to the database</td><td>The encryption key. See <a href="#encryption">Encryption and the encryption key</a>.</td></tr>
+            <tr><td><code>SITE_ADDRESS</code></td><td>Empty (with Docker: <code>:80</code>, unencrypted)</td><td>Domain for an automatically encrypted connection. The gateway answers to this name.</td></tr>
+            <tr><td><code>OPENAI_EMBED_MODEL</code>, <code>GEMINI_EMBED_MODEL</code></td><td><code>text-embedding-3-small</code>, <code>gemini-embedding-001</code></td><td>The model that works out the documents' "meaning fingerprints", at each provider.</td></tr>
             <tr><td><code>SEED_DEMO</code></td><td>Off</td><td><code>1</code> = on every start, fill an empty system with sample data. Meant for a demo on a server whose disk resets (such as Render's free plan).</td></tr>
             <tr><td><code>DEMO_PASSWORD</code>, <code>SEED_SOURCES_DIR</code></td><td>The password written in <code>seed_demo.py</code>; the <code>sources/it</code> folder next to the project</td><td>For sample data only: the chat password of the sample users, and the folder the sample documents are read from.</td></tr>
-            <tr><td><code>RENDER_EXTERNAL_HOSTNAME</code></td><td>Set by Render on its own</td><td>The server's name on Render. The gateway adds it to the names it answers to. No need to set it.</td></tr>
+            <tr><td><code>RENDER_EXTERNAL_HOSTNAME</code></td><td>Set by Render on its own</td><td>The server's name on Render. The gateway adds it to the names it answers to.</td></tr>
           </tbody>
         </table>
-        <p>The security settings (the encryption key, size and rate limits, <code>TRUSTED_PROXIES</code>, <code>SOURCE_ROOTS</code>, <code>ALLOW_PRIVATE_MCP</code> and more) are listed in <a href="#security-settings">Server security settings</a>.</p>`,
+        <p>For on/off settings in the file, <code>1</code>, <code>true</code>, <code>yes</code> or <code>on</code> turn it on; anything else turns it off. An empty variable counts as not set. The security settings are also explained in <a href="#security-settings">Server security settings</a>.</p>`,
 
   "#limits": `
         <h2>Known limitations</h2>

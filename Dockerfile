@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r /tmp/requ
 
 # Code stays owned by root: the gateway user can read it but not change it.
 WORKDIR /app
-COPY gateway.py sources.py security.py mcp.py seed_demo.py \
+COPY gateway.py settings.py sources.py security.py mcp.py seed_demo.py \
      admin.html admin.js chat.html chat.js docs.html docs.js style.css ui.js logo.svg \
      i18n.js en-admin.js en-chat.js en-docs.js ./
 COPY fonts ./fonts

@@ -15,7 +15,7 @@ import time
 
 import gateway
 
-SEED_VERSION = 3  # 3: a model on the company's own server, and answer times (speed monitoring)
+SEED_VERSION = 4  # 3: a model on the company's own server, and answer times (speed monitoring); 4: settings screen values
 # a public demo sets DEMO_PASSWORD (Render generates one); the fixed value is for local use only
 DEMO_PASSWORD = gateway.os.environ.get("DEMO_PASSWORD") or "demo-pass-1"
 DAYS = 90
@@ -384,13 +384,31 @@ def seed_local_and_speed(c):
     print(f"local model and answer times added: {len(rows):,} requests to {label}, {len(extra)} slow Gemini requests in the last hour.")
 
 
+def seed_settings(c):
+    """Version 4: an organization name, a few values changed from the default and one team's own setting, so the settings
+    screen has something to show. Only adds: a value already saved stays."""
+    with c:
+        for k, v in (("org_name", "אקמה בע\"מ"), ("soft_limit", "75"), ("backup_schedule", "weekly"), ("summary_enabled", "1"),
+                     ("summary_recipients", '["ceo@acme.example", "cfo@acme.example"]'), ("org_terms", '["פרויקט אורן"]')):
+            c.execute("insert into settings values (?, ?) on conflict(key) do update set value = excluded.value where value is null", (k, v))
+        c.execute("insert or ignore into team_settings values ('משפטי', 'org_terms', ?)", ('["פרויקט אורן", "תיק 4471"]',))
+        gateway.audit(c, "setting", {"name": "org_name", "old": "", "new": "אקמה בע\"מ"}, ts=time.time() - 3 * 86400)
+        gateway.audit(c, "team-setting", {"name": "משפטי", "key": "org_terms", "old": None, "new": ["פרויקט אורן", "תיק 4471"]}, ts=time.time() - 2 * 86400)
+        c.execute("insert into settings values ('seed_version', ?) on conflict(key) do update set value = excluded.value", (str(SEED_VERSION),))
+    print("settings screen values added.")
+
+
 c = gateway.db()
 version = int(gateway.setting(c, "seed_version", "0") or 0)
 if version >= SEED_VERSION and "--force" not in sys.argv:
     if __name__ == "__main__":
         sys.exit("demo data already loaded (nothing was changed); use --force to add another round")
+elif version >= 3 and "--force" not in sys.argv:
+    seed_settings(c)  # demo data from before version 4: only what version 4 adds
 elif version >= 2 and "--force" not in sys.argv:
-    seed_local_and_speed(c)  # demo data from before version 3: only what version 3 adds
+    seed_local_and_speed(c)  # demo data from before version 3: only what versions 3 and 4 add
+    seed_settings(c)
 else:
     seed(c)
     seed_local_and_speed(c)
+    seed_settings(c)

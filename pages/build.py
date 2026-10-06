@@ -21,7 +21,9 @@ OUT = os.path.join(ROOT, "pages", "site")
 tmp = tempfile.mkdtemp()
 os.environ.update(GATEWAY_DB=os.path.join(tmp, "demo.db"), SEED_SOURCES_DIR=os.path.join(tmp, "it"), OPEN_ACCESS="1",
                   ADMIN_PASSWORD="", PUBLIC_DEPLOY="", ANTHROPIC_API_KEY="", OPENAI_API_KEY="", GEMINI_API_KEY="",
-                  DEMO_PASSWORD="demo-pass-1")
+                  DEMO_PASSWORD="demo-pass-1",
+                  # a few values set in the server's environment, so the demo's settings screen shows them locked
+                  ALLOWED_HOSTS="ai.acme.example", SMTP_HOST="mail.acme.example", SMTP_FROM="ai@acme.example")
 sys.path.insert(0, ROOT)
 import gateway  # noqa: E402  (environment first)
 import seed_demo  # noqa: E402,F401  (fills the temporary database)
@@ -43,7 +45,10 @@ def post(path, body, opener):
 
 admin = {k: get("/admin/api/" + k) for k in ("overview", "usage", "daily", "logs", "audit", "sources", "security", "models",
                                               "models/daily", "sources/status", "activity", "audit/verify", "archive",
-                                              "savings", "summary/settings", "latency")}
+                                              "savings", "summary/settings", "latency", "settings", "teams/settings",
+                                              "settings/export")}
+# the build machine's own paths don't belong in a public demo: show the Docker layout instead
+admin["settings"]["system"].update(db_path="/data/gateway.db", key_file="/data/gateway.db.key", backup_folder="/data/backups")
 months = get("/admin/api/report")["months"]
 for m in months:  # the pages ask these per month: the report, the chargeback table, the summary email preview
     for key in ("report", "chargeback", "summary"):

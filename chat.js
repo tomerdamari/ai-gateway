@@ -42,7 +42,12 @@ function showLogin() {
 
 // open access (office network): no login screen, people pick their own name in the side menu
 async function boot() {
-  try { openMode = (await call("/api/config")).open; } catch {}
+  try {
+    const conf = await call("/api/config");
+    openMode = conf.open;
+    // the organization's name next to FireGate (the settings page, "Organization name")
+    if (conf.org_name) document.querySelectorAll(".brand, .sidebar-brand").forEach(b => { b.lastChild.textContent = "FireGate · " + conf.org_name; });
+  } catch {}
   $("pwLinks").hidden = openMode;
   $("whoPick").hidden = !openMode;
   if (openMode) {

@@ -56,6 +56,7 @@
           const page = D.admin["account?name=" + u.searchParams.get("name")];
           return page ? json(page) : json({ error: "not found" }, 404);
         }
+        if (key === "update-check") return json({ ok: true, current: "1.1.0", latest: "1.1.0", newer: false });
         return key in D.admin ? json(D.admin[key]) : json({ error: "not found" }, 404);
       }
       if (key === "models/test") return json({ ok: false, error: "no API key for this provider in .env" });
@@ -63,6 +64,21 @@
       // the local model server's connection check: a recorded answer, as an Ollama server would give it
       if (key === "local/test") return json({ ok: true, ms: 38, models: ["llama3.3:70b", "qwen3:32b", "mistral-small3.1:24b"] });
       if (key === "accounts" || key === "accounts/key") { notSaved(); return json({ ok: true, key: "gw-demo-key-not-real" }); }
+      // the settings screen: checks, a dry-run import against the recorded values, backups and update checks answer as a demo
+      if (key === "settings/test") return json({ ok: false, error: "זו תצוגת הדגמה, אין חיבור לשרתים" });
+      if (key === "settings/import" && body.dry_run) {
+        const now = Object.fromEntries(D.admin.settings.settings.map(s => [s.key, s]));
+        const data = body.settings && body.settings.settings ? body.settings.settings : body.settings || {};
+        const diff = [], skipped = {};
+        for (const [k, v] of Object.entries(data)) {
+          const s = now[k];
+          if (!s) skipped[k] = "unknown"; else if (s.type === "secret") skipped[k] = "secret"; else if (s.soon) skipped[k] = "soon";
+          else if (s.source === "env") skipped[k] = "env"; else if (JSON.stringify(s.value) !== JSON.stringify(v)) diff.push({ key: k, old: s.value, new: v });
+        }
+        return json({ diff, skipped, errors: {} });
+      }
+      if (key === "settings") { notSaved(); return json({ ok: true, changed: Object.keys(body.changes || {}) }); }
+      if (key === "backup") { notSaved(); return json({ ok: true, file: "demo-manual-backup.db", folder: "backups" }); }
       notSaved();
       return json({ ok: true });
     }

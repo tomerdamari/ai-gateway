@@ -13,6 +13,8 @@ Apps:     Anthropic SDK -> base_url http://HOST:8080        (POST /v1/messages)
 import base64
 import collections
 import csv
+import datetime
+import functools
 import hashlib
 import html
 import http.cookies
@@ -34,6 +36,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zoneinfo
 from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -42,6 +45,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import mcp
 import security
+import settings
 import sources
 
 # Without Docker: read KEY=VALUE lines from .env next to this file. Real environment variables win.
@@ -53,24 +57,21 @@ if os.path.exists(_env):
             if sep and not k.startswith("#"):
                 os.environ.setdefault(k.strip(), v.strip())
 
-VERSION = "1.1.0"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
+VERSION = "1.2.0"  # also in ui.js (shown in the admin footer); CHANGELOG.md lists what each version changed
 DB =os.environ.get("GATEWAY_DB", "gateway.db")
-# Admin from a private-network address (office LAN, this machine) needs no password.
-# From anywhere else: this password, or no access at all when it's empty.
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
-# Host names this server answers to, besides IP addresses and localhost. Blocks "DNS rebinding": a hostile site
-# pointing its own name at this server's address so the victim's browser talks to us as that site.
-# Open access: from the office network the chat needs no password; people pick their own name.
-# Budgets and logs still work per name, but anyone inside can act as anyone. From outside, passwords as usual.
-# Public deployment (a cloud host): every visitor arrives through the host's private network, so "private address"
-# no longer means "inside the office". Then the admin page always needs ADMIN_PASSWORD and open access is off.
-PUBLIC = os.environ.get("PUBLIC_DEPLOY", "").strip().lower() in ("1", "true", "yes", "on")
-OPEN_ACCESS = not PUBLIC and os.environ.get("OPEN_ACCESS", "").strip().lower() in ("1", "true", "yes", "on")
-ALLOWED_HOSTS = {h.strip().lower() for h in [os.environ.get("SITE_ADDRESS", ""), os.environ.get("RENDER_EXTERNAL_HOSTNAME", ""),
-                                             *os.environ.get("ALLOWED_HOSTS", "").split(",")]
-                 if h.strip() and not h.strip().startswith(":")}
+# Every adjustable value (admin password, open access, allowed host names, limits, thresholds, provider keys...) is a
+# setting: settings.py lists them all, cfg() reads one. The server's environment / .env wins over the settings screen.
+# Admin from a private-network address (office LAN, this machine) needs no password; from anywhere else the admin
+# password, or no access at all without one. Allowed host names block "DNS rebinding": a hostile site pointing its own
+# name at this server's address so the victim's browser talks to us as that site. Open access: from the office network
+# the chat needs no password; people pick their own name. Public deployment (a cloud host): every visitor arrives through
+# the host's private network, so "private address" no longer means "inside the office"; the admin page then always needs
+# the password and open access is off.
+cfg = settings.get
+FIXED_HOSTS = {h.strip().lower() for h in (os.environ.get("SITE_ADDRESS", ""), os.environ.get("RENDER_EXTERNAL_HOSTNAME", ""))
+               if h.strip() and not h.strip().startswith(":")}
 HERE = os.path.dirname(os.path.abspath(__file__))
-PAGES = {"/": ("admin.html", "text/html"), "/admin": ("admin.html", "text/html"), "/chat": ("chat.html", "text/html"), "/docs": ("docs.html", "text/html"), "/style.css": ("style.css", "text/css"),
+PAGES = {"/admin": ("admin.html", "text/html"), "/chat": ("chat.html", "text/html"), "/docs": ("docs.html", "text/html"), "/style.css": ("style.css", "text/css"),
          "/ui.js": ("ui.js", "text/javascript"),
          "/logo.svg": ("logo.svg", "image/svg+xml"),
          "/docs.js": ("docs.js", "text/javascript"),
@@ -82,59 +83,54 @@ PAGES = {"/": ("admin.html", "text/html"), "/admin": ("admin.html", "text/html")
          "/chat.js": ("chat.js", "text/javascript"), "/admin.js": ("admin.js", "text/javascript")}
 # Scripts only from our own files: an injected <script> or onclick= in any text we show can't run.
 CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
-SOFT_LIMIT = 0.8  # warn at 80% of budget, block at 100%
-SESSION_HOURS = 12
-LOCK_AFTER, LOCK_MINUTES = 5, 15  # wrong passwords in a row -> account locked for a while
 PBKDF2_ROUNDS = 200_000
-_int = lambda k, d: int(os.environ.get(k, "").strip() or d)
-MAX_BODY = _int("MAX_BODY", 40 * 1024 * 1024)  # bytes: document uploads (base64) and app calls (may carry images/PDFs)
-MAX_REQUEST_BODY = _int("MAX_REQUEST_BODY", 1024 * 1024)  # bytes: every other request (chat, admin changes)
-MAX_OUTPUT_TOKENS = _int("MAX_OUTPUT_TOKENS", 8192)  # an app asking for more answer tokens is clamped to this
-MAX_CONCURRENT = _int("MAX_CONCURRENT", 4)  # questions in progress at once per account; more -> 429
-MAX_MESSAGES = _int("MAX_MESSAGES", 500)  # messages in one request
-LOGIN_IP_LIMIT, LOGIN_IP_MINUTES = 10, 15  # wrong passwords from one address (any names) -> that address waits
-SPIKE_MIN, SPIKE_FACTOR = 5.0, 5  # cost-spike alert: last hour above max($5, 5x the account's usual hour)
-# Proxies whose X-Forwarded-For / X-Forwarded-Proto we believe (IPs or CIDR ranges, comma-separated). Anyone else
-# sending those headers is ignored: otherwise a visitor could claim an office address and skip the admin password.
-TRUSTED_PROXIES = [ipaddress.ip_network(p.strip(), strict=False)
-                   for p in os.environ.get("TRUSTED_PROXIES", "127.0.0.1,::1").split(",") if p.strip()]
+MB = 1024 * 1024
 REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
-# provider -> (client-facing path, upstream URL, auth headers, usage field names for input/output tokens).
-# Each provider keeps its own request format, so apps use the provider's own SDK pointed at us.
+
+def trusted_networks():
+    # proxies whose X-Forwarded-For / X-Forwarded-Proto we believe. Anyone else sending those headers is ignored:
+    # otherwise a visitor could claim an office address and skip the admin password.
+    return [ipaddress.ip_network(p, strict=False) for p in cfg(None, "trusted_proxies")]
+
+
+def public_deploy():
+    return cfg(None, "public_deploy")
+
+
+def open_access():
+    return not public_deploy() and cfg(None, "open_access")
+
+
+# provider -> (client-facing path, usage field names for input/output tokens). Each provider keeps its own request format,
+# so apps use the provider's own SDK pointed at us. Keys and addresses are settings (anthropic_api_key, anthropic_url...).
+# "local": models on the company's own server (Ollama, vLLM), the same API as OpenAI, at the address in local_base_url.
 PROVIDERS = {
-    "anthropic": (
-        "/v1/messages",
-        os.environ.get("ANTHROPIC_URL", "https://api.anthropic.com/v1/messages"),
-        {"x-api-key": os.environ.get("ANTHROPIC_API_KEY", ""), "anthropic-version": "2023-06-01"},
-        ("input_tokens", "output_tokens"),
-    ),
-    "openai": (
-        "/v1/chat/completions",
-        os.environ.get("OPENAI_URL", "https://api.openai.com/v1/chat/completions"),
-        {"authorization": "Bearer " + os.environ.get("OPENAI_API_KEY", "")},
-        ("prompt_tokens", "completion_tokens"),
-    ),
-    "gemini": (  # Gemini's OpenAI-compatible endpoint
-        "/v1/chat/completions",
-        os.environ.get("GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"),
-        {"authorization": "Bearer " + os.environ.get("GEMINI_API_KEY", "")},
-        ("prompt_tokens", "completion_tokens"),
-    ),
-    # models on the company's own server (Ollama, vLLM): the same API as OpenAI. The address is set on the models page
-    # (LOCAL_URL below, read from the settings); an optional key comes only from LOCAL_API_KEY and is never stored or shown.
-    "local": (
-        "/v1/chat/completions",
-        "",
-        {"authorization": "Bearer " + os.environ["LOCAL_API_KEY"].strip()} if os.environ.get("LOCAL_API_KEY", "").strip() else {},
-        ("prompt_tokens", "completion_tokens"),
-    ),
+    "anthropic": ("/v1/messages", ("input_tokens", "output_tokens")),
+    "openai": ("/v1/chat/completions", ("prompt_tokens", "completion_tokens")),
+    "gemini": ("/v1/chat/completions", ("prompt_tokens", "completion_tokens")),  # Gemini's OpenAI-compatible endpoint
+    "local": ("/v1/chat/completions", ("prompt_tokens", "completion_tokens")),
 }
+
+
+def provider_key(p):
+    return cfg(None, p + "_api_key").strip()
+
+
+def provider_auth(p):
+    key = provider_key(p)
+    if p == "anthropic":
+        return {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    return {"authorization": "Bearer " + key} if key or p != "local" else {}
+
+
+def provider_url(p):
+    return cfg(None, "local_base_url") + "/chat/completions" if p == "local" else cfg(None, p + "_url")
+
+
 # The local model server usually sits on the company network, so private addresses are allowed; this machine itself only
-# with ALLOW_LOCAL_LOOPBACK=1 (Ollama installed next to the gateway). Cloud metadata and link-local addresses never.
-LOCAL_LOOPBACK = os.environ.get("ALLOW_LOCAL_LOOPBACK", "").strip().lower() in ("1", "true", "yes", "on")
-LOCAL_URL = ""  # base address, e.g. http://ollama:11434/v1; refreshed from the settings with the models
-LOCAL_OPENER = mcp.opener(lambda ip: mcp.blocked_ip(ip, loopback=LOCAL_LOOPBACK, private=True), "the local model server", OSError)
+# with the local_loopback setting (Ollama installed next to the gateway). Cloud metadata and link-local addresses never.
+LOCAL_OPENER = mcp.opener(lambda ip: mcp.blocked_ip(ip, loopback=cfg(None, "local_loopback"), private=True), "the local model server", OSError)
 
 # Models live in the database and are managed from the admin "models" page.
 # These are only the first-run defaults: alias, label, provider, real model, $ per 1M input / output tokens.
@@ -171,6 +167,7 @@ create table if not exists audit(ts real, action text, detail text);
 create table if not exists models(alias text primary key, label text not null default '', provider text not null, model text not null,
     price_in real not null, price_out real not null, enabled int not null default 1, created real);
 create table if not exists settings(key text primary key, value text);
+create table if not exists team_settings(team text not null, key text not null, value text, primary key(team, key));
 create table if not exists blocked_requests(ts real, name text, team text, reason text, model text, request_id text, excerpt text);
 create index if not exists blocked_requests_ts on blocked_requests(ts);
 create index if not exists logs_name_ts on logs(name, ts);
@@ -182,8 +179,10 @@ def db():
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA + sources.SCHEMA + security.SCHEMA)
     migrate(c)
-    # monthly budgets: first touch in a new month zeroes spending (history stays in logs)
-    month = time.strftime("%Y-%m")
+    settings.refresh(c)  # every connection, like the models: a change on the settings screen applies to the next request
+    mcp.ALLOW_PRIVATE = cfg(c, "mcp_private")
+    # monthly budgets: first touch in a new budget month zeroes spending (history stays in logs)
+    month = month_of(time.time())
     with c:
         c.execute("update accounts set spent = 0, month = ? where month is not ?", (month, month))
         c.execute("update teams set spent = 0, month = ? where month is not ?", (month, month))
@@ -341,17 +340,22 @@ def encrypt_existing(c):
                               [(*[v if not isinstance(v, str) or v.startswith(ENC) else encrypt(v) for v in r[1:]], r[0]) for r in rows])
 
 
-def backup(c, label):
-    """Consistent copy of the whole database (SQLite backup API) to backups/ in the database's own folder."""
-    folder = os.path.join(os.path.dirname(os.path.abspath(DB)), "backups")
+def backup(c, label, folder="backups", tag=None):
+    """Consistent copy of the whole database (SQLite backup API) to a folder in the database's own folder. Never replaces
+    an existing file (and so never deletes an older backup)."""
+    folder = os.path.join(os.path.dirname(os.path.abspath(DB)), folder)
     os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, f"{os.path.splitext(os.path.basename(DB))[0]}-before-{label}-{time.strftime('%Y%m%d-%H%M%S')}.db")
+    stem = f"{os.path.splitext(os.path.basename(DB))[0]}-{tag or 'before-' + label}-{time.strftime('%Y%m%d-%H%M%S')}"
+    path, n = os.path.join(folder, stem + ".db"), 1
+    while os.path.exists(path):
+        n += 1
+        path = os.path.join(folder, f"{stem}-{n}.db")
     dst = sqlite3.connect(path)
     try:
         c.backup(dst)
     finally:
         dst.close()
-    print(f"database backed up before migration ({label}): {path}", flush=True)
+    print(f"database backed up ({tag or 'before migration: ' + label}): {path}", flush=True)
     return path
 
 
@@ -401,8 +405,7 @@ def setting(c, key, default=None):
 
 
 def refresh_models(c):
-    global MODELS, ALL_MODELS, MODEL_EXTRA, LOCAL_URL
-    LOCAL_URL = setting(c, "local_base_url", "")
+    global MODELS, ALL_MODELS, MODEL_EXTRA
     rows = c.execute("select alias, provider, model, price_in, price_out, enabled, price_cached, fallback from models"
                      " where archived is null order by created, alias").fetchall()
     ALL_MODELS = {r["alias"]: (r["provider"], r["model"], r["price_in"], r["price_out"]) for r in rows}
@@ -412,8 +415,37 @@ def refresh_models(c):
 
 
 def default_model(c):
-    row = c.execute("select value from settings where key = 'default_model'").fetchone()
-    return row[0] if row and row[0] in MODELS else next(iter(MODELS), None)
+    m = cfg(c, "default_model")
+    return m if m in MODELS else next(iter(MODELS), None)
+
+
+# --- time: days and budget months in the chosen time zone (the timezone setting; empty = the server's clock) ---
+
+def tzinfo():
+    name = cfg(None, "timezone")
+    try:
+        return zoneinfo.ZoneInfo(name) if name else None
+    except (ValueError, KeyError, OSError):  # no time zone data on this server (Windows without tzdata): the server's clock
+        return None
+
+
+def localtime(t=None):
+    tz, t = tzinfo(), time.time() if t is None else t
+    return datetime.datetime.fromtimestamp(t, tz).timetuple() if tz else time.localtime(t)
+
+
+def mktime(y, m, d, hh=0, mm=0, ss=0):
+    tz = tzinfo()
+    return datetime.datetime(y, m, d, hh, mm, ss, tzinfo=tz).timestamp() if tz else time.mktime((y, m, d, hh, mm, ss, 0, 0, -1))
+
+
+def sql_local():
+    """The SQLite modifier that turns a unix time into local time: 'localtime' (the server's clock) or the zone's offset."""
+    tz = tzinfo()
+    if not tz:
+        return "localtime"
+    # ponytail: today's offset for every row, so rows from the other side of a daylight-saving change sit an hour off in charts
+    return f"{int(datetime.datetime.now(tz).utcoffset().total_seconds()):+d} seconds"
 
 
 def audit(c, action, detail, ts=None):
@@ -468,7 +500,7 @@ def set_archived(c, kind, body, name, restore):
             users = c.execute("select count(*) from accounts where archived is null and ',' || models || ',' like ?", (f"%,{name},%",)).fetchone()[0]
             if users:
                 raise ValueError(f"{users} accounts still use this model; remove it from them or turn it off instead")
-            if setting(c, "default_model") == name:
+            if cfg(c, "default_model") == name:
                 raise ValueError("this is the default model; choose another default first")
         if restore and kind == "account":
             team = c.execute("select team from accounts where name = ?", (name,)).fetchone()[0]
@@ -545,7 +577,7 @@ def account_fields(c, body, partial):
     if "key_expires" in body:  # a date (the key works until the end of that day), or empty for no expiry
         v = str(body["key_expires"] or "").strip()
         try:
-            out["key_expires"] = time.mktime((*map(int, v.split("-")), 23, 59, 59, 0, 0, -1)) if v else None
+            out["key_expires"] = mktime(*map(int, v.split("-")), 23, 59, 59) if v else None
         except (ValueError, TypeError):
             raise ValueError("key expiry must be a date like 2026-12-31")
     return out  # only these fields: anything else in the request (spent, key_hash, pw_hash...) is ignored
@@ -585,19 +617,43 @@ _BANK = re.compile(r"((?:חשבון\s+בנק|מס(?:פר|')\s+חשבון\s+בנ�
 _PASSPORT = re.compile(r"((?:passport|דרכון)[^\d\n]{0,20}?)[A-Z]?\d{7,9}\b", re.I)
 
 
-def redact_text(s):
-    s = _SECRET.sub("[REDACTED_SECRET]", s)
-    s = _IBAN.sub("[REDACTED_IBAN]", s)
-    s = _CARD.sub(lambda m: "[REDACTED_CARD]" if _luhn(re.sub(r"\D", "", m[0])) else m[0], s)
-    s = _ID.sub(lambda m: "[REDACTED_ID]" if _il_id(m[0]) else m[0], s)
-    s = _PHONE.sub("[REDACTED_PHONE]", s)
-    s = _EMAIL.sub("[REDACTED_EMAIL]", s)
-    s = _BANK.sub(lambda m: m[1] + "[REDACTED_BANK]", s)
-    return _PASSPORT.sub(lambda m: m[1] + "[REDACTED_PASSPORT]", s)
+@functools.lru_cache(maxsize=64)
+def _terms_re(terms):
+    return re.compile("|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True)), re.I) if terms else None
+
+
+def redact_text(s, kinds=None, terms=None):
+    """Hide sensitive values. kinds / terms: the mask_types and org_terms settings (default: the global ones)."""
+    kinds = set(cfg(None, "mask_types") if kinds is None else kinds)
+    terms = _terms_re(tuple(cfg(None, "org_terms") if terms is None else terms))
+    if terms:
+        s = terms.sub("[REDACTED_TERM]", s)
+    if "secret" in kinds:
+        s = _SECRET.sub("[REDACTED_SECRET]", s)
+    if "iban" in kinds:
+        s = _IBAN.sub("[REDACTED_IBAN]", s)
+    if "card" in kinds:
+        s = _CARD.sub(lambda m: "[REDACTED_CARD]" if _luhn(re.sub(r"\D", "", m[0])) else m[0], s)
+    if "id" in kinds:
+        s = _ID.sub(lambda m: "[REDACTED_ID]" if _il_id(m[0]) else m[0], s)
+    if "phone" in kinds:
+        s = _PHONE.sub("[REDACTED_PHONE]", s)
+    if "email" in kinds:
+        s = _EMAIL.sub("[REDACTED_EMAIL]", s)
+    if "bank" in kinds:
+        s = _BANK.sub(lambda m: m[1] + "[REDACTED_BANK]", s)
+    if "passport" in kinds:
+        s = _PASSPORT.sub(lambda m: m[1] + "[REDACTED_PASSPORT]", s)
+    return s
+
+
+def redactor(team):
+    """redact_text with the team's own sensitive-data settings, when it has them."""
+    kinds, terms = cfg(None, "mask_types", team), tuple(cfg(None, "org_terms", team))
+    return lambda s: redact_text(s, kinds, terms)
 
 
 def redact(obj, fn=None):
-    # ponytail: one policy for every account; add a per-account switch if a team must send IDs to a model
     fn = fn or redact_text
     if isinstance(obj, str):
         return fn(obj)
@@ -609,8 +665,9 @@ def redact(obj, fn=None):
 
 
 def mask_answer(s):
-    """Answers: only access keys and credentials are masked (an answer may rightly contain an email or a phone)."""
-    return _SECRET.sub("[REDACTED_SECRET]", s)
+    """Answers: only access keys and credentials are masked (an answer may rightly contain an email or a phone).
+    The mask_answer_secrets setting turns it off."""
+    return _SECRET.sub("[REDACTED_SECRET]", s) if cfg(None, "mask_answer_secrets") else s
 
 
 class AnswerMasker:
@@ -685,7 +742,7 @@ _login_fails = collections.defaultdict(collections.deque)
 
 def inflight_enter(name):
     with _hits_lock:
-        if _inflight[name] >= MAX_CONCURRENT:
+        if _inflight[name] >= cfg(None, "max_concurrent"):
             return False
         _inflight[name] += 1
         return True
@@ -697,11 +754,11 @@ def inflight_leave(name):
 
 
 def login_fails(ip, add=False):
-    """Wrong passwords from this address in the last LOGIN_IP_MINUTES (after recording one more if add)."""
-    now = time.time()
+    """Wrong passwords from this address in the last login_ip_minutes (after recording one more if add)."""
+    now, minutes = time.time(), cfg(None, "login_ip_minutes")
     with _hits_lock:
         q = _login_fails[ip]
-        while q and q[0] < now - LOGIN_IP_MINUTES * 60:
+        while q and q[0] < now - minutes * 60:
             q.popleft()
         if add:
             q.append(now)
@@ -711,8 +768,8 @@ def login_fails(ip, add=False):
 # --- budgets ---
 
 def day_start(t=None):
-    lt = time.localtime(t)
-    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+    lt = localtime(t)
+    return mktime(lt.tm_year, lt.tm_mon, lt.tm_mday)
 
 
 def team_models(c, team):
@@ -737,12 +794,16 @@ def authorize(c, acct, alias):
         return 403, f"model '{alias}' not allowed", "model-not-allowed"
     if alias not in effective_models(c, acct):
         return 403, f"model '{alias}' not allowed for team", "model-not-allowed-team"
-    # ponytail: check-then-charge, concurrent requests can overshoot a budget by one request each
-    if acct["budget"] and acct["spent"] >= acct["budget"]:  # 0 = no personal cap, like teams
-        return 402, "personal monthly budget exhausted", "budget"
-    team = c.execute("select budget, spent from teams where name = ?", (acct["team"],)).fetchone()
-    if team and team["budget"] and team["spent"] >= team["budget"]:
-        return 402, "team monthly budget exhausted", "team-budget"
+    over = over_budget(c, acct)
+    if over:
+        mode = cfg(c, "budget_exhausted")
+        if mode == "alert":  # allowed; the admin hears about it once a day per account
+            if not c.execute("select 1 from security_events where kind = 'budget-exceeded' and name = ? and ts >= ?",
+                             (acct["name"], day_start())).fetchone():
+                with c:
+                    security.event(c, "budget-exceeded", acct["name"], {"reason": over[1]})
+        elif not (mode == "cheap" and alias == cfg(c, "auto_cheap")):
+            return 402, over[0], over[1]
     if acct["daily_tokens"] and c.execute("select coalesce(sum(tokens_in + tokens_out), 0) from logs where name = ? and ts >= ?",
                                           (acct["name"], day_start())).fetchone()[0] >= acct["daily_tokens"]:
         return 429, "daily token quota reached", "daily-quota"
@@ -751,11 +812,32 @@ def authorize(c, acct, alias):
     return None
 
 
-def policy(c):
-    """(injection policy: block|log, sensitive-data policy: mask|block|log|local), set on the admin security page.
+def over_budget(c, acct):
+    """(message, reason code) when the person's or their team's monthly budget is used up, else None."""
+    # ponytail: check-then-charge, concurrent requests can overshoot a budget by one request each
+    if acct["budget"] and acct["spent"] >= acct["budget"]:  # 0 = no personal cap, like teams
+        return "personal monthly budget exhausted", "budget"
+    team = c.execute("select budget, spent from teams where name = ?", (acct["team"],)).fetchone()
+    if team and team["budget"] and team["spent"] >= team["budget"]:
+        return "team monthly budget exhausted", "team-budget"
+    return None
+
+
+def budget_switch(c, acct, alias, path=None):
+    """When the budget is used up and the budget_exhausted setting says "cheap": the automatic choice's cheap model, if the
+    person may use it (and, for apps, it speaks the same request format). Otherwise alias, which authorize() then blocks."""
+    cheap = cfg(c, "auto_cheap")
+    if (cfg(c, "budget_exhausted") != "cheap" or alias == cheap or cheap not in MODELS
+            or cheap not in effective_models(c, acct) or not over_budget(c, acct)
+            or (path and PROVIDERS[MODELS[cheap][0]][0] != path)):
+        return alias
+    return cheap
+
+
+def policy(c, team=None):
+    """(injection policy: block|log, sensitive-data policy: mask|block|log|local): the settings, or the team's own.
     local: a question with sensitive data goes, unmasked, to a model on the company's own server (mask when there is none)."""
-    inj, sens = setting(c, "policy_injection", "block"), setting(c, "policy_sensitive", "mask")
-    return inj if inj in ("block", "log") else "block", sens if sens in SENSITIVE_POLICIES else "mask"
+    return cfg(c, "policy_injection", team), cfg(c, "policy_sensitive", team)
 
 
 SENSITIVE_POLICIES = ("mask", "block", "log", "local")
@@ -778,15 +860,15 @@ def last_user_text(messages):
 
 
 def check_spike(c, name):
-    """Security event (once per account per day) when the last hour cost more than max($5, 5x the account's average
-    hour over the 7 days before it)."""
-    now = time.time()
+    """Security event (once per account per day) when the last hour cost more than max(spike_min, spike_factor x the
+    account's average hour over the 7 days before it): $5 and 5x by default."""
+    now, least, factor = time.time(), cfg(c, "spike_min"), cfg(c, "spike_factor")
     hour = c.execute("select coalesce(sum(cost), 0) from logs where name = ? and ts >= ?", (name, now - 3600)).fetchone()[0]
-    if hour <= SPIKE_MIN:
+    if hour <= least:
         return
     week = c.execute("select coalesce(sum(cost), 0) from logs where name = ? and ts >= ? and ts < ?",
                      (name, now - 7 * 86400 - 3600, now - 3600)).fetchone()[0]
-    if hour > max(SPIKE_MIN, SPIKE_FACTOR * week / 168) and not c.execute(
+    if hour > max(least, factor * week / 168) and not c.execute(
             "select 1 from security_events where kind = 'cost-spike' and name = ? and ts >= ?", (name, day_start())).fetchone():
         security.event(c, "cost-spike", name, {"hour": round(hour, 4), "average": round(week / 168, 4)})
 
@@ -801,8 +883,11 @@ def price_usage(price_in, price_out, price_cached, u):
 
 
 def log_call(c, name, team, model, u, cost, request, response, note="", request_id=None):
-    """u may also carry "ms" / "ttft" (speed), "status" (the provider's answer) and "estimated" (token counts guessed)."""
+    """u may also carry "ms" / "ttft" (speed), "status" (the provider's answer) and "estimated" (token counts guessed).
+    With the log_content setting at "metadata" the question and answer are not stored at all."""
     note = "; ".join(x for x in (note, "estimated" if u.get("estimated") else "") if x)
+    if cfg(c, "log_content") == "metadata":
+        request = response = None
     c.execute("insert into logs(ts, name, team, model, tokens_in, tokens_out, cost, request, response, cache_read, cache_write, note,"
               " request_id, latency_ms, ttft_ms, status) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (time.time(), name, team, model, u["in"] + u["cache_read"] + u["cache_write"], u["out"], cost, encrypt(request),
@@ -817,16 +902,21 @@ def charge(c, acct, alias, u, request, response, note="", request_id=None):
         c.execute("update teams set spent = spent + ? where name = ?", (cost, acct["team"]))
         log_call(c, acct["name"], acct["team"], real, u, cost, request, response, note, request_id)
         check_spike(c, acct["name"])
-    if acct["budget"] and acct["spent"] < acct["budget"] * SOFT_LIMIT <= acct["spent"] + cost:
-        print(f"WARNING: {acct['name']} passed {SOFT_LIMIT:.0%} of budget (${acct['budget']})", flush=True)
+    soft = cfg(c, "soft_limit") / 100
+    if acct["budget"] and acct["spent"] < acct["budget"] * soft <= acct["spent"] + cost:
+        print(f"WARNING: {acct['name']} passed {soft:.0%} of budget (${acct['budget']})", flush=True)
     return cost
 
 
 def month_bounds(t=None):
-    lt = time.localtime(t)
-    start = time.mktime((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1))
-    y, m = (lt.tm_year + 1, 1) if lt.tm_mon == 12 else (lt.tm_year, lt.tm_mon + 1)
-    return start, time.mktime((y, m, 1, 0, 0, 0, 0, 0, -1))
+    """Start and end of the budget month holding t: local midnight on the budget_reset_day setting (1-28) to the same day
+    a month later. A budget month is named after the calendar month it starts in."""
+    day, lt = cfg(None, "budget_reset_day"), localtime(t)
+    y, m = lt.tm_year, lt.tm_mon
+    if lt.tm_mday < day:
+        y, m = (y - 1, 12) if m == 1 else (y, m - 1)
+    ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
+    return mktime(y, m, day), mktime(ny, nm, day)
 
 
 def excerpt(raw, question, n=2000):
@@ -912,15 +1002,27 @@ TEST_CALLS = "(בדיקת מודל)"  # connection tests from the models page: l
 
 
 def month_start(month):
-    """Local midnight on the 1st of a month written like 2026-10."""
+    """Start of the budget month named like 2026-10: local midnight on the reset day of that month."""
     m = re.fullmatch(r"(\d{4})-(\d{2})", str(month or ""))
     if not m or not 1 <= int(m[2]) <= 12:
         raise ValueError("month must look like 2026-10")
-    return time.mktime((int(m[1]), int(m[2]), 1, 0, 0, 0, 0, 0, -1))
+    return mktime(int(m[1]), int(m[2]), cfg(None, "budget_reset_day"))
 
 
 def month_of(t):
-    return time.strftime("%Y-%m", time.localtime(t))
+    """The name (2026-10) of the budget month holding t."""
+    lt = localtime(month_bounds(t)[0])
+    return f"{lt.tm_year:04d}-{lt.tm_mon:02d}"
+
+
+def recount_spent(c):
+    """This budget month's spending, counted again from the log: after the reset day or the time zone changes, the running
+    totals would otherwise belong to the old month boundaries."""
+    start, month = month_bounds()[0], month_of(time.time())
+    c.execute("update accounts set spent = (select coalesce(sum(cost), 0) from logs where logs.name = accounts.name and ts >= ?),"
+              " month = ?", (start, month))
+    c.execute("update teams set spent = (select coalesce(sum(cost), 0) from logs where logs.team = teams.name and ts >= ?),"
+              " month = ?", (start, month))
 
 
 def last_full_month(now=None):
@@ -958,10 +1060,9 @@ def month_report(c, month):
 
 
 # --- savings recommendations: where the same work could cost less ---
-SIMPLE_TOKENS_IN, SIMPLE_TOKENS_OUT = 2000, 600  # a "short question": at most this many tokens in, and this many out
+# a "short question" (simple_tokens_in / _out settings) and the smallest saving worth showing (savings_min) are settings
 STRONG_FACTOR = 2  # a model is "strong" when it is the automatic choice's strong model, or costs (in + out) this many times the cheap one
 CONCENTRATION = 0.8  # a team spending more than this share on its provider's priciest model gets a recommendation
-SAVINGS_MIN = 5.0  # $ a month: a smaller saving isn't worth the admin's attention
 SAVINGS_DAYS = 30
 SAVINGS_ORDER = {"simple-questions": 0, "concentrated": 1, "unused-model": 2}
 
@@ -978,14 +1079,14 @@ def cheap_for(c, alias):
     """Where alias's simple questions could go: the automatic choice's cheap model when it is the same provider, else the
     provider's cheapest model that is on. None when alias isn't a strong model or nothing cheaper is on."""
     provider = ALL_MODELS[alias][0]
-    auto = setting(c, "auto_cheap", "fast")
+    auto = cfg(c, "auto_cheap")
     if auto in MODELS and auto != alias and MODELS[auto][0] == provider:
         cheap = auto
     else:
         cheap = min((a for a, m in MODELS.items() if m[0] == provider and a != alias), key=model_price, default=None)
     if not cheap or model_price(cheap) >= model_price(alias):
         return None
-    strong = alias == setting(c, "auto_strong", "smart") or model_price(alias) >= STRONG_FACTOR * model_price(cheap)
+    strong = alias == cfg(c, "auto_strong") or model_price(alias) >= STRONG_FACTOR * model_price(cheap)
     return cheap if strong else None
 
 
@@ -997,6 +1098,7 @@ def savings(c, now=None):
     unused-model: a model that is on but nobody used for 30 days (and that is older than that)."""
     now = time.time() if now is None else now
     since = now - SAVINGS_DAYS * 86400
+    short_in, short_out, least = cfg(c, "simple_tokens_in"), cfg(c, "simple_tokens_out"), cfg(c, "savings_min")
     labels = {r[0]: r[1] or r[0] for r in c.execute("select alias, label from models")}
     alias_of = {}  # logs keep the provider's model name; an enabled alias wins over a disabled one with the same name
     for a, m in [*MODELS.items(), *ALL_MODELS.items()]:
@@ -1022,7 +1124,7 @@ def savings(c, now=None):
                        " sum(short * tokens_out) s_out, sum(short * cache_read) s_cr, sum(short * cache_write) s_cw, sum(short * cost) s_cost"
                        " from (select team, name, model, cost, tokens_in, tokens_out, cache_read, cache_write,"
                        " (tokens_in <= ? and tokens_out <= ?) short from logs where ts >= ? and name not like '(%') group by team, name, model",
-                       (SIMPLE_TOKENS_IN, SIMPLE_TOKENS_OUT, since)):
+                       (short_in, short_out, since)):
         used.add(r["model"])
         if (r["team"] not in teams) if r["team"] else (r["name"] not in accounts):
             continue  # archived teams and people
@@ -1043,7 +1145,7 @@ def savings(c, now=None):
             continue
         _, _, price_in, price_out = ALL_MODELS[dst]
         current, projected = g["cost"] * scale, price_usage(price_in, price_out, MODEL_EXTRA[dst]["price_cached"], g) * scale
-        if current - projected < SAVINGS_MIN:
+        if current - projected < least:
             continue
         who = f"צוות {team}" if team else account
         rec("simple-questions", team, account, src, dst, g["n"], current, projected, current - projected,
@@ -1053,7 +1155,7 @@ def savings(c, now=None):
         total = sum(cost for _, cost in by.values())
         real, (n, top) = max(by.items(), key=lambda kv: kv[1][1])
         src = alias_of.get(real)
-        if total * scale < SAVINGS_MIN or top <= total * CONCENTRATION or src not in MODELS:
+        if total * scale < least or top <= total * CONCENTRATION or src not in MODELS:
             continue
         same = sorted((a for a, m in MODELS.items() if m[0] == MODELS[src][0]), key=model_price)
         allowed = team_models(c, team)
@@ -1066,12 +1168,12 @@ def savings(c, now=None):
             f"כדאי לבדוק אם חלק מהעבודה מתאים ל-{labels[dst]}.")
 
     for r in c.execute("select alias, model, created from models where enabled = 1 and archived is null order by created, alias"):
-        if r["model"] not in used and r["alias"] != setting(c, "default_model") and (r["created"] or now) < since:
+        if r["model"] not in used and r["alias"] != cfg(c, "default_model") and (r["created"] or now) < since:
             rec("unused-model", "", "", r["alias"], None, 0, 0, None, 0,
                 f"המודל {labels[r['alias']]} פעיל, אבל אף אחד לא השתמש בו ב-30 הימים האחרונים. כדאי לכבות אותו עד שיהיה בו צורך.")
     out.sort(key=lambda x: (-x["monthly_saving"], SAVINGS_ORDER[x["kind"]]))
     return {"recommendations": out, "total_monthly_saving": round(sum(x["monthly_saving"] for x in out), 2), "days": round(days, 1),
-            "simple_tokens_in": SIMPLE_TOKENS_IN, "simple_tokens_out": SIMPLE_TOKENS_OUT}
+            "simple_tokens_in": short_in, "simple_tokens_out": short_out}
 
 
 # --- chargeback: each team's month, with its accounting codes, for the finance system ---
@@ -1124,7 +1226,7 @@ SEC_KINDS_HE = {"suspicious-prompt": "שאלות חשודות", "sensitive-data-
                 "prompt-leak": "תשובות שחשפו את הוראות השער", "mcp-tool-refused": "כלי MCP שלא הופעלו", "cost-spike": "הוצאות חריגות",
                 "login-throttled": "יותר מדי סיסמאות שגויות מכתובת אחת", "summary-failed": "שליחות סיכום שנכשלו",
                 "sensitive-routed-local": "שאלות עם מידע רגיש שנענו במודל המקומי"}
-SUMMARY_HOUR, SUMMARY_TRIES = 8, 3  # sent on the 1st after 08:00 local time; a failed send is tried again next hour, 3 times at most
+SUMMARY_TRIES = 3  # sent on the summary_day after summary_hour; a failed send is tried again next hour, 3 times at most
 EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
 
 
@@ -1166,8 +1268,9 @@ def summary_content(c, month):
         ("אבטחה", None, [[SEC_KINDS_HE.get(e["kind"], e["kind"]), str(e["n"])] for e in events] + [["בקשות שנחסמו", str(blocked)]]),
         ("חריגות מהתקציב", ["מי", "הוצאה", "תקציב"], over),
     ]
-    subject = f"FireGate · סיכום חודשי · {month_title(month)}"
-    lead, foot = (f"השימוש בבינה מלאכותית בחברה ב{month_title(month)}.",
+    org = cfg(c, "org_name")
+    subject = f"FireGate · {org + ' · ' if org else ''}סיכום חודשי · {month_title(month)}"
+    lead, foot = (f"השימוש בבינה מלאכותית ב{org or 'חברה'} ב{month_title(month)}.",
                   "נשלח אוטומטית מהשער. ההמלצות לחיסכון מבוססות על 30 הימים האחרונים, והחריגות על התקציב הנוכחי.")
     e = html.escape
     cell = "padding:6px 8px;border-bottom:1px solid #e4e4e7;text-align:right;vertical-align:top"
@@ -1196,13 +1299,12 @@ def summary_content(c, month):
 
 
 def smtp_settings():
-    """The mail server for the monthly summary, from the environment only: never stored in the database, never sent to a page."""
-    env = lambda k: os.environ.get(k, "").strip()
-    host, sender = env("SMTP_HOST"), env("SMTP_FROM") or env("SMTP_USER")
+    """The mail server for the monthly summary (the smtp_* settings; the password is never sent to a page), or None."""
+    host, sender = cfg(None, "smtp_host"), cfg(None, "smtp_from") or cfg(None, "smtp_user")
     if not host or not sender:
         return None
-    return {"host": host, "port": int(env("SMTP_PORT") or 587), "user": env("SMTP_USER"), "password": os.environ.get("SMTP_PASSWORD", ""),
-            "from": sender, "tls": (env("SMTP_TLS") or "1").lower()}
+    return {"host": host, "port": cfg(None, "smtp_port"), "user": cfg(None, "smtp_user"), "password": cfg(None, "smtp_password"),
+            "from": sender, "tls": cfg(None, "smtp_tls")}
 
 
 def parse_recipients(raw):
@@ -1226,31 +1328,40 @@ def mask_emails(text):
     return _EMAIL.sub(lambda m: mask_email(m[0]), text)
 
 
+def send_mail(to, subject, text, html_part=None):
+    """Send one email through the mail server in the settings. Raises ValueError when none is set, smtplib/OS errors when
+    sending fails."""
+    mail = smtp_settings()
+    if not mail:
+        raise ValueError("SMTP is not configured")
+    msg = EmailMessage()
+    msg["Subject"], msg["From"], msg["To"] = subject, mail["from"], ", ".join(to)
+    msg.set_content(text)
+    if html_part:
+        msg.add_alternative(html_part, subtype="html")
+    secure = ssl.create_default_context()
+    if mail["tls"] == "ssl":  # port 465: encrypted from the first byte
+        server = smtplib.SMTP_SSL(mail["host"], mail["port"], timeout=30, context=secure)
+    else:
+        server = smtplib.SMTP(mail["host"], mail["port"], timeout=30)
+    with server as s:
+        if mail["tls"] != "0" and mail["tls"] != "ssl":
+            s.starttls(context=secure)
+        if mail["user"]:
+            s.login(mail["user"], mail["password"])
+        s.send_message(msg, from_addr=mail["from"], to_addrs=to)
+
+
 def send_summary(c, month):
     """Email the month's summary to the saved recipients now. Returns the recipients; raises ValueError when there is no mail
     server or no recipient, smtplib/OS errors when sending fails."""
-    cfg = smtp_settings()
-    if not cfg:
+    if not smtp_settings():
         raise ValueError("SMTP is not configured")
-    to = parse_recipients(setting(c, "summary_recipients", ""))
+    to = cfg(c, "summary_recipients")
     if not to:
         raise ValueError("no summary recipients")
     content = summary_content(c, month)
-    msg = EmailMessage()
-    msg["Subject"], msg["From"], msg["To"] = content["subject"], cfg["from"], ", ".join(to)
-    msg.set_content(content["text"])
-    msg.add_alternative(content["html"], subtype="html")
-    secure = ssl.create_default_context()
-    if cfg["tls"] == "ssl":  # port 465: encrypted from the first byte
-        server = smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=30, context=secure)
-    else:
-        server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=30)
-    with server as s:
-        if cfg["tls"] not in ("0", "false", "no", "off", "ssl"):
-            s.starttls(context=secure)
-        if cfg["user"]:
-            s.login(cfg["user"], cfg["password"])
-        s.send_message(msg, from_addr=cfg["from"], to_addrs=to)
+    send_mail(to, content["subject"], content["text"], content["html"])
     print(f"monthly summary for {month} sent to {', '.join(mask_email(a) for a in to)}", flush=True)
     return to
 
@@ -1264,22 +1375,22 @@ def summary_sent(c, month, to, auto):
 def summary_status(c):
     sent = sorted((r[0].removeprefix("summary_sent_") for r in c.execute("select key from settings where key like 'summary_sent_%'")),
                   reverse=True)
-    return {"recipients": setting(c, "summary_recipients", ""), "enabled": setting(c, "summary_enabled", "0") == "1",
-            "smtp_configured": bool(smtp_settings()), "sent": sent[:12]}
+    return {"recipients": ", ".join(cfg(c, "summary_recipients")), "enabled": cfg(c, "summary_enabled"),
+            "smtp_configured": bool(smtp_settings()), "day": cfg(c, "summary_day"), "hour": cfg(c, "summary_hour"), "sent": sent[:12]}
 
 
 def summary_tick(now=None):
-    """Hourly: on the 1st after 08:00, send last month's summary once. A failure is recorded as a security event and tried
-    again next hour, 3 times at most. Returns True (sent), False (failed) or None (nothing to do)."""
+    """Hourly: on the summary_day after summary_hour (1st, 08:00 by default), send last month's summary once. A failure is
+    recorded as a security event and tried again next hour, 3 times at most. Returns True (sent), False (failed) or None."""
     now = time.time() if now is None else now
-    lt = time.localtime(now)
-    if lt.tm_mday != 1 or lt.tm_hour < SUMMARY_HOUR:
-        return None
     c = db()
     try:
+        lt = localtime(now)
+        if lt.tm_mday != cfg(c, "summary_day") or lt.tm_hour < cfg(c, "summary_hour"):
+            return None
         month = last_full_month(now)
         tries = int(setting(c, f"summary_tries_{month}", "0") or 0)
-        if setting(c, "summary_enabled", "0") != "1" or setting(c, f"summary_sent_{month}") or tries >= SUMMARY_TRIES:
+        if not cfg(c, "summary_enabled") or setting(c, f"summary_sent_{month}") or tries >= SUMMARY_TRIES:
             return None
         try:
             to = send_summary(c, month)
@@ -1297,13 +1408,31 @@ def summary_tick(now=None):
         c.close()
 
 
+def backup_tick(now=None):
+    """Hourly: a scheduled backup (backup_schedule daily / weekly) when the last one is that old. Returns the file or None."""
+    now = time.time() if now is None else now
+    c = db()
+    try:
+        every = {"daily": 86400, "weekly": 7 * 86400}.get(cfg(c, "backup_schedule"))
+        if not every or now - float(setting(c, "backup_last", "0") or 0) < every - 600:  # 10 minutes' slack for the hourly check
+            return None
+        path = backup(c, "", cfg(c, "backup_folder"), "scheduled")
+        with c:
+            put_setting(c, "backup_last", str(now))
+            audit(c, "backup", {"name": "backup", "file": os.path.basename(path), "auto": True})
+        return path
+    finally:
+        c.close()
+
+
 def summary_loop():
     # ponytail: assumes one gateway process; with several, two could send the same month at once (move to a DB lock then)
     while True:
-        try:
-            summary_tick()
-        except Exception as e:  # noqa: BLE001  one bad hour must not stop next month's summary
-            print(f"monthly summary check failed: {type(e).__name__}", flush=True)
+        for tick in (summary_tick, backup_tick):
+            try:
+                tick()
+            except Exception as e:  # noqa: BLE001  one bad hour must not stop next month's summary or backup
+                print(f"hourly {tick.__name__} failed: {type(e).__name__}", flush=True)
         time.sleep(3600)
 
 
@@ -1336,12 +1465,11 @@ def upstream(provider, body, on_line):
     usage also gets "ms" (the whole call) and "ttft" (until the first piece of answer text; the whole call when not streamed).
     The local model server: its own address, through the opener that refuses metadata/link-local addresses and redirects;
     when it reports no token counts they are estimated (about 4 characters a token) and marked "estimated"."""
-    _, url, auth, _ = PROVIDERS[provider]
-    send = urllib.request.urlopen
+    url, auth, send = provider_url(provider), provider_auth(provider), urllib.request.urlopen
     if provider == "local":
-        if not LOCAL_URL:
+        if not cfg(None, "local_base_url"):
             raise urllib.error.URLError("no address set for the local model server")
-        url, send = LOCAL_URL + "/chat/completions", LOCAL_OPENER.open
+        send = LOCAL_OPENER.open
     req = urllib.request.Request(url, json.dumps(body).encode(), {"content-type": "application/json", **auth})
     t0 = time.monotonic()
     ms = lambda: round((time.monotonic() - t0) * 1000)
@@ -1392,7 +1520,7 @@ def upstream(provider, body, on_line):
 def check_local_url(url):
     """The local model server's base address as the admin typed it, checked like an MCP address except that company
     (private) addresses are the point: http(s) only, no user name or password in it, and a name that resolves to cloud
-    metadata, link-local or (without ALLOW_LOCAL_LOOPBACK) this machine is refused. Every connection checks again, so a
+    metadata, link-local or (without the local_loopback setting) this machine is refused. Every connection checks again, so a
     name that changes its answer later is still caught. "" turns the local server off."""
     url = str(url or "").strip().rstrip("/")
     if not url:
@@ -1409,14 +1537,14 @@ def check_local_url(url):
     except OSError:
         return url  # not resolvable from here right now; the connection check will say so
     for *_, sa in infos:
-        if mcp.blocked_ip(sa[0], loopback=LOCAL_LOOPBACK, private=True):
+        if mcp.blocked_ip(sa[0], loopback=cfg(None, "local_loopback"), private=True):
             raise ValueError(f"address {sa[0]} is not allowed for the local model server")
     return url
 
 
 def local_list(url):
     """GET {url}/models on the local server: the model ids it offers (OpenAI format, as Ollama and vLLM answer)."""
-    req = urllib.request.Request(url + "/models", headers=PROVIDERS["local"][2])
+    req = urllib.request.Request(url + "/models", headers=provider_auth("local"))
     t0 = time.monotonic()
     try:
         with LOCAL_OPENER.open(req, timeout=10) as r:
@@ -1436,10 +1564,13 @@ EMBED_MODELS = {"openai": ("OPENAI_EMBED_MODEL", "text-embedding-3-small", 0.02)
 
 
 def embed_provider():
-    """Which provider computes meaning vectors: EMBEDDINGS=openai|gemini|off, default the first one with a key."""
-    choice = os.environ.get("EMBEDDINGS", "auto").strip().lower()
-    for p in (("openai", "gemini") if choice in ("", "auto") else (choice,)):
-        if p in EMBED_MODELS and PROVIDERS[p][2]["authorization"].removeprefix("Bearer ").strip():
+    """Which provider computes meaning vectors: the embeddings setting (openai|gemini|off), by default the first one with
+    a key. None also when the search_mode setting is "by words" only."""
+    choice = cfg(None, "embeddings")
+    if cfg(None, "search_mode") == "words":
+        return None
+    for p in (("openai", "gemini") if choice == "auto" else (choice,)):
+        if p in EMBED_MODELS and provider_key(p):
             return p
     return None
 
@@ -1451,12 +1582,12 @@ def embed_texts(c, texts):
         return None
     env, default, price = EMBED_MODELS[p]
     model = os.environ.get(env, default)
-    url = PROVIDERS[p][1].rsplit("/chat/completions", 1)[0] + "/embeddings"
+    url = provider_url(p).rsplit("/chat/completions", 1)[0] + "/embeddings"
     vecs, tokens = [], 0
     try:
         for i in range(0, len(texts), 64):
             req = urllib.request.Request(url, json.dumps({"model": model, "input": [t[:8000] for t in texts[i:i + 64]]}).encode(),
-                                         {"content-type": "application/json", **PROVIDERS[p][2]})
+                                         {"content-type": "application/json", **provider_auth(p)})
             with urllib.request.urlopen(req, timeout=120) as r:
                 d = json.loads(r.read())
             vecs += [x["embedding"] for x in sorted(d["data"], key=lambda x: x["index"])]
@@ -1475,6 +1606,11 @@ def embed_texts(c, texts):
 
 sources.EMBED = embed_texts
 sources.ENCRYPT = encrypt
+settings.ENCRYPT, settings.DECRYPT = encrypt, decrypt
+settings.CHECKS.update(local_url=lambda v: check_local_url(v),
+                       model=lambda v: v if v in ALL_MODELS else (_ for _ in ()).throw(ValueError("unknown model")),
+                       enabled_model=lambda v: v if v in MODELS else (_ for _ in ()).throw(ValueError("model is off or unknown")))
+sources.CFG = lambda key: cfg(None, key)
 
 
 # --- MCP knowledge sources ---
@@ -1489,8 +1625,8 @@ def mcp_config(row):
 def load_config(raw):
     """A source's settings (stored encrypted: they hold the MCP server's token)."""
     try:
-        cfg = json.loads(decrypt(raw) or "{}")
-        return cfg if isinstance(cfg, dict) else {}
+        conf = json.loads(decrypt(raw) or "{}")
+        return conf if isinstance(conf, dict) else {}
     except ValueError:
         return {}
 
@@ -1505,12 +1641,12 @@ def mcp_search(c, names, question, who, request_id=None):
     hits = []
     marks = ",".join("?" * len(names))
     for row in c.execute(f"select * from sources where kind = 'mcp' and name in ({marks})", names).fetchall() if names else []:
-        cfg = mcp_config(row)
-        tool, arg = str(cfg.get("tool") or ""), str(cfg.get("arg") or "query")
-        if cfg.get("mode") != "search" or not MCP_NAME.match(tool) or not MCP_NAME.match(arg):
+        conf = mcp_config(row)
+        tool, arg = str(conf.get("tool") or ""), str(conf.get("arg") or "query")
+        if conf.get("mode") != "search" or not MCP_NAME.match(tool) or not MCP_NAME.match(arg):
             continue
         try:
-            client = mcp.Client(row["path"], cfg.get("token", ""))
+            client = mcp.Client(row["path"], conf.get("token", ""))
             client.connect()
             refused = mcp.check_tool(client.tools(), tool, arg)
             if refused:
@@ -1561,8 +1697,8 @@ def mcp_sync(c, row):
 
 
 # --- speed: how long answers take, per model and per provider ---
-SLOW_FACTOR, SLOW_MIN = 2, 10  # alert: last hour's p95 above 2x the 7 days before it, with at least 10 answers in the hour
-FAST_MIN = 20  # "prefer the fast model" trusts a model's last-24h median only from this many answers
+# slow alert: last hour's p95 above slow_factor x the 7 days before it, with at least slow_min answers in the hour (2x, 10).
+# "prefer the fast model" trusts a model's median over the last fast_window_hours only from fast_min answers (24h, 20).
 
 
 def pct(values, p):
@@ -1583,9 +1719,10 @@ def speed_summary(items):
 
 def latency(c, now=None):
     """Speed per model and per provider over the last 24 hours and 7 days, the median per provider for each of the last 48
-    hours, and slow alerts (a model whose last-hour p95 is over SLOW_FACTOR x its p95 in the 7 days before that hour).
+    hours, and slow alerts (a model whose last-hour p95 is over slow_factor x its p95 in the 7 days before that hour).
     Test calls and document indexing don't count."""
     now = time.time() if now is None else now
+    slow_factor, slow_min = cfg(c, "slow_factor"), cfg(c, "slow_min")
     info = {}  # the logs keep the provider's model name; models in use win over archived ones with the same name
     for r in c.execute("select alias, label, provider, model from models order by archived is not null, created"):
         info.setdefault(r["model"], {"alias": r["alias"], "label": r["label"] or r["alias"], "provider": r["provider"]})
@@ -1612,38 +1749,38 @@ def latency(c, now=None):
     models, alerts = [], []
     for model, g in by_model.items():
         hour, base = speed_summary(g["hour"]), speed_summary(g["base"])
-        slow = hour["answers"] >= SLOW_MIN and bool(base["p95"]) and hour["p95"] > SLOW_FACTOR * base["p95"]
+        slow = hour["answers"] >= slow_min and bool(base["p95"]) and hour["p95"] > slow_factor * base["p95"]
         models.append({"model": model, **info[model], "day": speed_summary(g["day"]), "week": speed_summary(g["week"]),
                        "hour": hour, "slow": slow})
         if slow:
             alerts.append({"model": model, **info[model], "hour_p95": hour["p95"], "week_p95": base["p95"], "requests": hour["answers"]})
     models.sort(key=lambda m: (-m["day"]["requests"], m["label"]))
-    return {"models": models, "alerts": alerts, "slow_factor": SLOW_FACTOR, "slow_min": SLOW_MIN,
+    return {"models": models, "alerts": alerts, "slow_factor": slow_factor, "slow_min": slow_min,
             "providers": [{"provider": p, "day": speed_summary(g["day"]), "week": speed_summary(g["week"])}
                           for p, g in sorted(by_provider.items())],
             "hourly": [{"hour": h, "provider": p, "p50": pct(sorted(v), .5), "requests": len(v)} for (h, p), v in sorted(hours.items())]}
 
 
 def fastest_like(c, alias, allowed, now=None):
-    """Among alias and the allowed models priced like it (within STRONG_FACTOR either way, any provider), the one with the
-    lowest median over the last 24 hours, counting only models with FAST_MIN answers or more; alias when none has that."""
+    """Among alias and the allowed models priced like it (within fast_price_range either way, any provider), the one with
+    the lowest median over the last fast_window_hours, counting only models with fast_min answers or more; alias when none."""
     now = time.time() if now is None else now
-    price = model_price(alias)
-    tier = {MODELS[a][1]: a for a in allowed if a in MODELS and (a == alias or price / STRONG_FACTOR <= model_price(a) <= price * STRONG_FACTOR)}
+    price, spread, least = model_price(alias), cfg(c, "fast_price_range"), cfg(c, "fast_min")
+    tier = {MODELS[a][1]: a for a in allowed if a in MODELS and (a == alias or price / spread <= model_price(a) <= price * spread)}
     # ponytail: reads the last day's speed on every automatic choice; cache it for a minute if chat traffic gets heavy
     times = {}
     for model, ms in c.execute(f"select model, latency_ms from logs where ts >= ? and model in ({','.join('?' * len(tier))})"
                                " and latency_ms is not null and (status is null or status < 400) and name not like '(%'",
-                               (now - 86400, *tier)):
+                               (now - cfg(c, "fast_window_hours") * 3600, *tier)):
         times.setdefault(model, []).append(ms)
-    medians = {tier[m]: pct(sorted(v), .5) for m, v in times.items() if len(v) >= FAST_MIN}
+    medians = {tier[m]: pct(sorted(v), .5) for m, v in times.items() if len(v) >= least}
     return min(medians, key=medians.get) if medians else alias
 
 
 def fallback_for(alias, path=None, allowed=None):
     """The backup model for alias, if it is on, (for app calls) speaks the same request format, and is in allowed (the
     team's model list; None = no team limit). A backup the team may not use means no backup."""
-    fb = MODEL_EXTRA.get(alias, {}).get("fallback")
+    fb = MODEL_EXTRA.get(alias, {}).get("fallback") if cfg(None, "fallback_enabled") else None
     if fb and fb != alias and fb in MODELS and (path is None or PROVIDERS[MODELS[fb][0]][0] == path) and (allowed is None or fb in allowed):
         return fb
     return None
@@ -1656,7 +1793,7 @@ _HEAVY = __import__("re").compile(
 
 def route_auto(c, acct, messages):
     """Pick the cheap or the strong model for one question. Returns (alias, reason) or (None, error)."""
-    cheap, strong = setting(c, "auto_cheap", "fast"), setting(c, "auto_strong", "smart")
+    cheap, strong = cfg(c, "auto_cheap"), cfg(c, "auto_strong")
     allowed = [m for m in effective_models(c, acct) if m in MODELS]
     last = messages[-1]["content"]
     total = sum(len(m["content"]) for m in messages)
@@ -1671,7 +1808,7 @@ def route_auto(c, acct, messages):
     for a in (want, cheap, strong):
         if a in allowed:
             reason = reason if a == want else f"{reason} (המודל המתאים לא זמין לך)"
-            fast = fastest_like(c, a, allowed) if setting(c, "auto_prefer_fast", "0") == "1" else a
+            fast = fastest_like(c, a, allowed) if cfg(c, "auto_prefer_fast") else a
             return (a, reason) if fast == a else (fast, f"{reason} (המהיר מבין המתאימים)")
     return None, "no model available for automatic choice"
 
@@ -1686,6 +1823,207 @@ def delta_text(provider, ev):
     return (choices[0].get("delta") or {}).get("content") if choices else None
 
 
+# --- the settings screen: read, change (all or nothing), reset, test, export/import, per-team values, backup, updates ---
+UPDATE_URL = "https://api.github.com/repos/tomerdamari/firegate/releases/latest"
+RECOUNT = {"budget_reset_day", "timezone"}  # these move the month boundaries: this month's spending is counted again
+STARTUP = {}  # values of the settings that apply only after a restart, as the process started with them
+
+
+class SettingsInvalid(ValueError):
+    def __init__(self, errors):
+        super().__init__("invalid settings")
+        self.errors = errors
+
+
+def check_changes(changes, team=False):
+    """Every change checked before anything is written: {key: clean value}, or SettingsInvalid with a reason per key.
+    A value set in the server's environment can't be changed here; team values (None = like the global one) only for
+    settings that allow them."""
+    if not isinstance(changes, dict) or not changes:
+        raise ValueError("no changes")
+    errors, out = {}, {}
+    for k, v in changes.items():
+        d = settings.BY_KEY.get(k)
+        if not d:
+            errors[k] = {"code": "unknown"}
+        elif d["soon"]:
+            errors[k] = {"code": "soon"}
+        elif team and not d["team"]:
+            errors[k] = {"code": "not_team"}
+        elif not team and settings.env_value(d) is not None:
+            errors[k] = {"code": "env", "env": d["env"]}
+        elif team and v is None:
+            out[k] = None
+        else:
+            try:
+                out[k] = settings.validate(d, v)
+            except settings.Invalid as e:
+                errors[k] = e.info
+    if errors:
+        raise SettingsInvalid(errors)
+    return out
+
+
+def save_settings(c, changes):
+    """Check all, then write all (inside the caller's transaction), one change-log row per setting that really changed.
+    A secret is logged only as "changed". Returns the changed keys."""
+    done = []
+    for k, v in check_changes(changes).items():
+        d, old = settings.BY_KEY[k], settings.lookup(k)[0]
+        if old == v:
+            continue
+        put_setting(c, k, settings.to_db(d, v))
+        audit(c, "setting", {"name": k, "new": "changed"} if d["type"] == "secret" else {"name": k, "old": old, "new": v})
+        done.append(k)
+    settings.refresh(c)
+    if RECOUNT & set(done):
+        recount_spent(c)
+    return done
+
+
+def reset_setting(c, key):
+    """Back to the default: the saved value becomes empty (NULL); nothing is deleted."""
+    d = settings.BY_KEY.get(key)
+    if not d or d["soon"]:
+        raise SettingsInvalid({key: {"code": "unknown"}})
+    if settings.env_value(d) is not None:
+        raise SettingsInvalid({key: {"code": "env", "env": d["env"]}})
+    old, source = settings.lookup(key)
+    if source != "db":
+        return False
+    put_setting(c, key, None)
+    audit(c, "setting", {"name": key, "new": "cleared"} if d["type"] == "secret" else {"name": key, "old": old, "new": d["default"], "reset": True})
+    settings.refresh(c)
+    if key in RECOUNT:
+        recount_spent(c)
+    return True
+
+
+def save_team_settings(c, team, changes):
+    """A team's own values (None = like the global setting again). Stored as NULL, never deleted."""
+    if not c.execute("select 1 from teams where name = ? and archived is null", (team,)).fetchone():
+        raise ValueError(f"team '{team}' does not exist")
+    current = settings.team_overrides()
+    for k, v in check_changes(changes, team=True).items():
+        old = current.get((team, k))
+        if old == v:
+            continue
+        c.execute("insert into team_settings values (?, ?, ?) on conflict(team, key) do update set value = excluded.value",
+                  (team, k, None if v is None else settings.to_db(settings.BY_KEY[k], v)))
+        audit(c, "team-setting", {"name": team, "key": k, "old": old, "new": v})
+    settings.refresh(c)
+
+
+def live_team_overrides(c):
+    teams = {r[0] for r in c.execute("select name from teams where archived is null")}
+    out = {}
+    for (team, k), v in settings.team_overrides().items():
+        if team in teams:
+            out.setdefault(team, {})[k] = v
+    return out
+
+
+@functools.cache
+def timezones():
+    try:
+        return sorted(zoneinfo.available_timezones())
+    except OSError:
+        return []
+
+
+def system_info(c):
+    key_env = bool(os.environ.get("FIREGATE_DATA_KEY", "").strip())
+    folder = os.path.join(os.path.dirname(os.path.abspath(DB)), cfg(c, "backup_folder"))
+    files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".db")] if os.path.isdir(folder) else []
+    return {"version": VERSION, "db_path": os.path.abspath(DB), "db_size": os.path.getsize(DB) if os.path.exists(DB) else 0,
+            "port": int(os.environ.get("PORT") or 8080), "key_source": "env" if key_env else "file",
+            "key_file": None if key_env else key_path(DB), "backup_folder": folder, "backups": len(files),
+            "last_backup": max(map(os.path.getmtime, files)) if files else None,
+            "timezone_ok": not cfg(c, "timezone") or tzinfo() is not None}
+
+
+def settings_view(c):
+    """Everything the settings screen shows. Secrets never: only whether one is set, where from, and the last check."""
+    models = [{"value": a, "he": label or a, "en": label or a}
+              for a, label in c.execute("select alias, label from models where archived is null order by created, alias")]
+    zones = [{"value": "", "he": "השעון של השרת", "en": "The server's clock"}] + [{"value": z, "he": z, "en": z} for z in timezones()]
+    counts = collections.Counter(k for team in live_team_overrides(c).values() for k in team)
+    out = []
+    for d in settings.REGISTRY:
+        v, source = settings.lookup(d["key"])
+        item = settings.public(d, v, source)
+        if d["type"] in ("model", "models"):
+            item["options"] = models
+        elif d["type"] == "timezone":
+            item["options"] = zones
+        if d["type"] == "secret":
+            tested = setting(c, "tested:" + d["key"])
+            item["value"]["tested"] = json.loads(tested) if tested else None
+        out.append(item)
+    return {"sections": [{"id": i, "he": he, "en": en} for i, he, en in settings.SECTIONS], "settings": out,
+            "team_overrides": dict(counts), "system": system_info(c),
+            "restart_pending": [d["key"] for d in settings.REGISTRY
+                                if d["applies"] == "restart" and settings.lookup(d["key"])[0] != STARTUP.get(d["key"])]}
+
+
+def export_settings():
+    """The values saved on the screen, without secrets (and without what the server's environment sets)."""
+    out = {}
+    for d in settings.REGISTRY:
+        v, source = settings.lookup(d["key"])
+        if source == "db" and d["type"] != "secret" and not d["soon"]:
+            out[d["key"]] = v
+    return {"firegate_settings": 1, "version": VERSION, "exported": time.strftime("%Y-%m-%dT%H:%M:%S"), "settings": out}
+
+
+def import_settings(c, body):
+    """dry_run: what would change, what is skipped and why, and what is invalid. Otherwise apply (all or nothing)."""
+    data = body.get("settings")
+    if isinstance(data, dict) and isinstance(data.get("settings"), dict):
+        data = data["settings"]  # the whole exported file
+    if not isinstance(data, dict):
+        raise ValueError("not a settings file")
+    skipped, take = {}, {}
+    for k, v in data.items():
+        d = settings.BY_KEY.get(k)
+        reason = ("unknown" if not d else "secret" if d["type"] == "secret" else "soon" if d["soon"]
+                  else "env" if settings.env_value(d) is not None else None)
+        if reason:
+            skipped[k] = reason
+        else:
+            take[k] = v
+    try:
+        clean, errors = (check_changes(take) if take else {}), {}
+    except SettingsInvalid as e:
+        clean, errors = {}, e.errors
+    diff = [{"key": k, "old": settings.lookup(k)[0], "new": v} for k, v in clean.items() if settings.lookup(k)[0] != v]
+    if body.get("dry_run") or errors:
+        return (400 if errors and not body.get("dry_run") else 200), {"diff": diff, "skipped": skipped, "errors": errors}
+    changed = save_settings(c, {x["key"]: x["new"] for x in diff}) if diff else []
+    audit(c, "settings-import", {"name": "settings", "changed": len(changed), "skipped": len(skipped)})
+    return 200, {"ok": True, "changed": changed, "skipped": skipped}
+
+
+def update_check():
+    """The newest FireGate release on GitHub, compared with this one. Only when the admin asks; offline is an answer too."""
+    req = urllib.request.Request(UPDATE_URL, headers={"accept": "application/vnd.github+json", "user-agent": "FireGate/" + VERSION})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "current": VERSION, "error": f"HTTP {e.code}"}
+    except (OSError, ValueError):
+        return {"ok": False, "current": VERSION, "error": "offline"}
+    latest = str(d.get("tag_name") or "").lstrip("vV")
+    ver = lambda v: tuple(int(x) for x in re.findall(r"\d+", v)[:3])
+    return {"ok": True, "current": VERSION, "latest": latest, "newer": bool(latest) and ver(latest) > ver(VERSION),
+            "url": d.get("html_url"), "published": d.get("published_at")}
+
+
+SETTINGS_POSTS = {"/admin/api/settings", "/admin/api/settings/test", "/admin/api/settings/reset", "/admin/api/settings/import",
+                  "/admin/api/backup", "/admin/api/teams/settings"}
+
+
 class TooLarge(Exception):
     pass
 
@@ -1695,7 +2033,7 @@ def trusted_proxy(ip):
         ip = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    return any(ip in net for net in TRUSTED_PROXIES if net.version == ip.version)
+    return any(ip in net for net in trusted_networks() if net.version == ip.version)
 
 
 PROVIDER_PATHS = {p[0] for p in PROVIDERS.values()}
@@ -1764,7 +2102,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def json_body(self, path):
         n = int(self.headers.get("content-length") or 0)
-        if n > (MAX_BODY if path == "/admin/api/sources/upload" or path in PROVIDER_PATHS else MAX_REQUEST_BODY):
+        big = path == "/admin/api/sources/upload" or path in PROVIDER_PATHS
+        if n > cfg(None, "max_body" if big else "max_request_body") * MB:
             raise TooLarge()
         body = json.loads(self.rfile.read(n) or b"{}")
         if not isinstance(body, dict):
@@ -1796,17 +2135,22 @@ class Handler(BaseHTTPRequestHandler):
         with c:
             c.execute("insert into blocked_requests values (?,?,?,?,?,?,?)",
                       (time.time(), acct["name"] if acct else "", acct["team"] if acct else "", reason,
-                       model if isinstance(model, str) else None, self.rid, encrypt(redact_text(text)[:200]) if text else None))
+                       model if isinstance(model, str) else None, self.rid, encrypt(redact_text(text)[:200]) if text and self.keep_text(c) else None))
         self.reply(status, {"error": message, "code": reason})
+
+    @staticmethod
+    def keep_text(c):
+        """False when the log_content setting says to keep data only, no question or answer text."""
+        return cfg(c, "log_content") != "metadata"
 
     def screen(self, c, acct, text, model):
         """The injection policy for the newest question. True if the request may continue; otherwise it was refused."""
         found = security.scan(text)
-        blocked = bool(security.ATTACKS & set(found)) and policy(c)[0] == "block"
+        blocked = bool(security.ATTACKS & set(found)) and policy(c, acct["team"])[0] == "block"
         if found:
             with c:
-                self.event(c, "suspicious-prompt", acct["name"], {"found": found, "excerpt": encrypt(redact_text(text)[:200]),
-                                                                  "action": "blocked" if blocked else "logged"})
+                self.event(c, "suspicious-prompt", acct["name"], {"found": found, "action": "blocked" if blocked else "logged",
+                                                                  **({"excerpt": encrypt(redact_text(text)[:200])} if self.keep_text(c) else {})})
         if blocked:
             self.refuse(c, acct, 403, "request blocked: possible prompt injection or jailbreak", "policy-injection", model, text)
         return not blocked
@@ -1820,7 +2164,7 @@ class Handler(BaseHTTPRequestHandler):
         moved to it, and without such a model the question is masked."""
         if not count:
             return masked_obj, model
-        mode = policy(c)[1]
+        mode = policy(c, acct["team"])[1]
         if mode == "local":
             local = local_models(c, acct) if path == "/v1/chat/completions" else []
             if local:
@@ -1845,7 +2189,7 @@ class Handler(BaseHTTPRequestHandler):
     def host_ok(self):
         host = (self.headers.get("host") or "").lower()
         host = host[1:host.find("]")] if host.startswith("[") else host.rsplit(":", 1)[0]
-        if host == "localhost" or host in ALLOWED_HOSTS:
+        if host == "localhost" or host in FIXED_HOSTS or host in cfg(None, "allowed_hosts"):
             return True
         try:
             ipaddress.ip_address(host)
@@ -1869,7 +2213,7 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(status, {"error": message})
 
     def inside(self):
-        if PUBLIC:
+        if public_deploy():
             return False
         try:
             return ipaddress.ip_address(self.client_ip()).is_private
@@ -1877,25 +2221,25 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
     def open_ok(self):
-        return OPEN_ACCESS and self.inside()
+        return open_access() and self.inside()
 
     def admin_ok(self):
         inside = self.inside()
         given = self.headers.get("x-admin-password", "").encode()
         if inside:
             return True
-        ip = self.client_ip()
-        if given and login_fails(ip) >= LOGIN_IP_LIMIT:  # guessing the admin password counts with wrong chat passwords
-            self.reply(429, {"error": f"too many wrong passwords from this address, try again in {LOGIN_IP_MINUTES} minutes"})
+        ip, limit, minutes, password = self.client_ip(), cfg(None, "login_ip_limit"), cfg(None, "login_ip_minutes"), cfg(None, "admin_password")
+        if given and login_fails(ip) >= limit:  # guessing the admin password counts with wrong chat passwords
+            self.reply(429, {"error": f"too many wrong passwords from this address, try again in {minutes} minutes"})
             return False
-        if ADMIN_PASSWORD and secrets.compare_digest(given, ADMIN_PASSWORD.encode()):
+        if password and secrets.compare_digest(given, password.encode()):
             return True
         if given:  # a wrong password from outside is worth knowing about; a page load without one is not
             with db() as c:
                 self.event(c, "admin-denied", "", {"ip": ip, "path": self.path.split("?")[0]})
-                if login_fails(ip, add=True) == LOGIN_IP_LIMIT:
-                    self.event(c, "login-throttled", "", {"ip": ip, "minutes": LOGIN_IP_MINUTES})
-        self.reply(401, {"error": "admin is open only from the office network" if not ADMIN_PASSWORD else "wrong admin password"})
+                if login_fails(ip, add=True) == limit:
+                    self.event(c, "login-throttled", "", {"ip": ip, "minutes": minutes})
+        self.reply(401, {"error": "admin is open only from the office network" if not password else "wrong admin password"})
         return False
 
     def session_account(self, c):
@@ -1922,12 +2266,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.blocked("bad-host", 421, "unknown host name; add it to ALLOWED_HOSTS")
         if path == "/health":
             return self.reply(200, {"ok": True, "version": VERSION})
-        if path in PAGES:
-            file, ctype = PAGES[path]
+        if path in PAGES or path == "/":
+            file, ctype = PAGES[path] if path != "/" else ("chat.html" if cfg(None, "home_page") == "chat" else "admin.html", "text/html")
             with open(os.path.join(HERE, file), "rb") as f:
-                text = ctype.startswith("text/")
-                return self.send_raw(200, f.read(), ctype + ("; charset=utf-8" if text else ""),
-                                     [("content-security-policy", CSP)] if text else [("cache-control", "max-age=31536000, immutable")])
+                data, text = f.read(), ctype.startswith("text/")
+            if ctype == "text/html" and cfg(None, "default_language") == "en":  # i18n.js reads it when the visitor chose no language
+                data = data.replace(b'<html lang="he" dir="rtl">', b'<html lang="he" dir="rtl" data-default-lang="en">', 1)
+            return self.send_raw(200, data, ctype + ("; charset=utf-8" if text else ""),
+                                 [("content-security-policy", CSP)] if text else [("cache-control", "max-age=31536000, immutable")])
         try:
             if path.startswith("/admin/api/"):
                 if self.admin_ok():
@@ -1999,8 +2345,9 @@ class Handler(BaseHTTPRequestHandler):
         alias, question = body.get("model"), last_user_text(body.get("messages"))
         if acct["key_expires"] and acct["key_expires"] < time.time():
             return self.refuse(c, acct, 401, "api key expired", "key-expired", alias, question)
-        if isinstance(body.get("messages"), list) and len(body["messages"]) > MAX_MESSAGES:
+        if isinstance(body.get("messages"), list) and len(body["messages"]) > cfg(c, "max_messages"):
             return self.refuse(c, acct, 400, "too many messages", "too-many-messages", alias)
+        alias = budget_switch(c, acct, alias, path)
         err = authorize(c, acct, alias)
         if err:
             return self.refuse(c, acct, *err, alias, question)
@@ -2009,14 +2356,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {"error": f"model '{alias}' must be called via {PROVIDERS[provider][0]}"})
         if not self.screen(c, acct, question, alias):
             return
-        clean = redact(body)  # masked before anything leaves for the provider; the log keeps the same masked version
+        clean = redact(body, redactor(acct["team"]))  # masked before anything leaves for the provider; the log keeps the same masked version
         body, alias = self.sensitive(c, acct, body, clean, masked(json.dumps(body, ensure_ascii=False), json.dumps(clean, ensure_ascii=False)),
                                      alias, question, path)
         if body is None:
             return
+        most = cfg(c, "max_output_tokens")  # 0: by model, no clamp
         for k in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
-            if isinstance(body.get(k), (int, float)) and body[k] > MAX_OUTPUT_TOKENS:
-                body[k] = MAX_OUTPUT_TOKENS
+            if most and isinstance(body.get(k), (int, float)) and body[k] > most:
+                body[k] = most
         if not inflight_enter(acct["name"]):
             return self.refuse(c, acct, 429, "too many requests in progress", "concurrency", alias, question)
         try:
@@ -2039,7 +2387,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("x-gateway-model", self.current_alias)
                 self.end_headers()  # no content-length: HTTP/1.0 closes the connection at the end
                 started.append(True)
-            if isinstance(ev, dict):  # keys in the answer are masked event by event (one split across events gets through)
+            if isinstance(ev, dict) and cfg(None, "mask_answer_secrets"):  # keys in the answer are masked event by event (one split across events gets through)
                 clean = redact(ev, mask_answer)
                 if clean != ev:
                     hidden[0] += 1
@@ -2084,7 +2432,7 @@ class Handler(BaseHTTPRequestHandler):
     def user_get(self, path):
         c = db()
         if path == "/api/config":
-            return self.reply(200, {"open": self.open_ok()})
+            return self.reply(200, {"open": self.open_ok(), "org_name": cfg(c, "org_name")})
         if path == "/api/people" and self.open_ok():
             rows = c.execute("select name, team from accounts where pw_hash is not null and archived is null order by team, name")
             return self.reply(200, [dict(r) for r in rows])
@@ -2099,7 +2447,7 @@ class Handler(BaseHTTPRequestHandler):
             mine = [m for m in effective_models(c, acct) if m in MODELS]  # the team's model list narrows the person's
             return self.reply(200, {"name": acct["name"], "team": acct["team"], "models": mine,
                                     "model_labels": {m: labels.get(m) or m for m in mine}, "default_model": default_model(c),
-                                    "auto": setting(c, "auto_enabled", "1") == "1" and setting(c, "auto_cheap", "fast") in mine,
+                                    "auto": cfg(c, "auto_enabled") and cfg(c, "auto_cheap") in mine, "org_name": cfg(c, "org_name"),
                                     "budget": acct["budget"], "spent": acct["spent"],
                                     "team_budget": team["budget"] if team else 0, "team_spent": team["spent"] if team else 0,
                                     "sources": readable})
@@ -2148,13 +2496,14 @@ class Handler(BaseHTTPRequestHandler):
             messages = body.get("messages")
             if not isinstance(messages, list):
                 raise ValueError("messages must be a list")
+            mask = redactor(acct["team"])
             with c:
                 owner = c.execute("select name from conversations where id = ?", (cid,)).fetchone()
                 if owner and owner["name"] != acct["name"]:
                     return self.reply(404, {"error": "not found"})
                 c.execute("insert or replace into conversations(id, name, title, updated, messages) values (?,?,?,?,?)",
-                          (cid, acct["name"], encrypt(redact_text(str(body.get("title") or ""))[:100]), time.time(),
-                           encrypt(json.dumps(redact(messages), ensure_ascii=False))))
+                          (cid, acct["name"], encrypt(mask(str(body.get("title") or ""))[:100]), time.time(),
+                           encrypt(json.dumps(redact(messages, mask), ensure_ascii=False))))
             return self.reply(200, {"id": cid})
         if path in ("/api/conversations/archive", "/api/conversations/restore"):  # own chats only; nothing is deleted
             restore, cid = path.endswith("restore"), str(body.get("id"))
@@ -2170,34 +2519,35 @@ class Handler(BaseHTTPRequestHandler):
         name, pw = str(body.get("name", "")), str(body.get("password", ""))
         acct = c.execute("select * from accounts where name = ? and archived is null", (name,)).fetchone()  # archived: as if unknown
         now, ip = time.time(), self.client_ip()
+        limit, minutes, lock_after, lock_minutes = (cfg(c, k) for k in ("login_ip_limit", "login_ip_minutes", "lock_after", "lock_minutes"))
         # guessing across many names from one address: that address waits, whatever name it tries next
-        if login_fails(ip) >= LOGIN_IP_LIMIT:
-            return self.reply(429, {"error": f"too many wrong passwords from this address, try again in {LOGIN_IP_MINUTES} minutes"})
+        if login_fails(ip) >= limit:
+            return self.reply(429, {"error": f"too many wrong passwords from this address, try again in {minutes} minutes"})
         if acct and acct["locked_until"] > now:
-            return self.reply(429, {"error": f"too many wrong passwords, try again in {LOCK_MINUTES} minutes"})
+            return self.reply(429, {"error": f"too many wrong passwords, try again in {lock_minutes} minutes"})
         # unknown names still pay the password-hash cost, so response time doesn't reveal which names exist
         if not check_password(pw, acct["pw_hash"] if acct and acct["pw_hash"] else DUMMY_HASH) or not acct:
-            if login_fails(ip, add=True) == LOGIN_IP_LIMIT:
+            if login_fails(ip, add=True) == limit:
                 with c:
-                    self.event(c, "login-throttled", "", {"ip": ip, "minutes": LOGIN_IP_MINUTES})
+                    self.event(c, "login-throttled", "", {"ip": ip, "minutes": minutes})
             if acct:
                 with c:
                     failed = acct["failed"] + 1
                     c.execute("update accounts set failed = ?, locked_until = ? where name = ?",
-                              (0 if failed >= LOCK_AFTER else failed, now + LOCK_MINUTES * 60 if failed >= LOCK_AFTER else 0, name))
-                    if failed >= LOCK_AFTER:
-                        self.event(c, "account-locked", name, {"ip": ip, "minutes": LOCK_MINUTES})
+                              (0 if failed >= lock_after else failed, now + lock_minutes * 60 if failed >= lock_after else 0, name))
+                    if failed >= lock_after:
+                        self.event(c, "account-locked", name, {"ip": ip, "minutes": lock_minutes})
             return self.reply(401, {"error": "wrong name or password"})
         with c:
             c.execute("update accounts set failed = 0 where name = ?", (name,))
         self.start_session(c, name)
 
     def start_session(self, c, name):
-        token, now = secrets.token_urlsafe(32), time.time()
+        token, now, hours = secrets.token_urlsafe(32), time.time(), cfg(c, "session_hours")
         with c:
             c.execute("delete from sessions where expires < ?", (now,))
-            c.execute("insert into sessions values (?,?,?)", (sha(token), name, now + SESSION_HOURS * 3600))
-        self.reply(200, {"name": name}, [self.cookie(token, SESSION_HOURS * 3600)])
+            c.execute("insert into sessions values (?,?,?)", (sha(token), name, now + hours * 3600))
+        self.reply(200, {"name": name}, [self.cookie(token, hours * 3600)])
 
     def chat(self, c, acct, body):
         alias, messages = body.get("model"), body.get("messages")
@@ -2207,21 +2557,24 @@ class Handler(BaseHTTPRequestHandler):
         route = ""
         wanted = body.get("sources") or []
         if alias == "auto":  # automatic choice: cheap model for simple questions, strong one for heavy work
-            if setting(c, "auto_enabled", "1") != "1":
+            if not cfg(c, "auto_enabled"):
                 return self.reply(403, {"error": "automatic model choice is turned off"})
             alias, route = route_auto(c, acct, messages)
             if not alias:
                 return self.reply(403, {"error": route})
         last = messages[-1]["content"]
-        if len(messages) > MAX_MESSAGES:
+        if len(messages) > cfg(c, "max_messages"):
             return self.refuse(c, acct, 400, "too many messages", "too-many-messages", alias)
+        switched = budget_switch(c, acct, alias)
+        if switched != alias:
+            alias, route = switched, "התקציב נגמר: עבר למודל הזול"
         err = authorize(c, acct, alias)
         if err:
             return self.refuse(c, acct, *err, alias, last)
         if not self.screen(c, acct, last if messages[-1]["role"] == "user" else "", alias):
             return
         original = [{"role": m["role"], "content": m["content"]} for m in messages]
-        clean = redact(original)
+        clean = redact(original, redactor(acct["team"]))
         messages, alias = self.sensitive(c, acct, original, clean, masked(last, clean[-1]["content"]), alias, last)
         if messages is None:
             return
@@ -2237,7 +2590,7 @@ class Handler(BaseHTTPRequestHandler):
     def screen_hits(self, c, acct, hits):
         """Retrieved passages are data handed to the model: a passage with browser code is always left out, one that
         tries to give the model instructions is left out under the block policy (and only logged otherwise)."""
-        out, block = [], policy(c)[0] == "block"
+        out, block = [], policy(c, acct["team"])[0] == "block"
         for source, title, body in hits:
             found = security.scan(body)
             drop = "script" in found or (block and security.ATTACKS & set(found))
@@ -2260,9 +2613,11 @@ class Handler(BaseHTTPRequestHandler):
         def build(a):
             up = {"model": MODELS[a][1], "messages": messages, "stream": True}
             if MODELS[a][0] == "anthropic":
-                up["max_tokens"] = MAX_OUTPUT_TOKENS
+                up["max_tokens"] = cfg(c, "max_output_tokens") or 32000  # 0 = by model; Claude needs a number
                 # provider-side cache: the conversation so far is re-read at about a tenth of the input price next turn
-                up["cache_control"] = {"type": "ephemeral"}
+                ttl = cfg(c, "chat_cache")
+                if ttl != "off":
+                    up["cache_control"] = {"type": "ephemeral", **({"ttl": "1h"} if ttl == "1h" else {})}
                 if system:
                     up["system"] = system
             else:  # OpenAI and Gemini cache repeated prefixes on their own
@@ -2270,7 +2625,7 @@ class Handler(BaseHTTPRequestHandler):
                 if system:
                     up["messages"] = [{"role": "system", "content": system}, *messages]
             return up
-        started, text, masker = [], [], AnswerMasker()
+        started, text, masker, hide_keys = [], [], AnswerMasker(), cfg(c, "mask_answer_secrets")
         labels = dict(c.execute("select alias, label from models").fetchall())
 
         def write(s):
@@ -2293,7 +2648,7 @@ class Handler(BaseHTTPRequestHandler):
                 started.append(True)
             piece = delta_text(MODELS[self.current_alias][0], ev)
             if piece:
-                write(masker.feed(piece))  # keys in the answer are masked before they reach the employee
+                write(masker.feed(piece) if hide_keys else piece)  # keys in the answer are masked before they reach the employee
 
         used_alias, status, data, u, note = self.call_with_backup(alias, build, on_line, started, None, self.backups(c, acct))
         answer = ""
@@ -2301,7 +2656,8 @@ class Handler(BaseHTTPRequestHandler):
             write(masker.flush())
             answer = "".join(text)
             links = security.bad_links(answer)
-            warning = security.answer_warning(security.scan(answer), links)
+            found = security.scan(answer)  # the events are recorded either way; the warnings to the employee are settings
+            warning = security.answer_warning(found if cfg(c, "warn_dangerous") else [], links if cfg(c, "warn_links") else [])
             write(warning)
             self.answer_events(c, acct, used_alias, answer, masker.count, links)
             # the gateway's own instructions repeated word for word: kept out of the log, and flagged
@@ -2319,11 +2675,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def test_model(self, c, row):
         """Send a 5-token question to the provider and report whether the key and model id work."""
-        _, url, auth, fields = PROVIDERS[row["provider"]]
         if row["provider"] == "local":
-            if not LOCAL_URL:
+            if not cfg(c, "local_base_url"):
                 return {"ok": False, "error": "no address set for the local model server"}
-        elif not next((v.removeprefix("Bearer ").strip() for k, v in auth.items() if k != "anthropic-version"), ""):
+        elif not provider_key(row["provider"]):
             return {"ok": False, "error": "no API key for this provider in .env"}
         body = {"model": row["model"], "messages": [{"role": "user", "content": "Reply with the word OK."}]}
         body["max_completion_tokens" if row["provider"] == "openai" else "max_tokens"] = 5  # newer OpenAI models reject max_tokens
@@ -2373,36 +2728,39 @@ class Handler(BaseHTTPRequestHandler):
             model_info = {r["alias"]: {"provider": r["provider"], "model": r["model"], "price_in": r["price_in"], "price_out": r["price_out"],
                                        "label": r["label"], "enabled": bool(r["enabled"])}
                           for r in c.execute("select * from models where archived is null order by created, alias")}
-            return self.reply(200, {"models": list(model_info), "model_info": model_info, "default_model": default_model(c), "soft_limit": SOFT_LIMIT,
+            return self.reply(200, {"models": list(model_info), "model_info": model_info, "default_model": default_model(c), "soft_limit": cfg(c, "soft_limit") / 100,
                                     "accounts": accounts, "teams": teams})
         if path == "/admin/api/logs":
             # ponytail: last 200 only, add paging/search when someone needs older rows in the UI
             rows = c.execute("select ts, name, team, model, tokens_in, tokens_out, cost, request, response, request_id from logs"
                              " order by ts desc limit 200")
-            return self.reply(200, [{**dict(r), "request": decrypt(r["request"]), "response": decrypt(r["response"])} for r in rows])
+            return self.reply(200, [{**dict(r), "request": decrypt(r["request"]) or "", "response": decrypt(r["response"]) or ""} for r in rows])
         if path == "/admin/api/usage":
             rows = c.execute("select name, team, model, count(*) requests, sum(tokens_in) tokens_in, sum(tokens_out) tokens_out,"
                              " sum(cost) cost from logs where ts >= ? group by name, model order by cost desc", (month_bounds()[0],))
             return self.reply(200, [dict(r) for r in rows])
         if path == "/admin/api/activity":
-            start, _ = month_bounds()
+            start, end = month_bounds()
             prev = month_bounds(start - 1)[0]
             first = month_bounds(month_bounds(prev - 1)[0] - 1)[0]  # three months back, for the monthly team totals
+            lt = sql_local()
+            # day of the budget month: 1 on the reset day
             day = lambda lo, hi: [dict(r) for r in c.execute(
-                "select cast(strftime('%d', ts, 'unixepoch', 'localtime') as int) day, sum(cost) cost from logs"
-                " where ts >= ? and ts < ? group by day order by day", (lo, hi))]
+                "select cast(julianday(ts, 'unixepoch', ?) - julianday(?, 'unixepoch', ?) as int) + 1 day, sum(cost) cost from logs"
+                " where ts >= ? and ts < ? group by day order by day", (lt, lo, lt, lo, hi))]
             return self.reply(200, {
                 "heat": [dict(r) for r in c.execute(
-                    "select cast(strftime('%w', ts, 'unixepoch', 'localtime') as int) wd, cast(strftime('%H', ts, 'unixepoch', 'localtime') as int) hour,"
-                    " count(*) requests from logs where ts >= ? group by wd, hour", (time.time() - 28 * 86400,))],
+                    "select cast(strftime('%w', ts, 'unixepoch', ?) as int) wd, cast(strftime('%H', ts, 'unixepoch', ?) as int) hour,"
+                    " count(*) requests from logs where ts >= ? group by wd, hour", (lt, lt, time.time() - 28 * 86400))],
                 "this_month": day(start, time.time() + 1), "last_month": day(prev, start),
-                "days_in_month": time.localtime(month_bounds()[1] - 1).tm_mday,
+                "days_in_month": round((end - start) / 86400), "reset_day": cfg(c, "budget_reset_day"),
+                # the budget month's name: moving back reset_day - 1 days lands on the 1st of the month it is named after
                 "months": [dict(r) for r in c.execute(
-                    "select strftime('%Y-%m', ts, 'unixepoch', 'localtime') month, coalesce(nullif(team, ''), 'בלי צוות') team, sum(cost) cost"
-                    " from logs where ts >= ? group by month, team order by month", (first,))]})
+                    "select strftime('%Y-%m', ts, 'unixepoch', ?, ?) month, coalesce(nullif(team, ''), 'בלי צוות') team, sum(cost) cost"
+                    " from logs where ts >= ? group by month, team order by month", (lt, f"-{cfg(c, 'budget_reset_day') - 1} days", first))]})
         if path == "/admin/api/daily":
-            rows = c.execute("select date(ts, 'unixepoch', 'localtime') day, sum(cost) cost, count(*) requests from logs"
-                             " where ts >= ? group by day order by day", (time.time() - 30 * 86400,))
+            rows = c.execute("select date(ts, 'unixepoch', ?) day, sum(cost) cost, count(*) requests from logs"
+                             " where ts >= ? group by day order by day", (sql_local(), time.time() - 30 * 86400))
             return self.reply(200, [dict(r) for r in rows])
         if path == "/admin/api/sources/status":
             try:
@@ -2417,10 +2775,10 @@ class Handler(BaseHTTPRequestHandler):
             for s in c.execute("select * from sources where archived is null order by name").fetchall():
                 docs = [dict(d) for d in c.execute("select id, title, chars, updated from docs where source = ? and archived is null"
                                                    " order by title", (s["name"],))]
-                cfg = mcp_config(s)
-                public = {k: v for k, v in cfg.items() if k != "token"}
+                conf = mcp_config(s)
+                public = {k: v for k, v in conf.items() if k != "token"}
                 out.append({**{k: s[k] for k in s.keys() if k != "config"}, "teams": [t for t in s["teams"].split(",") if t],
-                            "docs": docs, "mcp": {**public, "has_token": bool(cfg.get("token"))} if s["kind"] == "mcp" else None})
+                            "docs": docs, "mcp": {**public, "has_token": bool(conf.get("token"))} if s["kind"] == "mcp" else None})
             return self.reply(200, out)
         if path == "/admin/api/security":
             week = time.time() - 7 * 86400
@@ -2439,15 +2797,16 @@ class Handler(BaseHTTPRequestHandler):
             inj, sens = policy(c)
             counts = dict(c.execute("select kind, count(*) from security_events where ts >= ? group by kind", (week,)).fetchall())
             open_keys = c.execute("select count(*) from accounts where key_hash is not null and rpm = 0 and archived is null").fetchone()[0]
-            providers = [p for p, (_, _, auth, _) in PROVIDERS.items() if any(v.removeprefix("Bearer ").strip() for v in auth.values() if v != "2023-06-01")]
+            providers = [p for p in PROVIDERS if provider_key(p)]
+            hosts, password = FIXED_HOSTS | set(cfg(c, "allowed_hosts")), cfg(c, "admin_password")
             checks = [
-                {"ok": bool(ALLOWED_HOSTS), "text": "חיבור מוצפן (HTTPS) עם דומיין" if ALLOWED_HOSTS else
+                {"ok": bool(hosts), "text": "חיבור מוצפן (HTTPS) עם דומיין" if hosts else
                  "אין דומיין, ולכן החיבור לא מוצפן. השאלות והסיסמאות עוברות ברשת כטקסט גלוי. מתאים לרשת המשרד בלבד."},
-                {"ok": not ADMIN_PASSWORD or len(ADMIN_PASSWORD) >= 16, "text": "מסך הניהול סגור מבחוץ" if not ADMIN_PASSWORD else
-                 ("סיסמת המנהל לגישה מבחוץ חזקה" if len(ADMIN_PASSWORD) >= 16 else "סיסמת המנהל לגישה מבחוץ קצרה מ-16 תווים")},
+                {"ok": not password or len(password) >= 16, "text": "מסך הניהול סגור מבחוץ" if not password else
+                 ("סיסמת המנהל לגישה מבחוץ חזקה" if len(password) >= 16 else "סיסמת המנהל לגישה מבחוץ קצרה מ-16 תווים")},
                 {"ok": open_keys == 0, "text": "לכל מפתחות ה-API יש הגבלת קצב" if not open_keys else
                  ("מפתח API אחד" if open_keys == 1 else f"{open_keys} מפתחות API") + " בלי הגבלת קצב. מפתח שדלף יכול לרוקן תקציב מהר."},
-                {"ok": not OPEN_ACCESS, "text": "כניסה לצ'אט עם סיסמה" if not OPEN_ACCESS else
+                {"ok": not open_access(), "text": "כניסה לצ'אט עם סיסמה" if not open_access() else
                  "הצ'אט פתוח בלי סיסמה ברשת המשרד (OPEN_ACCESS): כל אחד יכול לבחור כל שם, להשתמש בתקציב שלו ולראות את השיחות שלו."},
                 {"ok": bool(providers), "text": "ספקים מחוברים: " + ", ".join(providers) if providers else "אין מפתחות ספקים בקובץ ⁦.env⁩"},
                 {"ok": bool(os.environ.get("FIREGATE_DATA_KEY", "").strip()), "text":
@@ -2461,13 +2820,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/admin/api/audit/verify":
             return self.reply(200, verify_audit(c))
         if path == "/admin/api/report":
-            return self.reply(200, month_report(c, self.query("month") or time.strftime("%Y-%m")))
+            return self.reply(200, month_report(c, self.query("month") or month_of(time.time())))
         if path == "/admin/api/savings":
             return self.reply(200, savings(c))
         if path == "/admin/api/latency":
             return self.reply(200, latency(c))
         if path == "/admin/api/chargeback":  # ?month=2026-09&format=json|csv
-            month, fmt = self.query("month") or time.strftime("%Y-%m"), self.query("format") or "json"
+            month, fmt = self.query("month") or month_of(time.time()), self.query("format") or "json"
             if fmt not in ("json", "csv"):
                 raise ValueError("format must be csv or json")
             data = chargeback(c, month)  # checks the month, which then goes into the file name
@@ -2481,8 +2840,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/admin/api/summary/settings":
             return self.reply(200, summary_status(c))
         if path == "/admin/api/models/daily":
-            rows = c.execute("select date(ts, 'unixepoch', 'localtime') day, model, count(*) requests, sum(cost) cost from logs"
-                             " where ts >= ? and name != '(בדיקת מודל)' group by day, model order by day", (time.time() - 30 * 86400,))
+            rows = c.execute("select date(ts, 'unixepoch', ?) day, model, count(*) requests, sum(cost) cost from logs"
+                             " where ts >= ? and name != '(בדיקת מודל)' group by day, model order by day", (sql_local(), time.time() - 30 * 86400))
             return self.reply(200, [dict(r) for r in rows])
         if path == "/admin/api/models":
             start = month_bounds()[0]
@@ -2504,15 +2863,23 @@ class Handler(BaseHTTPRequestHandler):
                 rows.append({**dict(r), "enabled": bool(r["enabled"]), "users": users, "requests": u.get("requests", 0),
                              "cost": u.get("cost") or 0, "last_used": u.get("last_used"), "cache_saved": round(model_saved, 6),
                              "backup_answers": backups.get(r["model"], 0)})
-            providers = {p: bool(next((v.removeprefix("Bearer ").strip() for k, v in auth.items() if k != "anthropic-version"), ""))
-                         for p, (_, _, auth, _) in PROVIDERS.items()}
-            providers["local"] = bool(LOCAL_URL)  # the key is optional there: "connected" means an address is set
-            auto = {"enabled": setting(c, "auto_enabled", "1") == "1", "cheap": setting(c, "auto_cheap", "fast"),
-                    "strong": setting(c, "auto_strong", "smart"), "prefer_fast": setting(c, "auto_prefer_fast", "0") == "1",
+            local_url = cfg(c, "local_base_url")
+            providers = {p: bool(provider_key(p)) for p in PROVIDERS}
+            providers["local"] = bool(local_url)  # the key is optional there: "connected" means an address is set
+            auto = {"enabled": cfg(c, "auto_enabled"), "cheap": cfg(c, "auto_cheap"), "strong": cfg(c, "auto_strong"),
+                    "prefer_fast": cfg(c, "auto_prefer_fast"),
                     "count": c.execute("select count(*) from logs where ts >= ? and note like 'auto:%'", (start,)).fetchone()[0]}
             return self.reply(200, {"models": rows, "default_model": default_model(c), "providers": providers,
                                     "cache_saved": round(saved, 6), "auto": auto,
-                                    "local": {"url": LOCAL_URL, "has_key": bool(PROVIDERS["local"][2]), "loopback": LOCAL_LOOPBACK}})
+                                    "local": {"url": local_url, "has_key": bool(provider_key("local")), "loopback": cfg(c, "local_loopback")}})
+        if path == "/admin/api/settings":
+            return self.reply(200, settings_view(c))
+        if path == "/admin/api/settings/export":
+            return self.reply(200, export_settings())
+        if path == "/admin/api/teams/settings":
+            return self.reply(200, {"teams": live_team_overrides(c)})
+        if path == "/admin/api/update-check":
+            return self.reply(200, update_check())
         if path == "/admin/api/archive":
             return self.reply(200, archive_list(c))
         if path == "/admin/api/audit":
@@ -2526,8 +2893,57 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, account_page(c, a))
         self.reply(404, {"error": "not found"})
 
+    def settings_post(self, c, path, body):
+        """Returns (http status, reply body)."""
+        if path == "/admin/api/settings":
+            return 200, {"ok": True, "changed": save_settings(c, body.get("changes"))}
+        if path == "/admin/api/settings/reset":
+            return 200, {"ok": True, "changed": reset_setting(c, str(body.get("key")))}
+        if path == "/admin/api/settings/import":
+            return import_settings(c, body)
+        if path == "/admin/api/teams/settings":
+            save_team_settings(c, str(body.get("name") or ""), body.get("settings"))
+            return 200, {"ok": True}
+        if path == "/admin/api/backup":
+            file = backup(c, "", cfg(c, "backup_folder"), "manual")
+            put_setting(c, "backup_last", str(time.time()))
+            audit(c, "backup", {"name": "backup", "file": os.path.basename(file), "auto": False})
+            return 200, {"ok": True, "file": os.path.basename(file), "folder": os.path.dirname(file)}
+        # settings/test: a connection check with the value in effect (secrets are tested, never shown)
+        key = str(body.get("key") or "")
+        provider = key.split("_")[0]
+        if key in ("anthropic_api_key", "anthropic_url", "openai_api_key", "openai_url", "gemini_api_key", "gemini_url"):
+            row = c.execute("select * from models where provider = ? and archived is null order by enabled desc, created limit 1",
+                            (provider,)).fetchone()
+            result = self.test_model(c, row) if row else {"ok": False, "error": "no model for this provider"}
+        elif key in ("local_base_url", "local_api_key"):
+            url = cfg(c, "local_base_url")
+            result = local_list(url) if url else {"ok": False, "error": "no address set for the local model server"}
+        elif key.startswith("smtp_"):
+            to = str(body.get("to") or "").strip()
+            if not EMAIL.match(to):
+                raise ValueError(f"not a valid email address: {to[:100]}")
+            try:
+                send_mail([to], "FireGate · בדיקת שרת הדואר", "זו הודעת בדיקה מ-FireGate: שרת הדואר מוגדר נכון.\n"
+                          "This is a test message from FireGate: the mail server is set up correctly.\n")
+                result = {"ok": True}
+            except (ValueError, smtplib.SMTPException, OSError) as e:
+                result = {"ok": False, "error": mask_emails(f"{type(e).__name__}: {e}")[:300]}
+        else:
+            raise ValueError("this setting can't be tested")
+        put_setting(c, "tested:" + key, json.dumps({"ts": time.time(), "ok": bool(result.get("ok"))}))
+        return 200, result
+
     def admin_post(self, path, body):
         c = db()
+        if path in SETTINGS_POSTS:
+            try:
+                with c:
+                    status, result = self.settings_post(c, path, body)
+            except SettingsInvalid as e:
+                return self.reply(400, {"error": "invalid settings", "errors": e.errors})
+            refresh_models(c)
+            return self.reply(status, result)
         name = str(body.get("name", "")).strip()
         if not name:
             raise ValueError("name is required")
@@ -2557,7 +2973,7 @@ class Handler(BaseHTTPRequestHandler):
             old = c.execute("select * from teams where name = ?", (name,)).fetchone()
             c.execute(f"insert into teams(name, month, {', '.join(fields)}) values (?, ?, {', '.join('?' * len(fields))})"
                       f" on conflict(name) do update set {', '.join(f'{k} = excluded.{k}' for k in fields)}",
-                      (name, time.strftime("%Y-%m"), *fields.values()))
+                      (name, month_of(time.time()), *fields.values()))
             changed = {k: v for k, v in fields.items() if k != "budget" and (old[k] if old else None) != v}
             audit(c, "team-save", {"name": name, "budget": budget, **({"old_budget": old["budget"]} if old else {}), **changed})
             return (200, {"ok": True})
@@ -2680,7 +3096,7 @@ class Handler(BaseHTTPRequestHandler):
                       " price_cached = excluded.price_cached, fallback = excluded.fallback",
                       (name, str(body.get("label") or "").strip()[:60], provider, model, price_in, price_out, enabled, time.time(),
                        price_cached, fallback))
-            if not enabled and c.execute("select value from settings where key = 'default_model'").fetchone()[0] == name:
+            if not enabled and cfg(c, "default_model") == name:
                 raise ValueError("this is the default model; choose another default before turning it off")
             changes = {k: [old[k], v] for k, v in (("provider", provider), ("model", model), ("price_in", price_in),
                                                      ("price_out", price_out), ("price_cached", price_cached), ("fallback", fallback),
@@ -2725,12 +3141,12 @@ class Handler(BaseHTTPRequestHandler):
                                     "prefer_fast": bool(body.get("prefer_fast"))})
             return (200, {"ok": True})
         if path == "/admin/api/local":  # the local model server's address; name is "local"
-            url, old = check_local_url(body.get("url")), LOCAL_URL
+            url, old = check_local_url(body.get("url")), cfg(c, "local_base_url")
             put_setting(c, "local_base_url", url)
             audit(c, "local-server", {"name": "local", "url": url, "old": old})
             return (200, {"ok": True, "url": url})
         if path == "/admin/api/local/test":  # the models the server offers; the typed address, else the saved one
-            url = check_local_url(body.get("url") or LOCAL_URL)
+            url = check_local_url(body.get("url") or cfg(c, "local_base_url"))
             return (200, local_list(url) if url else {"ok": False, "error": "no address set for the local model server"})
         if path.startswith("/admin/api/models/"):
             row = c.execute("select * from models where alias = ? and archived is null", (name,)).fetchone()
@@ -2747,7 +3163,12 @@ class Handler(BaseHTTPRequestHandler):
             return (404, {"error": "not found"})
         if path == "/admin/api/accounts":  # create
             not_archived(c, "account", name)
-            fields = account_fields(c, body, partial=False)
+            # what the request leaves out comes from the defaults for a new user
+            defaults = {"rpm": cfg(c, "new_user_rpm"), "daily_tokens": cfg(c, "new_user_daily_tokens"),
+                        "models": cfg(c, "new_user_models") or [default_model(c)]}
+            if cfg(c, "new_user_budget") is not None:
+                defaults["budget"] = cfg(c, "new_user_budget")
+            fields = account_fields(c, {**defaults, **body}, partial=False)
             pw = body.get("password")
             if not pw and not body.get("api_key"):
                 raise ValueError("give a password (chat login) or an API key, or both")
@@ -2755,7 +3176,7 @@ class Handler(BaseHTTPRequestHandler):
                 c.execute("insert into accounts(name, team, models, budget, rpm, month, pw_hash, daily_tokens, key_expires)"
                           " values (?,?,?,?,?,?,?,?,?)",
                           (name, fields.get("team", ""), fields["models"], fields["budget"], fields.get("rpm", 0),
-                           time.strftime("%Y-%m"), hash_password(check_new_password(pw)) if pw else None,
+                           month_of(time.time()), hash_password(check_new_password(pw)) if pw else None,
                            fields.get("daily_tokens", 0), fields.get("key_expires")))
             except sqlite3.IntegrityError:
                 raise ValueError(f"name '{name}' already exists")
@@ -2794,6 +3215,7 @@ if __name__ == "__main__":
         db().close()  # schema, data key and one-time migrations before the first request
     except DataKeyError as e:
         sys.exit(f"FireGate cannot start: {e}")
+    STARTUP.update((d["key"], settings.lookup(d["key"])[0]) for d in settings.REGISTRY if d["applies"] == "restart")
     if os.environ.get("SEED_DEMO", "").strip().lower() in ("1", "true", "yes", "on"):
         # demo hosting whose disk resets on restart: start every time with sample data
         import seed_demo  # noqa: F401  (fills an empty database; leaves a filled one alone)

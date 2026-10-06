@@ -5,7 +5,10 @@
 // both filled by en-*.js. Text that has no translation stays as it is, so data such as people's names is never touched.
 const I18N = (() => {
   let lang = "he";
-  try { lang = localStorage.getItem("lang") === "en" ? "en" : "he"; } catch {}
+  // the visitor's own choice; without one, the default language the server marks on the page (settings: default language)
+  let saved = null;
+  try { saved = localStorage.getItem("lang"); } catch {}
+  lang = (saved || document.documentElement.dataset.defaultLang) === "en" ? "en" : "he";
   const en = lang === "en", root = document.documentElement;
   const ATTRS = ["placeholder", "aria-label", "title", "data-label", "alt"];
   const HEB = /[\u0590-\u05FF]/;

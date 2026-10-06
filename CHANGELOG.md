@@ -1,5 +1,31 @@
 # שינויים / Changelog
 
+## 1.2.0 — 2026-10-06
+
+**חדש: מסך הגדרות** (בתפריט, תחת "מערכת")
+- כל ההגדרות של המערכת במקום אחד, ב-13 פרקים, עם חיפוש. כל הגדרה עם הסבר, ברירת מחדל וכפתור "חזרה לברירת מחדל".
+- מספרים שהיו קבועים בקוד הם עכשיו הגדרות, עם אותן ברירות מחדל: סף התראה על תקציב, אורך תשובה, בקשות במקביל, נעילת חשבון, ספי התראות והמלצות ועוד.
+- מפתחות ספקים וסיסמאות אפשר להזין במסך. הם נשמרים מוצפנים ולא מוצגים שוב. ערך מקובץ ההגדרות בשרת תמיד גובר, ומוצג נעול.
+- כל שינוי נרשם ביומן השינויים החתום. שינוי רגיש מבקש אישור עם הערך הישן והחדש.
+- הגדרות מיוחדות לצוות: מדיניות מידע רגיש, ניסיונות עקיפה, סוגי מידע רגיש ומילים של הארגון.
+- ייצוא וייבוא הגדרות (בלי סודות), עם תצוגה של מה ישתנה לפני שמחילים.
+- אפשרויות חדשות: יום איפוס התקציב, מה קורה כשהתקציב נגמר (חסימה, התראה או מעבר למודל זול), יומן בלי תוכן השאלות, כיבוי כל סוג מידע רגיש בנפרד, מילים וביטויים של הארגון להסתרה, שם הארגון, אזור זמן, שפת ברירת מחדל, עמוד הבית, גיבוי עכשיו וגיבוי מתוזמן, ובדיקת עדכונים.
+- הכרטיסים שהיו מפוזרים (בחירה אוטומטית, מדיניות אבטחה, שרת מקומי, מייל חודשי) עברו למסך ההגדרות. בעמודים המקוריים נשארה שורה עם קישור.
+- אפשרויות של השלבים הבאים (דפדפן, כלי מפתחים, ספקים נוספים) מוצגות "בקרוב".
+
+---
+
+**New: Settings screen** (in the menu, under "System")
+- Every setting in one place, in 13 sections, with search. Each setting has an explanation, a default and "Back to default".
+- Numbers that were fixed in code are now settings with the same defaults: budget alert threshold, answer length, parallel requests, account lock, alert and savings thresholds and more.
+- Provider keys and passwords can be entered in the screen. They are stored encrypted and never shown again. A value in the server's settings file always wins and is shown locked.
+- Every change is recorded in the signed change log. A sensitive change asks for confirmation with the old and new value.
+- Per-team settings: sensitive-data policy, bypass attempts, sensitive-data types and organization terms.
+- Settings export and import (without secrets), with a preview of what will change.
+- New options: budget reset day, what happens when a budget runs out (block, alert, or switch to a cheap model), a log without question text, turning off each sensitive-data type, organization terms to hide, organization name, time zone, default language, home page, backup now and scheduled backups, and update check.
+- The scattered cards (automatic choice, security policy, local server, monthly email) moved to the settings screen, with a link left on the original pages.
+- Options for the next phases (browser, developer tools, more providers) are shown as "Coming soon".
+
 ## 1.1.0 — 2026-10-06
 
 **חדש**

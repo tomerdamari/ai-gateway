@@ -240,9 +240,9 @@ assert adm("overview", from_ip="192.168.1.20")[0] == 200
 assert adm("overview", from_ip="8.8.8.8")[0] == 401
 assert adm("overview", pw="wrong", from_ip="8.8.8.8")[0] == 401
 assert adm("overview", pw="test-admin", from_ip="8.8.8.8")[0] == 200
-gateway.ADMIN_PASSWORD = ""
+os.environ["ADMIN_PASSWORD"] = ""
 assert adm("overview", from_ip="8.8.8.8")[0] == 401
-gateway.ADMIN_PASSWORD = "test-admin"
+os.environ["ADMIN_PASSWORD"] = "test-admin"
 
 # --- teams and accounts ---
 assert adm("teams", {"name": "sales", "budget": 0.02})[0] == 200
@@ -325,11 +325,11 @@ last_log = gateway.decrypt(last_log)
 assert "123456782" not in last_log and "[REDACTED_CARD]" in last_log
 
 # provider error passes through, charges nothing
-gateway.PROVIDERS["anthropic"][2]["x-api-key"] = "wrong"
+os.environ["ANTHROPIC_API_KEY"] = "wrong"
 before = acct("bot")["spent"]
 assert api(k_bot, "smart")[0] == 401
 assert acct("bot")["spent"] == before
-gateway.PROVIDERS["anthropic"][2]["x-api-key"] = "real-anthropic"
+os.environ["ANTHROPIC_API_KEY"] = "real-anthropic"
 
 # key rotation and revocation
 s, r = adm("accounts/key", {"name": "bot"})
@@ -494,12 +494,12 @@ for k in ("suspicious-prompt", "dangerous-answer", "sensitive-data-masked", "cro
 assert sec["counts"]["dangerous-answer"] >= 1 and len(sec["checks"]) == 6
 
 # open access: no login on the office network, people pick their name; never from outside
-gateway.OPEN_ACCESS = False
-assert json.loads(http_call("/api/config")[1]) == {"open": False}
+os.environ["OPEN_ACCESS"] = "0"
+assert json.loads(http_call("/api/config")[1])["open"] is False
 assert http_call("/api/as", {"name": "noa"})[0] == 403
-gateway.OPEN_ACCESS = True
-assert json.loads(http_call("/api/config")[1]) == {"open": True}
-assert json.loads(http_call("/api/config", None, {"x-forwarded-for": "8.8.8.8"})[1]) == {"open": False}
+os.environ["OPEN_ACCESS"] = "1"
+assert json.loads(http_call("/api/config")[1])["open"] is True
+assert json.loads(http_call("/api/config", None, {"x-forwarded-for": "8.8.8.8"})[1])["open"] is False
 people = json.loads(http_call("/api/people")[1])
 assert {"name": "noa", "team": ""} in people and "bot" not in [p["name"] for p in people]  # apps without a chat password aren't listed
 assert http_call("/api/as", {"name": "noa"}, {"x-forwarded-for": "8.8.8.8"})[0] == 403
@@ -509,7 +509,7 @@ picker = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar3))
 assert http_call("/api/as", {"name": "noa"}, opener=picker)[0] == 200
 assert json.loads(http_call("/api/me", opener=picker)[1])["name"] == "noa"
 assert not next(c for c in adm("security")[1]["checks"] if "OPEN_ACCESS" in c["text"])["ok"]
-gateway.OPEN_ACCESS = False
+os.environ["OPEN_ACCESS"] = "0"
 assert "ignore all previous" in next(e for e in sec["events"] if e["kind"] == "suspicious-prompt")["detail"]["excerpt"]
 
 # --- models page: list, add, price, turn off, default, delete, connection test ---
@@ -542,9 +542,9 @@ assert adm("archive", {"kind": "model", "name": "top"})[0] == 200 and "top" not 
 s, r = adm("models/test", {"name": "gpt-fast"})
 assert r["ok"] and r["ms"] >= 0 and received["/v1/chat/completions"]["max_completion_tokens"] == 5
 assert gateway.db().execute("select count(*) from logs where name = '(בדיקת מודל)'").fetchone()[0] == 1
-gateway.PROVIDERS["gemini"][2]["authorization"] = "Bearer "
+os.environ["GEMINI_API_KEY"] = ""
 assert adm("models/test", {"name": "gemini-fast"})[1] == {"ok": False, "error": "no API key for this provider in .env"}
-gateway.PROVIDERS["gemini"][2]["authorization"] = "Bearer real-gemini"
+os.environ["GEMINI_API_KEY"] = "real-gemini"
 assert adm("models", {"name": "fast", "label": "Claude Haiku 4.5", "provider": "anthropic", "model": "claude-haiku-4-5-20251001",
                       "price_in": 1.5, "price_out": 5})[0] == 200
 assert next(a for a in adm("audit")[1] if a["action"] == "model-save")["detail"]["changes"] == {"price_in": [1.0, 1.5], "price_cached": [0.1, 0.15]}
@@ -688,10 +688,10 @@ assert "8:00-18:00" in gateway.sources.search(gateway.db(), ["CRM-docs"], "שע�
 assert adm("sources/sync", {"name": "CRM"})[0] == 400  # live-search sources have nothing to sync
 
 # public deployment: private addresses are not "the office"; admin needs the password, no open access
-gateway.PUBLIC, gateway.OPEN_ACCESS = True, True
+os.environ.update(PUBLIC_DEPLOY="1", OPEN_ACCESS="1")
 assert adm("overview")[0] == 401 and adm("overview", pw="test-admin")[0] == 200
-assert json.loads(http_call("/api/config")[1]) == {"open": False}
-gateway.PUBLIC, gateway.OPEN_ACCESS = False, False
+assert json.loads(http_call("/api/config")[1])["open"] is False
+os.environ.update(PUBLIC_DEPLOY="0", OPEN_ACCESS="0")
 
 # pages: only our own script files may run
 r = urllib.request.urlopen(base + "/chat")
@@ -930,7 +930,7 @@ gateway.refresh_models(gateway.db())
 for hdrs, code in (({"content-length": "5", "transfer-encoding": "chunked"}, 400), ({"transfer-encoding": "chunked"}, 400),
                    ({"content-length": "abc"}, 400), ({"content-length": "-5"}, 400), ({"content-length": "2000000"}, 413)):
     assert raw("POST", "/api/login", {"content-type": "application/json", **hdrs})[0] == code, hdrs
-s, h, _ = raw("POST", "/admin/api/sources/upload", {"content-type": "application/json", "content-length": str(gateway.MAX_BODY + 1)})
+s, h, _ = raw("POST", "/admin/api/sources/upload", {"content-type": "application/json", "content-length": str(40 * gateway.MB + 1)})
 assert s == 413
 
 # --- CORS: no other website may read our answers ---
@@ -957,17 +957,17 @@ assert all(after[k] == before[k] for k in ("spent", "key_hash", "pw_hash", "lock
 # --- API abuse: output tokens clamped, too many at once, huge message lists ---
 http_call("/v1/messages", {"model": "fast", "max_tokens": 999999, "messages": [{"role": "user", "content": "x"}]},
           {"authorization": "Bearer " + k_feat})
-assert received["/v1/messages"]["max_tokens"] == gateway.MAX_OUTPUT_TOKENS
+assert received["/v1/messages"]["max_tokens"] == gateway.cfg(None, "max_output_tokens")
 for _ in range(200):  # the server sends the answer before it counts the request as finished: wait for that
     if not gateway._inflight["feat"]:
         break
     time.sleep(0.01)
-gateway._inflight["feat"] = gateway.MAX_CONCURRENT
+gateway._inflight["feat"] = gateway.cfg(None, "max_concurrent")
 status, data = api(k_feat, "fast")
 assert status == 429 and json.loads(data)["code"] == "concurrency"
 assert chat_as(fo, "hi")[0] == 429
 gateway._inflight["feat"] = 0
-status, data = http_call("/v1/messages", {"model": "fast", "max_tokens": 5, "messages": [{"role": "user", "content": "x"}] * (gateway.MAX_MESSAGES + 1)},
+status, data = http_call("/v1/messages", {"model": "fast", "max_tokens": 5, "messages": [{"role": "user", "content": "x"}] * (gateway.cfg(None, "max_messages") + 1)},
                          {"authorization": "Bearer " + k_feat})
 assert status == 400 and json.loads(data)["code"] == "too-many-messages"
 
@@ -1007,12 +1007,12 @@ assert gateway.Handler.inside(h) is False
 
 # --- login throttling per address, across all names; spoofed X-Forwarded-For doesn't dodge it ---
 gateway._login_fails.clear()
-saved_proxies, gateway.TRUSTED_PROXIES = gateway.TRUSTED_PROXIES, []
-for i in range(gateway.LOGIN_IP_LIMIT):
+os.environ["TRUSTED_PROXIES"] = "192.0.2.1"  # this machine is not a trusted proxy
+for i in range(gateway.cfg(None, "login_ip_limit")):
     assert http_call("/api/login", {"name": f"guess{i}", "password": "nope-nope"}, {"x-forwarded-for": f"10.0.0.{i + 1}"})[0] == 401
 status, data = http_call("/api/login", {"name": "feat", "password": "feat-pass-1"}, {"x-forwarded-for": "10.0.0.99"})
 assert status == 429 and b"this address" in data and events("login-throttled")
-gateway.TRUSTED_PROXIES = saved_proxies
+del os.environ["TRUSTED_PROXIES"]
 gateway._login_fails.clear()
 
 # --- server log lines: method, path and status only; no query string, cookie or body ---
@@ -1047,9 +1047,9 @@ assert acct("arch")["key_hash"] == gateway.sha(k_arch) and acct("arch")["archive
 assert "arch" not in [a["name"] for a in adm("overview")[1]["accounts"]] and adm("archive")[1]["accounts"][0]["name"] == "arch"
 s, r = adm("account?name=arch")
 assert s == 200 and r["account"]["archived"] and r["this_month"]["requests"] >= 1  # an archived person's page still opens
-gateway.OPEN_ACCESS = True
+os.environ["OPEN_ACCESS"] = "1"
 assert "arch" not in [p["name"] for p in json.loads(http_call("/api/people")[1])] and http_call("/api/as", {"name": "arch"})[0] == 404
-gateway.OPEN_ACCESS = False
+os.environ["OPEN_ACCESS"] = "0"
 status, r = adm("accounts", {"name": "arch", "budget": 1, "models": ["fast"], "password": "12345678"})
 assert status == 400 and "in the archive" in r["error"]  # the name can't be reused: restore it instead
 assert adm("accounts/update", {"name": "arch", "budget": 9})[0] == 404 and adm("archive", {"kind": "account", "name": "arch"})[0] == 404
@@ -1304,7 +1304,7 @@ assert gateway.check_local_url("http://10.0.0.5:8000/v1/") == "http://10.0.0.5:8
 assert gateway.check_local_url("http://192.168.1.9:11434/v1") and gateway.check_local_url("") == ""
 assert adm("local/test", {"name": "local"})[1] == {"ok": False, "error": "no address set for the local model server"}
 assert adm("models")[1]["providers"]["local"] is False
-gateway.LOCAL_LOOPBACK = True  # the fake local server runs on this machine
+os.environ["ALLOW_LOCAL_LOOPBACK"] = "1"  # the fake local server runs on this machine
 assert adm("local", {"name": "local", "url": local_base + "/"}) == (200, {"ok": True, "url": local_base})
 lt = adm("local/test", {"name": "local"})[1]
 assert lt["ok"] and lt["models"] == ["llama3.3:70b", "qwen3:32b"], lt
@@ -1351,10 +1351,10 @@ chat_as(lab, "hello", "gpt-fast")
 r = log_row("lab1")
 assert r["model"] == "gpt-6-luna" and r["status"] == 200 and r["ttft_ms"] is not None and r["latency_ms"] >= r["ttft_ms"]
 # the local server refused at connection time when its address stops being allowed
-gateway.LOCAL_LOOPBACK = False
+os.environ["ALLOW_LOCAL_LOOPBACK"] = "0"
 s, data = api(k_lab, "llama3.3-70b", "/v1/chat/completions")
 assert s == 502 and b"not allowed" in data and log_row("lab1")["status"] == 502  # counted in the error rate
-gateway.LOCAL_LOOPBACK = True
+os.environ["ALLOW_LOCAL_LOOPBACK"] = "1"
 
 # sensitive data -> the local model, unmasked; never to an outside provider
 assert adm("security/policy", {"name": "policy", "injection": "block", "sensitive": "bogus"})[0] == 400
@@ -1436,9 +1436,9 @@ haiku, flash = gateway.MODELS["fast"][1], gateway.MODELS["gemini-fast"][1]
 with gateway.db() as c:
     count = lambda m: c.execute("select count(*) from logs where model = ? and ts >= ? and latency_ms is not null", (m, now - 86400)).fetchone()[0]
     busy_haiku, busy_flash = count(haiku), count(flash)
-assert busy_flash < gateway.FAST_MIN - 1
+assert busy_flash < gateway.cfg(None, "fast_min") - 1
 add_speed(haiku, 60, 9000, n=busy_haiku + 30)  # Haiku's median: 9 seconds
-add_speed(flash, 60, 400, n=gateway.FAST_MIN - 1 - busy_flash)  # 19 answers: not enough to be trusted
+add_speed(flash, 60, 400, n=gateway.cfg(None, "fast_min") - 1 - busy_flash)  # 19 answers: not enough to be trusted
 adm("accounts", {"name": "lab3", "team": "lab", "budget": 50, "models": ["fast", "gemini-fast", "gpt-fast"], "password": "lab-pass-33"})
 lab3 = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 assert http_call("/api/login", {"name": "lab3", "password": "lab-pass-33"}, opener=lab3)[0] == 200
@@ -1480,4 +1480,201 @@ with gateway.db() as c:
     acct = c.execute("select * from accounts where name = ?", (zero["name"],)).fetchone()
     r = gateway.authorize(c, acct, acct["models"].split(",")[0])
     assert not r or r[2] != "budget", r
+# ================= the settings screen =================
+S = gateway.settings
+acct = lambda name: gateway.db().execute("select * from accounts where name = ?", (name,)).fetchone()
+put = lambda **kw: adm("settings", {"changes": kw})
+by_key = lambda: {x["key"]: x for x in adm("settings")[1]["settings"]}
+# the registry: every setting complete, every default passes its own check
+for d in S.REGISTRY:
+    assert d["section"] in [x[0] for x in S.SECTIONS] and d["card"] in S.CARDS and d["type"], d["key"]
+    assert all(d[k] for k in ("label_he", "label_en", "help_he", "help_en")), d["key"]
+    if d["type"] not in ("secret", "model") and not d.get("check"):
+        assert S.validate(d, d["default"]) == d["default"], d["key"]
+assert len({d["key"] for d in S.REGISTRY}) == len(S.REGISTRY)
+view = adm("settings")[1]
+assert [x["id"] for x in view["sections"]][0] == "general" and len(view["sections"]) == 13
+# where a value comes from: environment > screen > default
+assert gateway.cfg(None, "max_concurrent") == 4 and by_key()["max_concurrent"]["source"] == "default"
+assert put(max_concurrent=6) == (200, {"ok": True, "changed": ["max_concurrent"]}) and gateway.cfg(None, "max_concurrent") == 6
+assert by_key()["max_concurrent"]["source"] == "db" and by_key()["max_concurrent"]["changed"]
+os.environ["MAX_CONCURRENT"] = "7"
+assert gateway.cfg(None, "max_concurrent") == 7 and by_key()["max_concurrent"]["source"] == "env"
+s, r = put(max_concurrent=3)
+assert s == 400 and r["errors"]["max_concurrent"] == {"code": "env", "env": "MAX_CONCURRENT"}
+del os.environ["MAX_CONCURRENT"]
+assert gateway.cfg(None, "max_concurrent") == 6
+# all or nothing: one bad value and nothing is written
+s, r = put(max_concurrent=2, lock_after=0, home_page="nowhere", nonsense=1, chat_sso=True)
+assert s == 400 and r["errors"] == {"lock_after": {"code": "min", "min": 1}, "home_page": {"code": "choice"}, "nonsense": {"code": "unknown"},
+                                    "chat_sso": {"code": "soon"}}, r
+assert gateway.cfg(None, "max_concurrent") == 6 and gateway.cfg(None, "lock_after") == 5
+assert put(trusted_proxies=["not-an-ip"])[1]["errors"]["trusted_proxies"]["code"] == "network"
+assert put(default_model="no-such-model")[1]["errors"]["default_model"]["code"] == "enabled_model"
+assert put(summary_recipients="a@b.co, nope")[1]["errors"]["summary_recipients"] == {"code": "email", "item": "nope"}
+# a converted constant takes effect: questions at once
+gateway._inflight["feat"] = 6
+assert api(k_feat, "fast")[0] == 429
+gateway._inflight["feat"] = 2
+assert put(max_concurrent=2)[0] == 200 and api(k_feat, "fast")[0] == 429
+gateway._inflight["feat"] = 0
+assert adm("settings/reset", {"key": "max_concurrent"}) == (200, {"ok": True, "changed": True}) and gateway.cfg(None, "max_concurrent") == 4
+assert gateway.db().execute("select value from settings where key = 'max_concurrent'").fetchone()[0] is None  # emptied, not deleted
+assert adm("audit")[1][0]["detail"] == {"name": "max_concurrent", "old": 2, "new": 4, "reset": True}
+# early warning
+assert put(soft_limit=50)[0] == 200 and adm("overview")[1]["soft_limit"] == 0.5
+assert adm("settings/reset", {"key": "soft_limit"})[0] == 200
+# account lockout after N wrong passwords
+assert put(lock_after=2)[0] == 200
+gateway._login_fails.clear()
+adm("accounts", {"name": "lockme", "budget": 1, "models": ["fast"], "password": "lockme-pass-1"})
+for _ in range(2):
+    assert http_call("/api/login", {"name": "lockme", "password": "wrong-wrong"})[0] == 401
+assert acct("lockme")["locked_until"] > time.time() and http_call("/api/login", {"name": "lockme", "password": "lockme-pass-1"})[0] == 429
+assert adm("settings/reset", {"key": "lock_after"})[0] == 200
+gateway._login_fails.clear()
+# secrets: stored encrypted, logged only as "changed", never sent back
+s, r = put(local_api_key="local-key-from-screen")
+assert s == 400 and r["errors"]["local_api_key"]["code"] == "env"  # LOCAL_API_KEY is in the environment: the file wins
+assert put(admin_password="x")[1]["errors"]["admin_password"]["code"] == "env"
+s, r = put(openai_url="ftp://x")
+assert s == 400 and r["errors"]["openai_url"]["code"] == "env"
+saved_gemini = os.environ.pop("GEMINI_API_KEY")
+assert put(gemini_api_key="gemini-from-screen-123")[0] == 200
+assert gateway.cfg(None, "gemini_api_key") == "gemini-from-screen-123" and gateway.provider_key("gemini") == "gemini-from-screen-123"
+raw_secret = gateway.db().execute("select value from settings where key = 'gemini_api_key'").fetchone()[0]
+assert raw_secret.startswith("enc1:") and "gemini-from-screen" not in raw_secret
+last = adm("audit")[1][0]
+assert last["action"] == "setting" and last["detail"] == {"name": "gemini_api_key", "new": "changed"}
+gk = by_key()["gemini_api_key"]
+assert gk["value"]["set"] is True and gk["value"]["source"] == "db" and gk["default"] is None
+os.environ["GEMINI_API_KEY"] = saved_gemini
+assert gateway.provider_key("gemini") == "real-gemini" and by_key()["gemini_api_key"]["source"] == "env"
+t = adm("settings/test", {"key": "gemini_api_key"})[1]
+assert t["ok"] is True and by_key()["gemini_api_key"]["value"]["tested"]["ok"] is True
+dump = json.dumps([adm(p)[1] for p in ("settings", "settings/export", "teams/settings", "audit", "security", "models")], ensure_ascii=False)
+assert not [x for x in ("gemini-from-screen-123", "smtp-secret-pw", "real-gemini", "real-anthropic", "local-key", "test-admin") if x in dump]
+# the mail server test: an email to the address the admin typed
+n = len(FakeSMTP.sent)
+assert adm("settings/test", {"key": "smtp_password", "to": "nope"})[0] == 400
+assert adm("settings/test", {"key": "smtp_host", "to": "it@corp.test"})[1] == {"ok": True} and FakeSMTP.sent[-1][2] == ["it@corp.test"]
+assert put(smtp_host="other.test")[1]["errors"]["smtp_host"]["code"] == "env" and len(FakeSMTP.sent) == n + 1
+# the sensitive data kinds: a kind turned off is no longer masked; a team's own setting applies only to that team
+assert put(mask_types=["id", "card", "secret", "phone", "iban", "bank", "passport"])[0] == 200
+assert gateway.redact_text("mail dana@corp.test") == "mail dana@corp.test"
+assert adm("settings/reset", {"key": "mask_types"})[0] == 200 and gateway.redact_text("mail dana@corp.test") == "mail [REDACTED_EMAIL]"
+assert adm("teams/settings", {"name": "lab", "settings": {"lock_after": 3}})[1]["errors"]["lock_after"]["code"] == "not_team"
+assert adm("teams/settings", {"name": "no-such-team", "settings": {"policy_sensitive": "block"}})[0] == 400
+assert adm("teams/settings", {"name": "lab", "settings": {"mask_types": ["id"], "org_terms": ["Project Falcon"]}}) == (200, {"ok": True})
+assert adm("teams/settings")[1]["teams"]["lab"] == {"mask_types": ["id"], "org_terms": ["Project Falcon"]}
+assert by_key()["mask_types"]["value"] == [v for v, _, _ in S.MASK_TYPES] and adm("settings")[1]["team_overrides"]["mask_types"] == 1
+assert api(k_lab, "fast", text="write to dana@corp.test about project falcon")[0] == 200
+assert "dana@corp.test" in received["/v1/messages"]["messages"][0]["content"] and "[REDACTED_TERM]" in received["/v1/messages"]["messages"][0]["content"]
+assert api(k_feat, "fast", text="write to dana@corp.test about project falcon")[0] == 200
+assert "[REDACTED_EMAIL]" in received["/v1/messages"]["messages"][0]["content"] and "falcon" in received["/v1/messages"]["messages"][0]["content"]
+assert adm("teams/settings", {"name": "lab", "settings": {"mask_types": None, "org_terms": None}})[0] == 200
+assert adm("teams/settings")[1]["teams"] == {} and adm("audit")[1][0]["action"] == "team-setting"
+assert api(k_lab, "fast", text="write to dana@corp.test")[0] == 200 and "[REDACTED_EMAIL]" in received["/v1/messages"]["messages"][0]["content"]
+# metadata only: the log keeps who, when, model and cost, no text
+assert put(log_content="metadata")[0] == 200 and api(k_feat, "fast", text="METADATA ONLY")[0] == 200
+r = gateway.db().execute("select * from logs where name = 'feat' order by ts desc limit 1").fetchone()
+assert r["request"] is None and r["response"] is None and r["cost"] > 0 and r["tokens_in"] == 1000
+assert adm("settings/reset", {"key": "log_content"})[0] == 200
+# when the budget runs out: block (default), alert only, or the cheap model
+k_broke = adm("accounts", {"name": "broke", "budget": 1, "models": ["fast", "smart"], "api_key": True})[1]["key"]
+with gateway.db() as c:
+    c.execute("update accounts set spent = 2 where name = 'broke'")
+assert json.loads(api(k_broke, "smart")[1])["code"] == "budget"
+assert put(budget_exhausted="alert")[0] == 200 and api(k_broke, "smart")[0] == 200 and api(k_broke, "smart")[0] == 200
+assert len([e for e in events("budget-exceeded") if e["name"] == "broke"]) == 1  # once a day
+assert put(budget_exhausted="cheap")[0] == 200
+s, data = http_call("/v1/messages", {"model": "smart", "max_tokens": 5, "messages": [{"role": "user", "content": "x"}]},
+                    {"authorization": "Bearer " + k_broke})
+assert s == 200 and received["/v1/messages"]["model"] == gateway.MODELS["fast"][1]
+assert api(k_broke, "gpt-fast", "/v1/chat/completions")[0] == 403  # not an allowed model at all
+adm("accounts/update", {"name": "broke", "models": ["smart"]})
+assert json.loads(api(k_broke, "smart")[1])["code"] == "budget"  # may not use the cheap model: blocked
+assert adm("settings/reset", {"key": "budget_exhausted"})[0] == 200
+# the budget month from the 15th: month bounds, the reset of spending, the reports
+mk = lambda y, m, d: time.mktime((y, m, d, 0, 0, 0, 0, 0, -1))
+assert gateway.month_bounds(mk(2026, 10, 20) + 3600) == (mk(2026, 10, 1), mk(2026, 11, 1))
+assert put(budget_reset_day=15)[0] == 200
+assert gateway.month_bounds(mk(2026, 10, 20) + 3600) == (mk(2026, 10, 15), mk(2026, 11, 15))
+assert gateway.month_bounds(mk(2026, 10, 14) + 3600) == (mk(2026, 9, 15), mk(2026, 10, 15))
+assert gateway.month_bounds(mk(2027, 1, 3)) == (mk(2026, 12, 15), mk(2027, 1, 15))
+assert gateway.month_of(mk(2026, 10, 10)) == "2026-09" and gateway.month_start("2026-09") == mk(2026, 9, 15)
+assert gateway.last_full_month(mk(2026, 10, 20)) == "2026-09"
+start = gateway.month_bounds()[0]
+with gateway.db() as c:
+    logged = c.execute("select coalesce(sum(cost), 0) from logs where name = 'feat' and ts >= ?", (start,)).fetchone()[0]
+    assert close(acct("feat")["spent"], logged) and acct("feat")["month"] == gateway.month_of(time.time())
+    total = c.execute("select coalesce(sum(cost), 0) from logs where ts >= ? and name != ?", (start, gateway.TEST_CALLS)).fetchone()[0]
+rep = adm("report")[1]
+assert rep["month"] == gateway.month_of(time.time()) and close(rep["totals"]["cost"], total)
+act = adm("activity")[1]
+assert act["reset_day"] == 15 and 28 <= act["days_in_month"] <= 31
+assert put(budget_reset_day=1)[0] == 200 and gateway.month_bounds(mk(2026, 10, 20) + 3600)[0] == mk(2026, 10, 1)
+# time zone: unknown names refused; the day starts at local midnight there
+assert put(timezone="Mars/Olympus")[1]["errors"]["timezone"] == {"code": "timezone"}
+if gateway.timezones():  # time zone data on this machine
+    assert put(timezone="Asia/Tokyo")[0] == 200
+    lt = gateway.localtime(gateway.day_start())
+    assert (lt.tm_hour, lt.tm_min) == (0, 0) and gateway.sql_local() == "+32400 seconds"
+    assert gateway.datetime.datetime.fromtimestamp(gateway.day_start(), gateway.zoneinfo.ZoneInfo("Asia/Tokyo")).hour == 0
+    assert adm("settings/reset", {"key": "timezone"})[0] == 200 and gateway.sql_local() == "localtime"
+# general: organization name, home page, default language
+assert put(org_name="Acme", home_page="chat", default_language="en")[0] == 200
+assert json.loads(http_call("/api/config")[1])["org_name"] == "Acme"
+home = urllib.request.urlopen(base + "/").read()
+assert b'id="convTitle"' in home and b'data-default-lang="en"' in home and b"admin.js" in urllib.request.urlopen(base + "/admin").read()
+assert gateway.summary_content(gateway.db(), month)["subject"].startswith("FireGate · Acme · ")
+for k in ("org_name", "home_page", "default_language"):
+    adm("settings/reset", {"key": k})
+assert b"admin.js" in urllib.request.urlopen(base + "/").read()
+# export without secrets, import with a dry run first
+assert put(spike_factor=7.5, org_terms=["Falcon"])[0] == 200
+ex = adm("settings/export")[1]
+assert ex["settings"]["spike_factor"] == 7.5 and "gemini_api_key" not in ex["settings"] and "gemini-from-screen" not in json.dumps(ex)
+assert put(spike_factor=3)[0] == 200
+s, r = adm("settings/import", {"settings": ex, "dry_run": True})
+assert s == 200 and r["diff"] == [{"key": "spike_factor", "old": 3.0, "new": 7.5}] and gateway.cfg(None, "spike_factor") == 3
+s, r = adm("settings/import", {"settings": {"spike_factor": 7.5, "gemini_api_key": "x", "max_messages": 10, "bogus": 1}, "dry_run": True})
+assert r["skipped"] == {"gemini_api_key": "secret", "bogus": "unknown"} and len(r["diff"]) == 2
+assert adm("settings/import", {"settings": {"spike_factor": -1}})[0] == 400 and gateway.cfg(None, "spike_factor") == 3
+assert adm("settings/import", {"settings": ex})[1]["changed"] == ["spike_factor"] and gateway.cfg(None, "spike_factor") == 7.5
+for k in ("spike_factor", "org_terms"):
+    adm("settings/reset", {"key": k})
+# backup now: a new file every time, older ones stay
+b1 = adm("backup", {})[1]
+b2 = adm("backup", {})[1]
+assert b1["ok"] and b1["file"] != b2["file"] and all(os.path.exists(os.path.join(b1["folder"], b["file"])) for b in (b1, b2))
+assert adm("settings")[1]["system"]["backups"] >= 2 and adm("audit")[1][0]["action"] == "backup"
+assert put(backup_folder="../outside")[1]["errors"]["backup_folder"]["code"] == "pattern"
+assert put(backup_schedule="daily")[0] == 200 and gateway.backup_tick() is None  # the backup a moment ago counts
+assert gateway.backup_tick(time.time() + 86400) and adm("settings/reset", {"key": "backup_schedule"})[0] == 200
+
+
+class FakeGitHub(BaseHTTPRequestHandler):
+    def do_GET(self):
+        data = json.dumps({"tag_name": "v9.0.0", "html_url": "https://github.com/x/releases/v9.0.0"}).encode()
+        self.send_response(200)
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *a):
+        pass
+
+
+gateway.UPDATE_URL = f"http://127.0.0.1:{serve(FakeGitHub)}/releases/latest"
+u = adm("update-check")[1]
+assert u["ok"] and u["latest"] == "9.0.0" and u["newer"] is True and u["current"] == gateway.VERSION
+gateway.UPDATE_URL = "http://127.0.0.1:9/releases/latest"  # nothing listens there
+assert adm("update-check")[1] == {"ok": False, "current": gateway.VERSION, "error": "offline"}
+
+# the documentation lists every setting, in both languages
+docs_he, docs_en = (open(os.path.join(here, f), encoding="utf-8").read() for f in ("docs.html", "en-docs.js"))
+for d in S.REGISTRY:
+    assert d["label_he"] in docs_he and d["label_en"] in docs_en, d["key"]
+
 print("ok")

@@ -30,9 +30,7 @@ ENCRYPT = lambda s: s  # the gateway sets its own encryption here, so saved vers
 TEXT_EXT = {".txt", ".md", ".csv", ".json", ".html", ".htm", ".log", ".xml", ".yaml", ".yml"}
 DOC_EXT = {".pdf", ".docx"}
 ALL_EXT = TEXT_EXT | DOC_EXT
-MAX_FILE = 5 * 1024 * 1024
 CHUNK = 1200       # characters per indexed piece
-TOP_K = 6          # pieces passed to the model per question
 MAX_CONTEXT = 6000  # characters of reference material per question
 MIN_SIMILARITY = 0.3  # meaning matches weaker than this are noise
 EVERYONE = "*"
@@ -41,6 +39,15 @@ LIVE = "doc_id not in (select id from docs where archived is not null)"
 
 # Set by the gateway: EMBED(c, [texts]) -> list of vectors, or None when no embeddings provider is available.
 EMBED = None
+CFG = None  # the gateway's settings: max_file_mb, top_k, source_roots, search_mode
+
+
+def _cfg(key, default):
+    return CFG(key) if CFG else default
+
+
+def max_file():
+    return _cfg("max_file_mb", 5) * 1024 * 1024
 
 
 # --- reading files ---
@@ -68,8 +75,8 @@ def extract_text(filename, data):
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ALL_EXT:
         raise ValueError(f"{filename}: unsupported file type")
-    if len(data) > MAX_FILE:
-        raise ValueError(f"{filename}: larger than {MAX_FILE // (1024 * 1024)}MB")
+    if len(data) > max_file():
+        raise ValueError(f"{filename}: larger than {max_file() // (1024 * 1024)}MB")
     try:
         if ext == ".docx":
             text = _docx_text(data)
@@ -205,14 +212,14 @@ def _inside(base, path):
 
 def check_folder(path):
     """The folder's real location, if it may be a source: an absolute path to an existing folder, and when
-    SOURCE_ROOTS is set (folders separated by the system path separator or a comma), inside one of them after
+    the source_roots setting lists folders, inside one of them after
     following links. Raises ValueError otherwise."""
     if not path or not os.path.isabs(path):
         raise ValueError("folder path must be absolute")
     if not os.path.isdir(path):
         raise ValueError(f"folder not found on the server: {path}")
     real = os.path.realpath(path)
-    roots = [os.path.realpath(r.strip()) for r in os.environ.get("SOURCE_ROOTS", "").replace(os.pathsep, ",").split(",") if r.strip()]
+    roots = [os.path.realpath(r) for r in _cfg("source_roots", [])]
     if roots and not any(_inside(os.path.normcase(r), os.path.normcase(real)) for r in roots):
         raise ValueError("folder is outside the allowed source folders (SOURCE_ROOTS)")
     return real
@@ -228,7 +235,7 @@ def sync_folder(c, name, path, check=None):
         for f in files:
             full = os.path.join(root, f)
             inside = _inside(base, os.path.realpath(full))  # a link can't pull in files from elsewhere
-            if not inside or os.path.splitext(f)[1].lower() not in ALL_EXT or os.path.getsize(full) > MAX_FILE:
+            if not inside or os.path.splitext(f)[1].lower() not in ALL_EXT or os.path.getsize(full) > max_file():
                 skipped += 1
                 continue
             title = os.path.relpath(full, path).replace(os.sep, "/")
@@ -294,7 +301,7 @@ def _vector_hits(c, names, text):
             s = sum(a * b for a, b in zip(q, v))
             if s >= MIN_SIMILARITY:
                 scored.append((s, rowid))
-    return [r for _, r in sorted(scored, reverse=True)[:TOP_K * 2]]
+    return [r for _, r in sorted(scored, reverse=True)[:_cfg("top_k", 6) * 2]]
 
 
 def search(c, names, text):
@@ -304,15 +311,17 @@ def search(c, names, text):
         return []
     marks = ",".join("?" * len(names))
     q = query(text)
+    mode, top = _cfg("search_mode", "both"), _cfg("top_k", 6)
+    meaning_ids = _vector_hits(c, names, text) if mode != "words" else []
+    # by meaning only, but no meaning search available (no key, nothing indexed): by words after all
     word_ids = [r[0] for r in c.execute(f"select rowid from chunks where chunks match ? and source in ({marks}) and {LIVE}"
-                                        f" order by bm25(chunks) limit ?", (q, *names, TOP_K * 2))] if q else []
-    meaning_ids = _vector_hits(c, names, text)
+                                        f" order by bm25(chunks) limit ?", (q, *names, top * 2))] if q and (mode != "meaning" or not meaning_ids) else []
     score = {}
     for ids in (word_ids, meaning_ids):
         for rank, rowid in enumerate(ids):
             score[rowid] = score.get(rowid, 0) + 1 / (60 + rank)
     hits, used = [], 0
-    for rowid in sorted(score, key=score.get, reverse=True)[:TOP_K]:
+    for rowid in sorted(score, key=score.get, reverse=True)[:top]:
         row = c.execute("select source, title, body from chunks where rowid = ?", (rowid,)).fetchone()
         if not row or used + len(row[2]) > MAX_CONTEXT:
             continue
